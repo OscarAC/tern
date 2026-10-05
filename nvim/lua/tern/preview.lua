@@ -5,11 +5,14 @@ local uv = vim.uv
 local M = { server = nil, port = nil, root = nil, clients = {} }
 
 -- Injected before the note's first line (everything after tern.js is note text).
--- Timers and the EventSource survive tern.js rewriting the document.
-local CLIENT = [[<script>(function(){var k='tern-scroll:'+location.pathname,y=sessionStorage.getItem(k);]]
-  .. [[if(y!==null){sessionStorage.removeItem(k);var n=0,t=setInterval(function(){]]
-  .. [[if(document.querySelector('main.tern'))scrollTo(0,+y);if(++n>15)clearInterval(t)},100)}]]
-  .. [[new EventSource('/__tern/events').onmessage=function(){sessionStorage.setItem(k,scrollY);location.reload()}})()</script>]]
+-- tern.js rewrites the document once it has parsed the note, and Firefox drops
+-- open connections when that happens, so the event stream is opened only after
+-- the rewrite (or after 3s, for notes that are not rendered, e.g. data-raw).
+local CLIENT = [[<script>(function(){var k='tern-scroll:'+location.pathname,y=sessionStorage.getItem(k),es,w=0,n=0;]]
+  .. [[sessionStorage.removeItem(k);var t=setInterval(function(){]]
+  .. [[if(!document.querySelector('main.tern')&&++w<30)return;]]
+  .. [[if(!es){es=new EventSource('/__tern/events');es.onmessage=function(){sessionStorage.setItem(k,scrollY);location.reload()}}]]
+  .. [[if(y!==null)scrollTo(0,+y);if(++n>15)clearInterval(t)},100)})()</script>]]
 
 local TYPES = {
   html = 'text/html; charset=utf-8',

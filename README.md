@@ -4,15 +4,22 @@ Tern is a note format for studying: markdown's ease, LaTeX's structure, and the 
 
 You add one line at the top of a file and write a markdown superset below it. Opening the file in a browser renders it. There is no build step, and HTML, CSS and JavaScript are always available when the built-in syntax runs out.
 
-```html
+```text
 <script src="tern.js"></script>
 
-# Linear Algebra: Lecture 4 A matrix $A$ is **invertible** if there is a $B$
-with $AB = BA = I$. :::theorem[Rank–nullity] #rank-nullity For $T: V \to W$ with
-$V$ finite-dimensional, $$\dim V = \dim \ker T + \dim \operatorname{im} T$$ :::
-By @rank-nullity, an injective map between spaces of equal dimension is
-surjective. ?? What does rank–nullity say? >> $\dim V = \dim \ker T + \dim
-\operatorname{im} T$
+# Linear Algebra: Lecture 4
+
+A matrix $A$ is **invertible** if there is a $B$ with $AB = BA = I$.
+
+:::theorem[Rank–nullity] #rank-nullity
+For $T: V \to W$ with $V$ finite-dimensional,
+$$\dim V = \dim \ker T + \dim \operatorname{im} T$$
+:::
+
+By @rank-nullity, an injective map between spaces of equal dimension is surjective.
+
+?? What does rank–nullity say?
+>> $\dim V = \dim \ker T + \dim \operatorname{im} T$
 ```
 
 ## Documentation
