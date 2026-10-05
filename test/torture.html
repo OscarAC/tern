@@ -1,0 +1,28 @@
+<script src="../tern.js" data-raw></script>
+
+# Torture test
+
+Inline math with angle brackets: $a < b$ and $b > c$, also $a<b>c$ and $x<y$.
+Ampersands: AT&T, &amp; stays literal, &lt; too, a && b, &nbsp;.
+
+$$\begin{aligned} a &< b \\ c &= d \end{aligned}$$
+
+:::theorem[Rank–nullity] #rank-nullity
+For $T: V \to W$, $\dim V = \dim \ker T + \dim \operatorname{im} T$
+:::
+
+Raw HTML that must survive as text for our parser:
+<div class="box">hello <b>world</b></div>
+<table><tr><td>cell
+<p>unclosed paragraph
+<!-- a comment -->
+<script>console.log("1 < 2 && 3 > 2");</script>
+</plaintext> closing tag must not end capture
+</body></html> neither must these
+<style>p { color: red }</style>
+
+	tab-indented line
+    four-space-indented line
+trailing spaces here:
+unicode: é ñ 日本語 ∀x∈ℝ 🎉
+last line, no trailing newline
