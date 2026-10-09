@@ -6,7 +6,8 @@
 //   - published diagnostics equal the engine's, mapped to LSP;
 //   - rename edits equal the engine's reference set, none in code or math;
 //   - definition, references, hover, completion, documentSymbol,
-//     foldingRange, the `tern/outline` notification, the 150 ms debounce;
+//     foldingRange, documentHighlight, the `tern/outline` notification, the
+//     150 ms debounce;
 //   - a single-file note's own vocabulary (window.TERN.schema);
 //   - add-on transforms run for their own note only, data-lang's label
 //     language, addon.remote;
@@ -422,6 +423,45 @@ check('references: every use, the declaration on request', async () => {
   for (const needle of ['By 😀', '## About', '| @rn', 'Link:', '[^n]: A']) assert.ok(lines.has(locate(REFS, needle).line), needle);
   const k = await c.call('textDocument/references', { ...doc(uri), position: locate(REFS, '## Kernel'), context: { includeDeclaration: false } });
   assert.deepStrictEqual(k.map((l) => l.range.start), [locate(REFS, '@kernel')]);
+});
+
+// The engine's reference set again, as highlights: the declaration's `#rn`
+// is written (3), each ref's extent and each fragment link's `#rn` read (2).
+check('documentHighlight: an id’s declaration and uses, an element’s name and closer', async () => {
+  const { uri, a } = refs;
+  const lines = REFS.split('\n');
+  const want = [];
+  note.tern.visit(a.ast, (n) => {
+    if (!n.position) return false;
+    const r = fileRange(a, n.position);
+    if (n.type === 'ref' && n.id === 'rn') want.push({ range: r, kind: 2 });
+    if (n.type === 'link' && n.url === '#rn') {
+      const k = lines[r.start.line].indexOf('#rn', r.start.character);
+      want.push({ range: { start: { line: r.start.line, character: k }, end: { line: r.start.line, character: k + 3 } }, kind: 2 });
+    }
+    if (n.attributes && n.attributes.id === 'rn') want.push({ range: fileRange(a, tn(n).idPosition), kind: 3 });
+  });
+  assert.strictEqual(want.length, 7, 'four references, two fragment links, one declaration');
+  const hl = (needle, opts) => c.call('textDocument/documentHighlight', { ...doc(uri), position: locate(REFS, needle, opts) });
+  for (const [needle, opts] of [['#rn}', { plus: 1 }], ['| @rn', { plus: 3 }], ['the theorem]', {}], ['(<#rn>', { plus: 3 }]]) {
+    const got = await hl(needle, opts);
+    assert.deepStrictEqual(sorted(got), sorted(want), `from ${needle}`);
+    assert.strictEqual(got[0].kind, 3, 'the declaration first');
+  }
+  const name = (s, n) => ({ start: s, end: { line: s.line, character: s.character + n } });
+  const theorem = [
+    { range: name(locate(REFS, ':::theorem', { plus: 3 }), 7), kind: 3 },
+    { range: name(locate(REFS, ':::/theorem', { plus: 4 }), 7), kind: 2 },
+  ];
+  assert.deepStrictEqual(await hl(':::/theorem', { plus: 5 }), theorem);
+  assert.deepStrictEqual(await hl(':::theorem', { plus: 5 }), theorem);
+  assert.deepStrictEqual(await hl('@nowhere', { plus: 1 }), [{ range: name(locate(REFS, '@nowhere'), 8), kind: 2 }], 'a dangling reference: its uses');
+  assert.strictEqual(await hl('A paragraph'), null);
+  // The capability, from a server of its own.
+  const other = new Client();
+  const r = await other.call('initialize', { processId: process.pid, rootUri: null, capabilities: {} });
+  assert.strictEqual(r.capabilities.documentHighlightProvider, true);
+  other.proc.kill();
 });
 
 check('hover: label, title, kind and file line', async () => {

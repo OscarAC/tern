@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><title>Command line and editors · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
 
 :::meta
-description: The tern command line (new, check, parse, build, corpus), the language server and its tern/outline notification, editor setup for Neovim, VS Code and Helix, and the note-detection rule editors share.
+description: The tern command line (new, check, parse, build, corpus), the language server, its tern/outline notification and the language module editors can embed, editor setup for Neovim, VS Code and Helix, and the note-detection rule editors share.
 :::
 
 ::site-nav
@@ -651,7 +651,7 @@ tern corpus: 0 cases from 0 pages
 
 ## The language server {#lsp}
 
-`tern lsp` is a language server: it speaks the Language Server Protocol over stdin and stdout, so any editor with an LSP client can use it. It runs the same analysis as `tern check` on every note you open, as you type, and answers questions about ids, references and element names from the syntax tree, at exact columns. It never guesses with a second grammar.
+`tern lsp` is a language server: it speaks the Language Server Protocol over stdin and stdout, so any editor with an LSP client can use it. It runs the same analysis as `tern check` on every note you open, as you type, and answers questions about ids, references and element names from the syntax tree, at exact columns. It never guesses with a second grammar. The answers come from one module, which an editor can also run itself: see [The language module](#language).
 
 :::syntax[tern lsp]
 ```sh
@@ -723,6 +723,7 @@ $$ {#eq}
     "hoverProvider": true,
     "definitionProvider": true,
     "referencesProvider": true,
+    "documentHighlightProvider": true,
     "renameProvider": { "prepareProvider": true },
     "documentSymbolProvider": true,
     "foldingRangeProvider": true
@@ -738,6 +739,7 @@ $$ {#eq}
 | `completionProvider` | Completion, triggered by `:`, `@`, `/` and `#`. See [Completion](#lsp-completion). |
 | `hoverProvider` | Hover on ids, references and names. See [Hover](#lsp-hover). |
 | `definitionProvider`, `referencesProvider` | Go to an id's declaration, and find its references. See [Definition and references](#lsp-definition). |
+| `documentHighlightProvider` | Mark the occurrences of the id or the name at the cursor. See [Highlights](#lsp-highlight). |
 | `renameProvider` | Rename an id or an element name, with `prepareRename`. See [Rename](#lsp-rename). |
 | `documentSymbolProvider` | The outline of headings, containers and leaves. See [Symbols](#lsp-symbols). |
 | `foldingRangeProvider` | Folds for blocks and sections. See [Folding](#lsp-folding). |
@@ -858,6 +860,25 @@ A request acts on the innermost occurrence at the cursor, its last character inc
 
 **References** work from the declaration or from any reference. They list every `@id`, fragment link and footnote reference to the id, as their whole extents, plus the declaration first when the client asks for it (`includeDeclaration`). References never occur inside code or math: `@rn` in a code span is text, not a reference.
 
+### Highlights {#lsp-highlight}
+
+`textDocument/documentHighlight` marks what goes with the id or the name at the cursor, as editors do while the cursor rests on a word. Each highlight has a kind: `3` (Write) for where the id or the name is declared, `2` (Read) for where it is used.
+
+- **On an id**, from a reference, a fragment link, a footnote reference or the declaration: the declaration, Write, and every use, Read. These are the occurrences that [references](#lsp-definition) lists with the declaration, except that a fragment link is marked at its `#id`, not over the whole link. A dangling reference marks its uses alone.
+- **On an element's name**, in its opener or in its named closer: the opener's name, Write, and the closer's, Read, as definition goes from the closer to the opener. Other elements with the same name are not marked, since a rename leaves them alone.
+- **Anywhere else**, the answer is `null`.
+
+On `@rn` in the note above, the answer is the theorem's `#rn` and the reference:
+
+```json
+[
+  { "range": { "start": { "line": 5, "character": 25 }, "end": { "line": 5, "character": 28 } }, "kind": 3 },
+  { "range": { "start": { "line": 11, "character": 4 }, "end": { "line": 11, "character": 7 } }, "kind": 2 }
+]
+```
+
+On `theorem` in `:::/theorem`, it is the name in `:::theorem` (line 5, characters 3 to 10, Write) and the one in the closer (line 7, characters 4 to 11, Read).
+
 ### Rename {#lsp-rename}
 
 Rename changes an id with all its references, or an element's name with its named closer, in one edit. `prepareRename` tells the client what would be renamed:
@@ -943,6 +964,123 @@ Image                     ## #image         lines 9–19
 ### Folding {#lsp-folding}
 
 `textDocument/foldingRange` folds every block that spans lines: containers, fences, display math, tables, lists, footnote definitions and raw HTML blocks, and each heading's section. For the note above, the ranges are (0-based file lines) 5–7 (the theorem), 13–17 (the aside), 14–16 (the math), 3–7 (Kernel) and 9–19 (Image).
+
+### The language module {#language}
+
+The server's answers come from one module, `cli/language.js`. An editor that runs the engine itself, in a browser worker for example, can require it and give the same answers as `tern lsp`, with no server. It uses nothing from Node: it requires only `tern.js` and the engine's sources for the element [allowlists](elements.html#allowlists) (`src/schema.js`, with the `src/scan.js` it needs), so a bundler such as esbuild packs it for the browser. It is a CommonJS module, like the rest of the command line.
+
+```js
+const tern = require('tern');
+const language = require('tern/cli/language.js');
+```
+
+You run the engine on the note, index the result, then ask the index.
+
+**The analysis**, `a`, is what the command line's own analysis returns (`analyse` in `cli/note.js`), or the same built by hand:
+
+| Field | What it holds |
+|---|---|
+| `note` | The note: the text after the `tern.js` line. |
+| `line` | The `tern.js` line's 1-based file line, which is also the number of file lines before the note. |
+| `ast` | The **transformed** syntax tree: `tern.parse`, then `tern.transform` with the same options. |
+| `diagnostics` | The parser's and the transforms' diagnostics, with their note positions. The module reads `block.unclosed` among them: a container that is not closed has no named closer. |
+| `schema` | The vocabulary the analysis used, its `opts.schema`. Without it, the engine's [registry](api.html#registry), which `tern.parse` uses then too. |
+
+In a browser, find the note with the [detection pattern](#detection-fixtures), then parse and transform it:
+
+```js
+const detect = require('tern/test/fixtures/detect.json');
+const DETECT = new RegExp(detect.pattern, detect.flags);
+
+// One analysis of a file's text, with \n line breaks; null when it is not a note.
+function analyse(text, schema) {
+  const lines = text.split('\n');
+  const i = lines.findIndex((line) => DETECT.test(line));
+  if (i < 0) return null;
+  const m = DETECT.exec(lines[i]);
+  const head = [...lines.slice(0, i), lines[i].slice(0, m[0].length - m[1].length)].join('\n');
+  const note = lines.slice(i + 1).join('\n');
+  const opts = { schema, head };
+  const { ast, diagnostics } = tern.parse(note, opts);
+  tern.transform(ast, opts);
+  return { note, line: i + 1, ast, diagnostics: diagnostics.concat(ast.data.tern.diagnostics), schema };
+}
+
+const doc = language.index(analyse(text, schema));
+language.hover(doc, { line: 11, character: 5 });
+// → { markdown: '**Theorem 1 — Rank–nullity**\n\ntheorem · `#rn` · line 6',
+//     range: { start: { line: 11, character: 4 }, end: { line: 11, character: 7 } } }
+```
+
+`schema` is the note's vocabulary as plain data, `{block, leaf, inline}` as the [registry](api.html#registry) holds it; for the note above, `{ block: { theorem: { tag: 'section', counter: 'theorem', label: 'Theorem' }, proof: { label: 'Proof' } }, leaf: {}, inline: { kbd: { tag: 'kbd' } } }`. Leave it out for a note that declares nothing. A label language goes in the options as `lang`, as for any engine call.
+
+**The index.** `language.index(a)` returns the index that every other function takes, or `null` when `a` is `null`, a file that is not a note; each function then answers nothing. The index holds the syntax tree's nodes, so build it and use it where the tree lives (in the worker), and send only the answers across, which are plain JSON. Index again after each analysis: an index answers for the text it was made from.
+
+**Positions** are those of the protocol: `{line, character}`, a 0-based **file** line and a UTF-16 column, so the note's first line is line `a.line`. A range is `{start, end}`, its end exclusive.
+
+- A position on the head, or past the end of the file, answers nothing.
+- A column past the end of a line stands for the end of the line.
+- A function acts on the innermost occurrence at the position, its last character included, as the server does ([Definition and references](#lsp-definition)).
+- `outline` alone counts otherwise: 1-based file lines, like the [`tern/outline`](#outline) notification.
+
+**The functions**, each with the request it answers in the server:
+
+| Call | Returns | In `tern lsp` |
+|---|---|---|
+| `index(a)` | The index, or `null`. | |
+| `definition(doc, pos)` | A range, or `null`. | `textDocument/definition`, with the document's `uri` |
+| `references(doc, pos, { includeDeclaration })` | An array of ranges, with the declaration first on request; `null` off an id. | `textDocument/references`, with the `uri` |
+| `highlights(doc, pos)` | `[{range, kind}]`, `kind` being `"write"` or `"read"`; `null` off an id or a name. | `textDocument/documentHighlight`, kinds `3` and `2` |
+| `hover(doc, pos)` | `{markdown, range}`, or `null`. | `textDocument/hover`, as `{contents: {kind: "markdown", value}, range}` |
+| `prepareRename(doc, pos)` | `{range, placeholder}`, or `null`. May throw. | `textDocument/prepareRename` |
+| `rename(doc, pos, newName)` | `[{range, newText}]`, or `null`. May throw. | `textDocument/rename`, as `{changes: {uri: edits}}` |
+| `completion(doc, pos)` | `[{label, kind, detail, sortText, filterText, range, newText}]`, possibly empty. | `textDocument/completion`, with `range` and `newText` as the `textEdit` |
+| `symbols(doc)` | `[{name, detail, kind, range, selectionRange, children}]`. | `textDocument/documentSymbol` |
+| `folds(doc)` | `[{startLine, endLine}]`, in 0-based file lines. | `textDocument/foldingRange` |
+| `outline(a)` | `tern.outline(a.ast)` with 1-based file lines; empty arrays for `null`. | the `tern/outline` notification |
+| `LanguageError` | The class of what `prepareRename` and `rename` throw. | |
+
+What each answer holds is described above, request by request: [Completion](#lsp-completion), [Definition and references](#lsp-definition), [Highlights](#lsp-highlight), [Rename](#lsp-rename), [Hover](#lsp-hover), [Symbols](#lsp-symbols) and [Folding](#lsp-folding). A symbol's `range` covers what it holds, a heading's whole section, and its `selectionRange` the element itself: for a heading, its line.
+
+**Kinds** are words; the server turns them into the protocol's numbers:
+
+| Kind | What it marks | In `tern lsp` |
+|---|---|---|
+| `"name"` | a completion from the note's vocabulary | `7` (Class) |
+| `"core"` | a completion `meta` or `macros` | `14` (Keyword) |
+| `"element"` | a completion from the allowlist | `10` (Property) |
+| `"closer"` | a completion `/name` that closes an open container | `14` (Keyword) |
+| `"id"` | a completion of an id | `18` (Reference) |
+| `"heading"`, `"container"`, `"leaf"` | a symbol | `15` (String), `5` (Class), `8` (Field) |
+| `"write"`, `"read"` | a highlight: a declaration or an opener's name; a use or a named closer | `3`, `2` |
+
+After `See @` in the note above:
+
+```js
+language.completion(doc, { line: 11, character: 5 }).find((item) => item.label === 'rn');
+// → { label: 'rn', kind: 'id', detail: 'Theorem 1 — Rank–nullity', sortText: 'rn', filterText: 'rn',
+//     range: { start: { line: 11, character: 5 }, end: { line: 11, character: 5 } }, newText: 'rn' }
+```
+
+**Errors.** `prepareRename` and `rename` throw a `LanguageError` when a rename cannot be made. It is an `Error` whose `name` is `"LanguageError"`, whose `message` says why, for the person renaming, and whose `code` is one of:
+
+| `code` | When | In `tern lsp` |
+|---|---|---|
+| `"invalid"` | The new name is not one: an id that `@` cannot reach, an id the note already uses, a name that is not an element name, or no name at all. | `-32602` |
+| `"refused"` | The note cannot take the rename: a footnote's generated id, or a heading's slug when the heading has an attribute group. | `-32803` |
+
+The messages are those of the [refusals](#lsp-rename). `rename` looks at the position first, so where there is nothing to rename it answers `null`, whatever the name. The other functions never throw for a position.
+
+```js
+let edits = null;
+try {
+  edits = language.rename(doc, { line: 11, character: 5 }, 'kernel');
+} catch (e) {
+  if (!(e instanceof language.LanguageError)) throw e;
+  e.code;    // → 'invalid'
+  e.message; // → 'the id "kernel" is already used in this note'
+}
+```
 
 ## Editor setup {#editors}
 
