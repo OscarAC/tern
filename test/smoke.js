@@ -760,6 +760,47 @@ const TESTS = [
     },
   },
   {
+    // data-pos holds line and column; the offset must count in the source
+    // tern.render was given, not in the note the page loaded with.
+    name: 'math.error after tern.render: positions in the source rendered, for main and for an element of the page',
+    url: '/test/smoke/katex-error.html',
+    async check(page) {
+      const sources = {
+        main: '# Moved\n\nA longer first paragraph, so that the offsets differ.\n\nAnd another.\n\n$$\n\\frac{2}{\n$$\n',
+        own: 'x\n\n$$\n\\sqrt{\n$$\n',
+      };
+      await page.evaluate((src) => {
+        window.__errors = [];
+        window.__before = tern.diagnostics.filter((d) => d.code === 'math.error').length;
+        tern.on('diagnostic', (d) => d.code === 'math.error' && window.__errors.push({ position: d.position.start, inMain: tern.diagnostics.includes(d) }));
+        tern.render(document.querySelector('main.tern'), src.main);
+      }, sources);
+      await expect(page, () => window.__errors.length === 1, 'a math.error from the new note');
+      await page.evaluate((src) => {
+        const own = document.createElement('div');
+        own.className = 'tern';
+        document.body.append(own);
+        tern.render(own, src.own);
+      }, sources);
+      await expect(page, () => window.__errors.length === 2, "a math.error from the element's note");
+      const errors = await page.evaluate(() => window.__errors);
+      const at = (text, line, column) => text.split('\n').slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0) + column - 1;
+      const check = (e, text, line, what) => {
+        const p = e.position;
+        if (p.line !== line) throw new Error(`${what}: line ${p.line}, expected ${line}`);
+        if (p.offset !== at(text, p.line, p.column)) throw new Error(`${what}: offset ${p.offset}, expected ${at(text, p.line, p.column)} for ${p.line}:${p.column}`);
+      };
+      check(errors[0], sources.main, 7, 'main');
+      check(errors[1], sources.own, 3, 'an element of the page');
+      // tern.diagnostics and the panel are the page's note's: an element's
+      // problem only fires the event (docs/api.html#diagnostics).
+      if (!errors[0].inMain) throw new Error("main's math.error is not in tern.diagnostics");
+      if (errors[1].inMain) throw new Error("the element's math.error is in tern.diagnostics");
+      const panel = await page.evaluate(() => document.querySelector('.t-diagnostics')?.textContent || '');
+      if (/line 3:1/.test(panel)) throw new Error(`the element's math.error is in the panel: ${panel}`);
+    },
+  },
+  {
     name: 'RTL note: math and code stay left-to-right',
     url: '/test/smoke/rtl.html',
     async check(page) {
