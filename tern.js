@@ -5106,6 +5106,7 @@ async function renderRoot(root, source) {
     const tpl = document.createElement('template');
     tpl.innerHTML = r.html;
     root.replaceChildren(tpl.content);
+    setSource(root, String(source));
     presentation(root);
     if (root === main) {
       const kept = diagnostics.filter((d) => d.position === HEAD);
@@ -5133,13 +5134,18 @@ function style(text) {
 
 // ---------------------------------------------------------------- diagnostics
 
-function report(code, position, message, hint) {
+// `el` is the element concerned, if any. tern.diagnostics, the panel and
+// the console speak of the page's note: a problem in another root given to
+// tern.render, or on a page where the runtime did not start, only fires
+// the event.
+function report(code, position, message, hint, el) {
   const d = { code, severity: SEVERITY[code], message, position: position || HEAD };
   if (hint) d.hint = hint;
-  diagnostics.push(d);
+  const own = !!page && (!el || (!!main && main.contains(el)));
+  if (own) diagnostics.push(d);
   fire('diagnostic', d);
-  if (mounted) panelAdd(d);
-  if (logged) console.warn(`tern: ${describe(d)}`);
+  if (own && mounted) panelAdd(d);
+  if (own && logged) console.warn(`tern: ${describe(d)}`);
   return d;
 }
 
@@ -5153,6 +5159,12 @@ function where(d) {
 }
 const describe = (d) => `${d.severity} ${d.code} at ${where(d)}: ${d.message}${d.hint ? ` (${d.hint})` : ''}`;
 
+// The source each root was rendered from: the page's note for main, then
+// each tern.render(root, source). data-pos holds line and column only; the
+// offset is counted in the source of the root the element belongs to.
+const sources = new WeakMap(); // root -> {text, starts}
+const setSource = (root, text) => sources.set(root, { text, starts: null });
+
 // A note position from data-pos="line:col" on the element or an ancestor
 // (the emitter puts it on math, directive, cell and code elements).
 function positionOf(el) {
@@ -5162,12 +5174,14 @@ function positionOf(el) {
   const line = Number(m[1]);
   const column = Number(m[2]);
   let offset = 0;
-  if (page && page.source != null) {
-    if (!page.starts) {
-      page.starts = [0];
-      for (let i = page.source.indexOf('\n'); i >= 0; i = page.source.indexOf('\n', i + 1)) page.starts.push(i + 1);
+  let src = null;
+  for (let n = at; n && !src; n = n.parentElement) src = sources.get(n) || null;
+  if (src) {
+    if (!src.starts) {
+      src.starts = [0];
+      for (let i = src.text.indexOf('\n'); i >= 0; i = src.text.indexOf('\n', i + 1)) src.starts.push(i + 1);
     }
-    offset = (page.starts[line - 1] || 0) + column - 1;
+    offset = (src.starts[line - 1] || 0) + column - 1;
   }
   const p = { line, column, offset };
   return { start: p, end: p };
@@ -5239,7 +5253,7 @@ function start() {
   if (document.querySelector('main.tern')) return void console.warn('tern: the page already has a main.tern; tern.js does nothing');
 
   const addons = readConfig(script);
-  page = { head: headString(), lines: linesBefore(), source: null, starts: null, quirks: document.compatMode === 'BackCompat' };
+  page = { head: headString(), lines: linesBefore(), source: null, quirks: document.compatMode === 'BackCompat' };
   locateSheets();
   if (page.quirks) {
     const use = script.getAttribute('data-use');
@@ -5610,6 +5624,7 @@ async function mount() {
     const tpl = document.createElement('template');
     tpl.innerHTML = `<main class="tern">${r.html}</main>`;
     main = tpl.content.firstElementChild;
+    setSource(main, page.source);
     document.body.replaceChildren(tpl.content);
     presentation(main);
     mounted = true;
@@ -5662,7 +5677,7 @@ function reveal() {
 function startBuilt(script) {
   built = true;
   const addons = readConfig(script);
-  page = { head: headString(), lines: 0, source: null, starts: null, quirks: document.compatMode === 'BackCompat' };
+  page = { head: headString(), lines: 0, source: null, quirks: document.compatMode === 'BackCompat' };
   locateSheets();
   for (const l of document.head.querySelectorAll('link[rel~="stylesheet" i]')) {
     if (/\/katex(?:\.min)?\.css$/i.test(l.href.replace(/[?#].*$/, ''))) KATEX_SLOT.els.push(l);
@@ -5694,6 +5709,7 @@ async function startBuiltPage(addons, failed) {
     if (src && src.localName === 'script') {
       page.source = src.textContent.replace(/<\\(\\*)(\/script|!--)/gi, '<$1$2'); // cli/build.js decodeSource
       page.lines = Number(src.getAttribute('data-line')) || 0;
+      if (main) setSource(main, page.source);
     }
     const data = document.getElementById('tern-diagnostics');
     try {
@@ -5794,7 +5810,7 @@ function intercept(on) {
   const at = () => scriptAt.get(document.currentScript) || null;
   document.write = document.writeln = function (...args) {
     const text = args.join('').replace(/\s+/g, ' ').trim();
-    report('script.document-write', at(), `a note script called document.write("${text.length > 60 ? `${text.slice(0, 60)}…` : text}"); the page is already parsed, so its output is dropped`, 'build elements with the DOM instead, for example document.currentScript.after(element)');
+    report('script.document-write', at(), `a note script called document.write("${text.length > 60 ? `${text.slice(0, 60)}…` : text}"); the page is already parsed, so its output is dropped`, 'build elements with the DOM instead, for example document.currentScript.after(element)', document.currentScript);
   };
   const add = EventTarget.prototype.addEventListener;
   // A DOMContentLoaded listener is reported and not registered: the mount
@@ -5803,7 +5819,7 @@ function intercept(on) {
   // it is never added.
   const wrapped = function (type, fn, opts) {
     if (type !== 'DOMContentLoaded') return add.call(this, type, fn, opts);
-    report('script.domcontentloaded', at(), 'a note script listens for DOMContentLoaded, which fired before note scripts run, so the listener never runs', "use tern.on('ready', fn), or run the code directly");
+    report('script.domcontentloaded', at(), 'a note script listens for DOMContentLoaded, which fired before note scripts run, so the listener never runs', "use tern.on('ready', fn), or run the code directly", document.currentScript);
   };
   document.addEventListener = wrapped;
   window.addEventListener = wrapped;
@@ -5961,7 +5977,7 @@ async function typeset(root) {
     try {
       K.renderToString(m.textContent, macroOpts);
     } catch (e) {
-      report('math.error', positionOf(m), `the :::macros block does not parse: ${e.message}`, 'fix the TeX of the definitions');
+      report('math.error', positionOf(m), `the :::macros block does not parse: ${e.message}`, 'fix the TeX of the definitions', m);
     }
   }
   if (!visible.length) return;
@@ -6003,7 +6019,7 @@ function typesetOne(el) {
     box.textContent = '';
     el.classList.add('t-error');
     el.title = e.message;
-    report('math.error', positionOf(el), `KaTeX cannot typeset this formula: ${e.message}`, 'the formula is shown as written; fix its TeX');
+    report('math.error', positionOf(el), `KaTeX cannot typeset this formula: ${e.message}`, 'the formula is shown as written; fix its TeX', el);
     return;
   }
   el.replaceChildren(...box.childNodes);

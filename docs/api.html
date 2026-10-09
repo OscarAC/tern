@@ -686,7 +686,7 @@ Renders, or re-renders, a root element.
 - **Without a source**, it runs behaviours on the elements under `root` that have not had them, and typesets the formulas not yet typeset. A second call changes nothing. It fires `render` and `math` with `root`.
 - **With a source**, it first replaces `root`'s content with the note's HTML: parse, transform and emit, with the page's head and `tern.config.lang`. The `<script>` elements of the new content then run in order, as a note's do ([note scripts](#after-mount)). Then it goes on as without a source.
 - **It resolves** to the diagnostics of `source`, parse and transform, or to `[]` without a source.
-- **The page's own root.** When `root` is the page's `main.tern`, the new diagnostics replace those in [`tern.diagnostics`](#diagnostics) (keeping the line-0 ones, which concern the head) and the panel is rebuilt. For any other element, `tern.diagnostics` is left alone.
+- **The page's own root.** When `root` is the page's `main.tern`, the new diagnostics replace those in [`tern.diagnostics`](#diagnostics) (keeping the line-0 ones, which concern the head) and the panel is rebuilt. For any other element, `tern.diagnostics` is left alone, also later: a formula KaTeX rejects in that element, or a `document.write` in one of its scripts, fires the [`diagnostic`](#on) event only. Its position counts in the `source` that element was rendered from.
 - **`root`** defaults to the page's `main.tern`. Anything other than an element rejects the Promise with `TypeError: tern.render(root, source): root must be an element`.
 - **`ready`** does not fire again.
 
@@ -709,7 +709,7 @@ A page that is not a note can load tern.js in any way the runtime does not start
 - **Styles.** The runtime adds no stylesheet. Link `tern.css` yourself, and give the element the class `tern`: most of its rules apply inside `.tern`. Its `html` and `body` rules (colours, font, margins) style the whole page, so leave them to your own CSS where they clash.
 - **Configuration.** `window.TERN` and `data-*` are not read, so [`tern.config`](#config) stays `{use: {}, katex: {}}`. Set what you need on it before the first render that needs it: `tern.config.lang` for labels, `tern.config.katex.base` and the KaTeX options before the first render with math.
 - **KaTeX** is loaded on the first render that has math, from `tern.config.katex.base`, or from the pinned CDN with SRI when it is not set.
-- **`tern.ready`** never settles, and `tern.diagnostics` stays empty: use the diagnostics `tern.render` resolves to.
+- **`tern.ready`** never settles, and `tern.diagnostics` stays empty: use the diagnostics `tern.render` resolves to, and listen for [`diagnostic`](#on) for the ones found later, such as a formula KaTeX rejects.
 
 ```html
 <link rel="stylesheet" href="tern.css">
@@ -750,7 +750,7 @@ The page's diagnostics, in one array that stays the same object for the life of 
 - **At mount** it holds, sorted by position:
   - the runtime diagnostics found before the mount, at line 0, which therefore come first: [`doc.quirks`](diagnostics.html#doc-quirks), and [`addon.failed`](diagnostics.html#addon-failed) for an add-on that did not load or threw while it ran;
   - the note's parse and transform diagnostics, as [`tern.check`](#check) returns them, including `addon.failed` for a registered transform that threw.
-- **Later** runtime diagnostics are appended as they happen: [`script.document-write`](diagnostics.html#script-document-write) and [`script.domcontentloaded`](diagnostics.html#script-domcontentloaded) while the note's scripts run, then [`math.error`](diagnostics.html#math-error) and [`katex.unavailable`](diagnostics.html#katex-unavailable) while math is typeset. Each diagnostic the runtime reports itself, early or late, also fires the [`diagnostic`](#on) event; those of the parse and the transforms do not.
+- **Later** runtime diagnostics are appended as they happen: [`script.document-write`](diagnostics.html#script-document-write) and [`script.domcontentloaded`](diagnostics.html#script-domcontentloaded) while the note's scripts run, then [`math.error`](diagnostics.html#math-error) and [`katex.unavailable`](diagnostics.html#katex-unavailable) while math is typeset. They concern the page's note: one about an element that another `tern.render(root, source)` call rendered only fires the event. Each diagnostic the runtime reports itself, early or late, also fires the [`diagnostic`](#on) event; those of the parse and the transforms do not.
 - **`tern.render(main, source)`** replaces the contents with the new note's diagnostics, keeping the line-0 ones.
 - **On a built page** it holds the build's diagnostics, read from the page, then an `addon.failed` for each add-on script that failed to load or threw while it ran.
 
