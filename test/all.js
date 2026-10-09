@@ -16,6 +16,7 @@ const STEPS = [
   ['perf', ['perf.js']],
   ['fuzz', ['fuzz.js', '--seconds=10']],
   ['cli', ['cli.js']],
+  ['language', ['language.js']],
   ['lsp', ['lsp.js']],
   ['docs', ['docs.js']],
 ];

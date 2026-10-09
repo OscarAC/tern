@@ -15,7 +15,7 @@ The documentation is a set of Tern notes. Every page is a `.html` file whose fir
 | `docs/elements.html` | Elements and output | how names become elements, the output contract, titles and labels, numbering, references, ids, figures, table captions, raw HTML, metadata |
 | `docs/schema.html` | Vocabulary and behaviour | schemas, `window.TERN.schema`, add-ons, `tern.define`, transforms, styling, labels in other languages |
 | `docs/diagnostics.html` | Diagnostics | every diagnostic: when it fires, what happens to the content, an example, the fix |
-| `docs/tools.html` | Command line and editors | `tern new/check/parse/build/corpus/lsp`, the language server, editor setup, the outline notification, note detection |
+| `docs/tools.html` | Command line and editors | `tern new/check/parse/build/corpus/lsp`, the language server, the language module editors embed, editor setup, the outline notification, note detection |
 | `docs/publishing.html` | Publishing | the file, opening locally, static hosts, `tern build`, CSP, KaTeX and offline use, browsers, trust, "When it does not render" |
 | `docs/api.html` | JavaScript API | `tern.*`, options, the AST and `data.tern`, the transformed AST, the runtime lifecycle, events, config |
 | `examples/*.html` | Examples | complete notes, each declaring its own vocabulary |

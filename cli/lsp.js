@@ -1,32 +1,28 @@
 // SPDX-License-Identifier: MIT
 // `tern lsp`, the language server (docs/tools.html#lsp): a hand-rolled
 // JSON-RPC 2.0 server over stdio, with Content-Length framing and no
-// dependencies; main() starts it. It runs the engine on a note and answers
-// from the AST: diagnostics as the browser reports them, the `tern/outline`
-// digest, and ids, references and names at exact columns. Positions are
-// UTF-16 code units, as the engine's columns are; note line n is file line
-// n + the head's line count (cli/note.js).
+// dependencies; main() starts it. It runs the engine on a note and
+// publishes its diagnostics, as the browser reports them, and the
+// `tern/outline` digest; cli/language.js answers the requests from the
+// analysis, and this file maps its answers onto the protocol's shapes.
+// Positions are UTF-16 code units, as the engine's columns are; note line n
+// is file line n + the head's line count (cli/note.js).
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');
 const note = require('./note');
-const { ALLOW } = require('../src/schema'); // the HTML element allowlists, for completion
+const language = require('./language');
 
 const { tern } = note;
 const DEBOUNCE = 150; // ms after the last change
 const SEVERITY = { error: 1, warning: 2, info: 3 };
-const IDENT = /^[\p{L}_][\p{L}\p{M}\p{N}_-]*$/u; // an id that `{#id}` and `@id` accept
-const NAME = /^\p{L}[\p{L}\p{M}\p{N}_-]*$/u;
-const LEVEL = { containerDirective: 'block', leafDirective: 'leaf', textDirective: 'inline' };
-const USES = new Set(['ref', 'link', 'footnote']); // what references an id
-const OPAQUE = new Set(['code', 'inlineCode', 'math', 'inlineMath', 'html']); // no Tern syntax inside
-const FOLDS = new Set(['containerDirective', 'code', 'math', 'table', 'list', 'footnoteDefinition']);
-const NESTS = new Set(['blockquote', 'list', 'listItem', 'cell', 'footnoteDefinition']); // block parents
-const KIND = { heading: 15, container: 5, leaf: 8 }; // LSP SymbolKind: String, Class, Field
+const SYMBOL = { heading: 15, container: 5, leaf: 8 }; // LSP SymbolKind: String, Class, Field
+const COMPLETION = { name: 7, core: 14, closer: 14, element: 10, id: 18 }; // LSP CompletionItemKind: Class, Keyword, Property, Reference
+const HIGHLIGHT = { read: 2, write: 3 }; // LSP DocumentHighlightKind
+const ERROR = { invalid: -32602, refused: -32803 }; // a LanguageError's code: InvalidParams, RequestFailed
 
-const tn = (n) => (n.data && n.data.tern) || {};
 const log = (s) => process.stderr.write(`tern lsp: ${s}\n`);
 const fail = (code, message) => Object.assign(new Error(message), { rpc: { code, message } });
 const guard = (fn) => {
@@ -92,8 +88,12 @@ function receive(msg) {
     try {
       result = fn(params) ?? null;
     } catch (e) {
-      error = e.rpc || { code: -32603, message: String((e && e.message) || e) };
-      if (!e.rpc) log((e && e.stack) || e);
+      if (e && e.rpc) error = e.rpc;
+      else if (e instanceof language.LanguageError) error = { code: ERROR[e.code], message: e.message };
+      else {
+        error = { code: -32603, message: String((e && e.message) || e) };
+        log((e && e.stack) || e);
+      }
     }
   }
   send(error ? { id, error } : { id, result });
@@ -106,6 +106,7 @@ const CAPABILITIES = {
   hoverProvider: true,
   definitionProvider: true,
   referencesProvider: true,
+  documentHighlightProvider: true,
   renameProvider: { prepareProvider: true },
   documentSymbolProvider: true,
   foldingRangeProvider: true,
@@ -125,6 +126,7 @@ const REQUESTS = {
   'textDocument/completion': completion,
   'textDocument/definition': definition,
   'textDocument/references': references,
+  'textDocument/documentHighlight': documentHighlight,
   'textDocument/prepareRename': prepareRename,
   'textDocument/rename': rename,
   'textDocument/hover': hover,
@@ -141,11 +143,11 @@ function exit() {
 
 // ---------------------------------------------------------------- documents
 
-const docs = new Map(); // uri -> {uri, version, text, timer, a, wasNote}
+const docs = new Map(); // uri -> {uri, version, text, timer, index, wasNote}
 
 function didOpen({ textDocument: d }) {
   if (!d || typeof d.uri !== 'string') return;
-  const doc = { uri: d.uri, version: d.version, text: String(d.text ?? ''), timer: null, a: null, wasNote: false };
+  const doc = { uri: d.uri, version: d.version, text: String(d.text ?? ''), timer: null, index: null, wasNote: false };
   docs.set(d.uri, doc);
   analyse(doc);
 }
@@ -169,13 +171,14 @@ function didClose({ textDocument: d }) {
   notify('textDocument/publishDiagnostics', { uri: doc.uri, diagnostics: [] });
 }
 
-// The analysis a request reads: a pending change is analysed first, so the
-// debounce spaces out publishing but never serves stale text.
+// The document a request names, analysed: a pending change is analysed
+// first, so the debounce spaces out publishing but never serves stale text.
+// Its `index` is cli/language.js's, or null for a file that is not a note.
 function current(params) {
   const doc = docs.get(params.textDocument && params.textDocument.uri);
   if (!doc) throw fail(-32602, 'unknown document: it was never opened');
   if (doc.timer) analyse(doc);
-  return doc.a;
+  return doc;
 }
 
 // Parses and transforms, then publishes the diagnostics and the outline. A
@@ -190,10 +193,10 @@ function analyse(doc) {
     return log(`analysing ${doc.uri}: ${(e && e.stack) || e}`);
   }
   notify('textDocument/publishDiagnostics', { uri: doc.uri, version: doc.version, diagnostics: a ? a.diagnostics.map(diagnostic) : [] });
-  if (a || doc.wasNote) guard(() => notify('tern/outline', { uri: doc.uri, version: doc.version, ...outline(a) }));
+  if (a || doc.wasNote) guard(() => notify('tern/outline', { uri: doc.uri, version: doc.version, ...language.outline(a) }));
   doc.wasNote = !!a;
-  doc.a = null;
-  guard(() => (doc.a = a && index(a, doc.uri)));
+  doc.index = null;
+  guard(() => (doc.index = language.index(a)));
 }
 
 // The note's path, for its head scripts and add-ons; null for an untitled or remote document.
@@ -250,361 +253,62 @@ function diagnostic(d) {
   return out;
 }
 
-// tern.outline with every `line` and `endLine` a file line, 1-based like the
-// outline's own.
-function outline(a) {
-  const o = tern.outline(a ? a.ast : { type: 'root', children: [] });
-  for (const k in o) for (const e of o[k]) (e.line += a.line), e.endLine && (e.endLine += a.line);
-  return o;
-}
-
-// ---------------------------------------------------------------- the index
-
-// What the features read from one analysis, in the engine's note offsets:
-// the registry, the element holding each id and where it is written, and
-// every occurrence of an id or a name: its extent [s, e] and the characters
-// [from, to) a rename replaces.
-function index(a, uri) {
-  const src = a.note.replace(/^\uFEFF/, ''); // as the parser normalises it
-  const starts = [0];
-  for (let i = src.indexOf('\n'); i >= 0; i = src.indexOf('\n', i + 1)) starts.push(i + 1);
-  const ids = (a.ast.data.tern && a.ast.data.tern.ids) || {};
-  const holders = new Map();
-  const occ = [];
-  const ends = new Map(); // an end offset -> the innermost container ending there
-  tern.visit(a.ast, (n) => {
-    if (!n.position) return false; // copied text: reference text, toc entries
-    const t = tn(n);
-    const s = n.position.start.offset;
-    const e = n.position.end.offset;
-    if (n.type === 'ref') occ.push({ kind: 'ref', id: n.id, s, e, from: s + 1, to: s + 1 + n.id.length });
-    else if (n.type === 'link') {
-      const f = fragment(src, n);
-      if (f) occ.push({ kind: 'link', s, e, ...f });
-    } else if (n.type === 'footnoteReference' && t.target) occ.push({ kind: 'footnote', id: t.target, s, e, from: s + 2, to: s + 2 + n.label.length });
-    if (LEVEL[n.type] && !t.implicit) {
-      const np = n.type === 'textDirective' ? { s: s + 1, e: s + 1 + n.name.length } : t.namePosition && { s: t.namePosition.start.offset, e: t.namePosition.end.offset };
-      if (np) occ.push({ kind: 'name', node: n, ...np, from: np.s, to: np.e });
-      if (n.type === 'containerDirective') ends.set(e, n);
-    }
-    // The holder of an id is the element the registry records it at.
-    const id = n.attributes && n.attributes.id !== undefined ? String(n.attributes.id) : n.type.startsWith('footnote') ? t.id : undefined;
-    const r = id !== undefined && Object.prototype.hasOwnProperty.call(ids, id) ? ids[id] : null;
-    if (r) {
-      const w = ((r.explicit && t.idPosition) || n.position).start;
-      if (!holders.has(id) || (w.line === r.line && w.column === r.column)) holders.set(id, n);
-    }
-  });
-  // A named closer is read back from the source at its container's end: the
-  // AST records neither its position nor whether the container was closed.
-  const unclosed = new Set(a.diagnostics.filter((d) => d.code === 'block.unclosed' && d.position).map((d) => d.position.start.offset));
-  for (const [end, n] of ends) {
-    const k = end - n.name.length;
-    if (!unclosed.has(n.position.start.offset) && src.slice(k - 4, end) === `:::/${n.name}`) occ.push({ kind: 'closer', node: n, s: k, e: end, from: k, to: end });
-  }
-  // Declarations: the `#id` or `id=` item; a footnote's `[^label]:`; a slug's
-  // heading. A heading is also a hit area for its own id.
-  const decls = new Map();
-  for (const [id, n] of holders) {
-    const t = tn(n);
-    const s = n.position.start.offset;
-    let d = { id, node: n, s, e: n.position.end.offset, generated: !ids[id].explicit };
-    if (ids[id].explicit && t.idPosition) {
-      const p = t.idPosition;
-      const q = /["']/.test(src[p.start.offset + 3]) && src[p.start.offset] !== '#';
-      const from = p.start.offset + (src[p.start.offset] === '#' ? 1 : q ? 4 : 3);
-      d = { ...d, s: p.start.offset, e: p.end.offset, from, to: p.end.offset - (q ? 1 : 0) };
-    } else if (n.type === 'footnoteDefinition') d = { ...d, e: s + n.label.length + 4, from: s + 2, to: s + 2 + n.label.length };
-    else if (n.type === 'heading') d.slug = true;
-    decls.set(id, d);
-    if (d.from !== undefined) occ.push({ kind: 'decl', id, s: d.s, e: d.e, from: d.from, to: d.to });
-    if (n.type === 'heading') occ.push({ kind: 'decl', id, s, e: n.position.end.offset, from: s, to: n.position.end.offset });
-  }
-  return { uri, line: a.line, src, starts, schema: a.schema, ast: a.ast, ids, holders, decls, occ };
-}
-
-// The `#id` of a fragment link as written: after the `](` that ends its text,
-// whitespace and an optional `<`. The AST records no destination position.
-function fragment(src, n) {
-  if (typeof n.url !== 'string' || n.url.length < 2 || n.url[0] !== '#') return null;
-  const last = n.children && n.children[n.children.length - 1];
-  let k = last && last.position ? last.position.end.offset : n.position.start.offset + 1;
-  if (src.slice(k, k + 2) !== '](') return null;
-  for (k += 2; /\s/.test(src[k] || ''); ) k++;
-  if (src[k] === '<') k++;
-  if (src[k] !== '#') return null;
-  let e = ++k;
-  while (e < n.position.end.offset && !/[\s)>]/.test(src[e])) e++;
-  let id = n.url.slice(1);
-  try {
-    id = decodeURIComponent(id);
-  } catch {
-    // not UTF-8 percent-encoding: compared as written, as the refs transform does
-  }
-  return { id, from: k, to: e };
-}
-
-// Offsets and LSP positions: line l of the note is file line l + a.line.
-function point(a, off) {
-  const s = a.starts;
-  let lo = 0;
-  let hi = s.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (s[mid] <= off) lo = mid;
-    else hi = mid - 1;
-  }
-  return { line: lo + a.line, character: off - s[lo] };
-}
-const range = (a, s, e) => ({ start: point(a, s), end: point(a, e) });
-const location = (a, s, e) => ({ uri: a.uri, range: range(a, s, e) });
-function offset(a, p) {
-  const l = p && p.line - a.line;
-  if (!(l >= 0 && l < a.starts.length)) return -1;
-  const end = l + 1 < a.starts.length ? a.starts[l + 1] - 1 : a.src.length;
-  return Math.min(a.starts[l] + Math.max(0, p.character | 0), end);
-}
-
-// The innermost occurrence at a position, its end included.
-function hit(a, p) {
-  const off = a ? offset(a, p) : -1;
-  let best = null;
-  for (const o of off < 0 ? [] : a.occ) if (o.s <= off && off <= o.e && (!best || o.e - o.s < best.e - best.s)) best = o;
-  return best;
-}
-const at = (params) => {
-  const a = current(params);
-  return { a, h: hit(a, params.position) };
-};
-
 // ---------------------------------------------------------------- features
 
-// The plain text of inline content, as a title or a label shows it.
-function plain(nodes) {
-  let s = '';
-  for (const n of nodes || []) {
-    if (n.type === 'image') s += n.alt || '';
-    else if (n.type === 'break') s += ' ';
-    else if (n.type === 'ref' && !n.children) s += `@${n.id}`;
-    else if (typeof n.value === 'string' && n.type !== 'html') s += n.value;
-    else if (n.type !== 'footnoteReference') s += plain(n.children);
-  }
-  return s;
-}
-const clip = (s) => ((s = s.replace(/\s+/g, ' ').trim()).length > 80 ? `${s.slice(0, 79)}…` : s);
-
-// What a reference shows of its target: the label and the
-// title, "Theorem 2 — Rank–nullity"; a heading's text; an equation's number.
-function describe(n) {
-  const t = tn(n);
-  const kids = n.children || [];
-  let title = '';
-  if (n.type === 'containerDirective') title = kids[0] && kids[0].data && kids[0].data.directiveLabel ? plain(kids[0].children) : '';
-  else if (n.type === 'code') title = t.title ? plain(t.title) : '';
-  else if (n.type === 'footnoteDefinition') title = plain(kids[0] && kids[0].children);
-  else if (n.type !== 'paragraph' && n.type !== 'table') title = plain(kids);
-  const label = n.type === 'footnoteDefinition' && t.number ? `Footnote ${t.number}` : t.text;
-  return [label, clip(title)].filter(Boolean).join(' — ');
-}
-const md = (s) => s.replace(/[\\`*_[\]<>#|]/g, '\\$&');
+// Each request asks cli/language.js and gives its answer the protocol's
+// shape: a location carries the document's uri, kinds are numbers.
+const at = (params) => [current(params).index, params.position];
 
 function definition(params) {
-  const { a, h } = at(params);
-  if (!h) return null;
-  const d = h.kind === 'closer' ? a.occ.find((o) => o.kind === 'name' && o.node === h.node) : h.id !== undefined && a.decls.get(h.id);
-  return d ? location(a, d.s, d.e) : null;
+  const doc = current(params);
+  const range = language.definition(doc.index, params.position);
+  return range && { uri: doc.uri, range };
 }
 
 function references(params) {
-  const { a, h } = at(params);
-  if (!h || h.id === undefined) return null;
-  const out = a.occ.filter((o) => USES.has(o.kind) && o.id === h.id).map((o) => location(a, o.s, o.e));
-  const d = a.decls.get(h.id);
-  if (d && params.context && params.context.includeDeclaration) out.unshift(location(a, d.s, d.e));
-  return out;
+  const doc = current(params);
+  const ranges = language.references(doc.index, params.position, { includeDeclaration: !!(params.context && params.context.includeDeclaration) });
+  return ranges && ranges.map((range) => ({ uri: doc.uri, range }));
+}
+
+function documentHighlight(params) {
+  const list = language.highlights(...at(params));
+  return list && list.map((h) => ({ range: h.range, kind: HIGHLIGHT[h.kind] }));
 }
 
 function hover(params) {
-  const { a, h } = at(params);
-  if (!h) return null;
-  let value;
-  if (h.node) {
-    const n = h.node;
-    const t = tn(n);
-    const level = LEVEL[n.type];
-    const how = Object.prototype.hasOwnProperty.call(a.schema[level] || {}, n.name) ? 'declared in the schema' : ALLOW[level].has(n.name) ? 'an HTML element' : 'no schema entry';
-    const written = `${n.type === 'textDirective' ? ':' : ':'.repeat(t.colons || 2)}${n.name}`;
-    value = t.tag ? `\`${written}\` → \`<${t.tag}>\`, ${how}${t.text ? ` · ${md(t.text)}` : ''}` : `\`${written}\`, a core block`;
-  } else {
-    const n = a.holders.get(h.id);
-    if (!n) value = `\`@${h.id}\` names no id in this note`;
-    else value = `**${md(describe(n) || h.id)}**\n\n${md(a.ids[h.id].kind)} · \`#${h.id}\` · line ${n.position.start.line + a.line}`;
-  }
-  return { contents: { kind: 'markdown', value }, range: range(a, h.s, h.e) };
-}
-
-// Rename: an id with its declaration and every reference, or one
-// element's name with its named closer. Generated ids have nothing to edit.
-function target(params) {
-  const { a, h } = at(params);
-  if (!h) return null;
-  if (h.node) return { a, h, name: h.node.name, occ: a.occ.filter((o) => o.node === h.node) };
-  const d = a.decls.get(h.id);
-  if (d && d.generated && !d.slug) throw fail(-32803, `"${h.id}" is generated from a footnote label; it cannot be renamed`);
-  return { a, h, id: h.id, d };
+  const h = language.hover(...at(params));
+  return h && { contents: { kind: 'markdown', value: h.markdown }, range: h.range };
 }
 
 function prepareRename(params) {
-  const t = target(params);
-  return t && { range: range(t.a, t.h.from, t.h.to), placeholder: t.name || t.id };
+  return language.prepareRename(...at(params));
 }
 
 function rename(params) {
-  const t = target(params);
-  if (!t) return null;
-  const { a } = t;
-  const to = params.newName;
-  if (typeof to !== 'string') throw fail(-32602, 'rename needs a newName');
-  const edit = (from, end, newText = to) => ({ range: range(a, from, end), newText });
-  if (t.name) {
-    if (!NAME.test(to)) throw fail(-32602, `"${to}" is not an element name: a letter, then letters, digits, _ or -`);
-    return { changes: { [a.uri]: t.occ.map((o) => edit(o.from, o.to)) } };
-  }
-  if (!IDENT.test(to) || to.endsWith('-')) throw fail(-32602, `"${to}" is not an id @ can reach: a letter or _, then letters, digits, _ or -, not ending in -`);
-  if (to !== t.id && Object.prototype.hasOwnProperty.call(a.ids, to)) throw fail(-32602, `the id "${to}" is already used in this note`);
-  const edits = [];
-  const d = t.d;
-  if (d && d.slug) {
-    const own = Object.keys(d.node.attributes || {}).filter((k) => k !== 'id');
-    if (own.length || tn(d.node).idPosition) throw fail(-32803, `the heading's id is its slug; write {#${t.id}} in its attribute group first`);
-    edits.push(edit(d.e, d.e, ` {#${to}}`));
-  } else if (d) edits.push(edit(d.from, d.to));
-  for (const o of a.occ) if ((o.kind === 'ref' || o.kind === 'link') && o.id === t.id) edits.push(edit(o.from, o.to));
-  return { changes: { [a.uri]: edits } };
+  const doc = current(params);
+  const edits = language.rename(doc.index, params.position, params.newName);
+  return edits && { changes: { [doc.uri]: edits } };
 }
 
-// Completion: element names after `:::`, `::` and `:`, the open
-// containers' named closers, and ids after `@` or `](#`. Never inside code,
-// math, raw HTML or a raw body, which the AST tells.
 function completion(params) {
-  const a = current(params);
-  const off = a ? offset(a, params.position) : -1;
-  if (off < 0 || opaque(a, off)) return [];
-  const bol = a.starts[params.position.line - a.line];
-  const before = a.src.slice(bol, off);
-  const items = [];
-  const add = (from, kind, sort) => (label, detail) =>
-    items.push({ label, kind, detail, sortText: `${sort}${label}`, filterText: label, textEdit: { range: range(a, from, off), newText: label } });
-  let m;
-  if ((m = /^[\s>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?(:{2,})(\/?)([\p{L}\p{M}\p{N}_-]*)$/u.exec(before))) {
-    const from = off - m[2].length - m[3].length;
-    if (m[1].length >= 3) {
-      const close = add(from, 14, '0');
-      for (const n of open(a, bol)) close(`/${n.name}`, `closes :::${n.name} (line ${n.position.start.line + a.line})`);
-      if (!m[2]) names(a, 'block', from, add);
-    } else if (!m[2]) names(a, 'leaf', from, add);
-  } else if ((m = /(?:^|[^A-Za-z0-9_:/]):([\p{L}\p{M}\p{N}_-]*)$/u.exec(before))) names(a, 'inline', off - m[1].length, add);
-  else if ((m = /(?:^|[^A-Za-z0-9_./@-])@([\p{L}\p{M}\p{N}_-]*)$/u.exec(before) || /\]\(#([^\s()<>]*)$/u.exec(before))) {
-    const id = add(off - m[1].length, 18, '');
-    for (const k in a.ids) {
-      const n = a.holders.get(k);
-      if (a.ids[k].kind !== 'footnoteReference' && IDENT.test(k)) id(k, (n && describe(n)) || a.ids[k].kind);
-    }
-  }
-  return items;
+  return language.completion(...at(params)).map((i) => ({
+    label: i.label,
+    kind: COMPLETION[i.kind],
+    detail: i.detail,
+    sortText: i.sortText,
+    filterText: i.filterText,
+    textEdit: { range: i.range, newText: i.newText },
+  }));
 }
 
-// The names of a level: the schema (head and add-ons), the core blocks, the allowlist.
-function names(a, level, from, add) {
-  const seen = new Set();
-  const put = (fn) => (name, detail) => seen.has(name) || (seen.add(name), fn(name, detail));
-  const schema = a.schema[level] || {};
-  const own = put(add(from, 7, '1'));
-  for (const k of Object.keys(schema)) own(k, `schema${schema[k] && schema[k].tag ? ` → <${schema[k].tag}>` : ''}`);
-  if (level === 'block') for (const k of ['meta', 'macros']) put(add(from, 14, '2'))(k, 'core');
-  for (const k of ALLOW[level]) put(add(from, 10, '3'))(k, `<${k}>`);
-}
-
-// The containers open at a line, innermost first.
-function open(a, bol) {
-  const out = [];
-  tern.visit(a.ast, (n) => {
-    if (!n.position || n.position.start.offset >= bol || n.position.end.offset < bol) return n.type === 'root' ? undefined : false;
-    if (n.type === 'containerDirective' && !tn(n).implicit) out.unshift(n);
-  });
-  return out;
-}
-
-// Whether an offset is inside code, math, raw HTML or a raw body.
-function opaque(a, off) {
-  const line = point(a, off).line - a.line + 1;
-  let inside = false;
-  tern.visit(a.ast, (n) => {
-    if (inside || !n.position) return false;
-    const { start, end } = n.position;
-    const holds = start.offset < off && (off < end.offset || (off === end.offset && off === a.src.length)); // an open block runs to the end
-    if (n.type !== 'root' && !holds) return false;
-    if (OPAQUE.has(n.type) || (typeof n.value === 'string' && LEVEL[n.type] && start.line < line && line < end.line)) inside = true;
-  });
-  return inside;
-}
-
-// Headings nest by depth, each spanning its section; named containers and
-// leaves sit where they are written, a container holding what it contains.
 function documentSymbol(params) {
-  const a = current(params);
-  return a ? symbols(a, a.ast.children, []) : [];
+  const symbol = (s) => ({ ...s, kind: SYMBOL[s.kind], children: s.children.map(symbol) });
+  return language.symbols(current(params).index).map(symbol);
 }
 
-function symbols(a, list, out) {
-  const open = []; // [depth, symbol] for each heading whose section is open
-  let last = 0;
-  const close = (depth) => {
-    while (open.length && open[open.length - 1][0] >= depth) open.pop()[1].range.end = point(a, last);
-  };
-  for (const n of list) {
-    if (!n.position) continue;
-    if (n.type === 'heading') close(n.depth);
-    const into = open.length ? open[open.length - 1][1].children : out;
-    const s = n.position.start.offset;
-    const e = n.position.end.offset;
-    const id = n.attributes && n.attributes.id !== undefined ? ` #${n.attributes.id}` : '';
-    const symbol = (name, detail, kind) => {
-      const r = range(a, s, e);
-      const sym = { name: name || '(untitled)', detail, kind, range: r, selectionRange: { ...r }, children: [] };
-      return into.push(sym), sym;
-    };
-    if (n.type === 'heading') open.push([n.depth, symbol(clip(plain(n.children)), `${'#'.repeat(n.depth)}${id}`, KIND.heading)]);
-    else if (n.type === 'containerDirective' || n.type === 'leafDirective') {
-      const container = n.type === 'containerDirective';
-      const sym = symbol(describe(n) || n.name, `${':'.repeat(tn(n).colons || (container ? 3 : 2))}${n.name}${id}`, container ? KIND.container : KIND.leaf);
-      if (container && Array.isArray(n.children)) symbols(a, n.children, sym.children);
-    } else if (NESTS.has(n.type) && n.children) symbols(a, n.children, into);
-    last = e;
-  }
-  close(0);
-  return out;
-}
-
-// Containers, fences, raw HTML blocks, display math, tables, lists, footnote
-// definitions, and heading sections.
 function foldingRange(params) {
-  const a = current(params);
-  if (!a) return [];
-  const out = [];
-  const fold = (r) => r.end.line > r.start.line && out.push({ startLine: r.start.line, endLine: r.end.line });
-  tern.visit(a.ast, (n) => {
-    if (!n.position) return false;
-    if (FOLDS.has(n.type) || (n.type === 'html' && tn(n).kind !== 'inline')) fold(range(a, n.position.start.offset, n.position.end.offset));
-  });
-  const sections = (list) => {
-    for (const s of list) {
-      if (s.kind === KIND.heading) fold(s.range);
-      sections(s.children);
-    }
-  };
-  sections(symbols(a, a.ast.children, []));
-  return out;
+  return language.folds(current(params).index);
 }
 
 // ---------------------------------------------------------------- main
