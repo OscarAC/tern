@@ -31,7 +31,7 @@ This page is the reference for both, for the order in which the runtime does thi
 | [`tern.block`, `tern.leaf`, `tern.inline`](#registry) | engine | declare a name | works |
 | [`tern.transforms`](#tern-transforms) | engine | the transform order | works |
 | [`tern.css`](#tern-css) | engine | the base stylesheet, as a string | works |
-| [`tern.version`](#tern-version) | engine | `'0.2.0-dev'` | works |
+| [`tern.version`](#tern-version) | engine | `'0.1.1'` | works |
 | [`tern.define`, `tern.undefine`](#define) | runtime | DOM behaviours | registers; nothing runs |
 | [`tern.on(event, fn)`](#on) | runtime | `render`, `math`, `ready`, `diagnostic` | registers; nothing fires |
 | [`tern.render(root, source)`](#render) | runtime | renders into an element | resolves to `[]` |
@@ -67,7 +67,7 @@ A second tern.js on the same page leaves the first in charge. It warns, `tern: t
 ```js
 const tern = require('./tern.js');
 
-tern.version;                    // → '0.2.0-dev'
+tern.version;                    // → '0.1.1'
 tern.toHTML('Hello *world*.');   // → '<p>Hello <em>world</em>.</p>\n'
 ```
 
@@ -580,7 +580,7 @@ tern.css.slice(0, 26);   // → ':root {\n  color-scheme: li'
 
 #### `tern.version` {#tern-version}
 
-The version of this tern.js, as a string: `'0.2.0-dev'`. A script can check it to tell whether `window.tern` is Tern's object, as tern.js itself does before taking over.
+The version of this tern.js, as a string: `'0.1.1'`. A script can check it to tell whether `window.tern` is Tern's object, as tern.js itself does before taking over.
 
 ## The runtime {#runtime}
 
