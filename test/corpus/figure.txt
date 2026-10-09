@@ -1,0 +1,382 @@
+# Figures
+
+Figures: the explicit `:::figure`, the implicit figure (an
+image alone in a paragraph carrying `#id`, or with `#id` on the attribute
+line before it), the alt rule and the lone image without `<p>`. Both
+the no-`<p>` rule and "not inside a figure" go by the tag,
+and "inside" means any ancestor. The fixture schema's `figure` is `{tag: 'figure',
+counter: 'figure', label: 'Figure'}`.
+
+## figure/explicit-body-caption-last
+
+spec: elements#figures elements#title-slots
+
+An explicit figure takes any body; its caption is the last child, with the counted label first.
+
+````tern
+:::figure[Two ospreys]{#fig-pair}
+Ospreys at dawn.
+:::
+````
+
+````html
+<figure id="fig-pair" class="t-block figure" data-t="figure"><p>Ospreys at dawn.</p><figcaption class="t-title"><span class="t-label">Figure 1</span> Two ospreys</figcaption></figure>
+````
+
+## figure/explicit-lone-image-no-p
+
+spec: elements#figures
+
+A figure whose body is a single image-only paragraph emits the `<img>` without a `<p>`; the image's alt is its own bracket text.
+
+````tern
+:::figure[An osprey]{#fig-o}
+![Osprey](osprey.jpg)
+:::
+````
+
+````html
+<figure id="fig-o" class="t-block figure" data-t="figure"><img src="osprey.jpg" alt="Osprey"><figcaption class="t-title"><span class="t-label">Figure 1</span> An osprey</figcaption></figure>
+````
+
+## figure/explicit-two-images-keep-p
+
+spec: elements#figures
+
+Only a single image-only paragraph loses its `<p>`; a body of two image paragraphs keeps both.
+
+````tern
+:::figure[Before and after]
+![Before](a.jpg)
+
+![After](b.jpg)
+:::
+````
+
+````html
+<figure class="t-block figure" data-t="figure"><p><img src="a.jpg" alt="Before"></p><p><img src="b.jpg" alt="After"></p><figcaption class="t-title"><span class="t-label">Figure 1</span> Before and after</figcaption></figure>
+````
+
+## figure/explicit-not-doubled
+
+spec: elements#figures
+
+An image with `#id` inside an explicit figure is not an implicit figure: one figure, one number, and the image keeps its id and alt.
+
+````tern
+:::figure[Two ospreys]{#fig-pair}
+![Osprey](osprey.jpg){#img-osprey}
+:::
+````
+
+````html
+<figure id="fig-pair" class="t-block figure" data-t="figure"><img id="img-osprey" src="osprey.jpg" alt="Osprey"><figcaption class="t-title"><span class="t-label">Figure 1</span> Two ospreys</figcaption></figure>
+````
+
+## figure/explicit-without-title
+
+spec: elements#figures elements#title-slots
+
+A figure without a written title still gets a caption holding its label.
+
+````tern
+:::figure{#fig-x}
+![A chart](chart.png)
+:::
+````
+
+````html
+<figure id="fig-x" class="t-block figure" data-t="figure"><img src="chart.png" alt="A chart"><figcaption class="t-title"><span class="t-label">Figure 1</span></figcaption></figure>
+````
+
+## figure/implicit-example
+
+spec: elements#figures
+
+The implicit-figure example: the bracket text is the caption, `#id` goes to the figure, `alt=` and the other attributes stay on `<img>`.
+
+````tern
+![Osprey, 06:40.](osprey.jpg){#fig-osprey width=70% alt="An osprey in flight"}
+````
+
+````html
+<figure id="fig-osprey" class="t-block figure" data-t="figure"><img src="osprey.jpg" alt="An osprey in flight" width="70%"><figcaption class="t-title"><span class="t-label">Figure 1</span> Osprey, 06:40.</figcaption></figure>
+````
+
+## figure/implicit-alt-empty
+
+spec: elements#figures
+
+Without `alt=`, an implicit figure's image has an empty alt, so the caption is read once.
+
+````tern
+![Osprey, 06:40.](osprey.jpg){#fig-osprey}
+````
+
+````html
+<figure id="fig-osprey" class="t-block figure" data-t="figure"><img src="osprey.jpg" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span> Osprey, 06:40.</figcaption></figure>
+````
+
+## figure/implicit-needs-id
+
+spec: elements#figures syntax-inline#links
+
+An image without an id is always just an image in its paragraph, with or without other attributes.
+
+````tern
+![Osprey](osprey.jpg)
+
+![Osprey](osprey.jpg){.wide}
+````
+
+````html
+<p><img src="osprey.jpg" alt="Osprey"></p>
+<p><img class="wide" src="osprey.jpg" alt="Osprey"></p>
+````
+
+## figure/implicit-caption-inline
+
+spec: elements#figures
+
+The caption is the bracket text as inline content, markup and math included.
+
+````tern
+![The *kernel* of $T$](kernel.svg){#fig-ker}
+````
+
+````html
+<figure id="fig-ker" class="t-block figure" data-t="figure"><img src="kernel.svg" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span> The <em>kernel</em> of <span class="t-math">T</span></figcaption></figure>
+````
+
+## figure/implicit-image-attrs-stay
+
+spec: elements#figures
+
+Only the `#id` moves to the figure; the image's classes and other attributes stay on `<img>`.
+
+````tern
+![Osprey](osprey.jpg){#fig-o .round width=50%}
+````
+
+````html
+<figure id="fig-o" class="t-block figure" data-t="figure"><img class="round" src="osprey.jpg" alt="" width="50%"><figcaption class="t-title"><span class="t-label">Figure 1</span> Osprey</figcaption></figure>
+````
+
+## figure/implicit-attribute-line
+
+spec: elements#figures syntax-blocks#attribute-line
+
+An attribute line before the paragraph goes to the figure, after `t-block figure`.
+
+````tern
+{.wide}
+![Osprey](osprey.jpg){#fig-o}
+````
+
+````html
+<figure id="fig-o" class="t-block figure wide" data-t="figure"><img src="osprey.jpg" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span> Osprey</figcaption></figure>
+````
+
+## figure/implicit-not-with-text
+
+spec: elements#figures
+
+A paragraph holding an image and text is not a figure, even when the image has an id.
+
+````tern
+![Osprey](osprey.jpg){#img-o} at dawn.
+````
+
+````html
+<p><img id="img-o" src="osprey.jpg" alt="Osprey"> at dawn.</p>
+````
+
+## figure/implicit-not-two-images
+
+spec: elements#figures
+
+A paragraph of two images is not a figure: the only content must be one image.
+
+````tern
+![A](a.jpg){#img-a} ![B](b.jpg){#img-b}
+````
+
+````html
+<p><img id="img-a" src="a.jpg" alt="A"> <img id="img-b" src="b.jpg" alt="B"></p>
+````
+
+## figure/implicit-not-inside-figure-tag
+
+spec: elements#figures elements#names
+
+The "not inside a figure" condition is about the tag: inside `:::gallery{tag=figure}` an image with `#id` stays an image.
+
+````tern
+:::gallery{tag=figure}
+![A](a.jpg){#img-a}
+
+![B](b.jpg)
+:::
+````
+
+````html
+<figure class="t-block gallery" data-t="gallery"><p><img id="img-a" src="a.jpg" alt="A"></p><p><img src="b.jpg" alt="B"></p></figure>
+````
+
+## figure/implicit-inside-other-container
+
+spec: elements#figures
+
+Inside an element whose tag is not `figure`, the implicit figure applies as usual.
+
+````tern
+:::box
+![Nest](nest.jpg){#fig-nest}
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><figure id="fig-nest" class="t-block figure" data-t="figure"><img src="nest.jpg" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span> Nest</figcaption></figure></div>
+````
+
+## figure/implicit-without-schema
+
+spec: elements#figures elements#allowlists
+options: schema=none
+
+The implicit figure is a core transform: without a schema it is still a `figure` (from the allowlist), with no label or number.
+
+````tern
+![Osprey](osprey.jpg){#fig-o}
+````
+
+````html
+<figure id="fig-o" class="t-block figure" data-t="figure"><img src="osprey.jpg" alt=""><figcaption class="t-title">Osprey</figcaption></figure>
+````
+
+## figure/implicit-empty-caption
+
+spec: elements#figures elements#title-slots
+
+Empty brackets give a caption holding only the label.
+
+````tern
+![](a.jpg){#fig-a}
+````
+
+````html
+<figure id="fig-a" class="t-block figure" data-t="figure"><img src="a.jpg" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span></figcaption></figure>
+````
+
+## figure/attribute-line-id-makes-figure
+
+spec: elements#figures syntax-blocks#attribute-line
+
+An attribute line with `#id` before an image-only paragraph makes the implicit figure, as if the image carried the id. The bracket text is the caption and the alt is empty.
+
+````tern
+{#fig-a}
+![A](a.jpg)
+````
+
+````html
+<figure id="fig-a" class="t-block figure" data-t="figure"><img src="a.jpg" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span> A</figcaption></figure>
+````
+
+## figure/attribute-line-class-only-no-figure
+
+spec: elements#figures syntax-blocks#attribute-line
+
+Without an id anywhere, an attribute line on an image-only paragraph does not make a figure; its attributes go to the `<p>`.
+
+````tern
+{.wide}
+![A](a.jpg)
+````
+
+````html
+<p class="wide"><img src="a.jpg" alt="A"></p>
+````
+
+## figure/no-p-by-tag
+
+spec: elements#figures elements#names
+
+The no-`<p>` rule follows the tag, not the name: a `:::gallery{tag=figure}` whose body is one image-only paragraph emits the bare `<img>`.
+
+````tern
+:::gallery{tag=figure}
+![A](a.jpg)
+:::
+````
+
+````html
+<figure class="t-block gallery" data-t="gallery"><img src="a.jpg" alt="A"></figure>
+````
+
+## figure/implicit-not-inside-figure-ancestor
+
+spec: elements#figures
+
+"Not inside a figure" means any ancestor: an image with `#id` in a box inside a figure stays an image, and the box keeps its `<p>` because its own tag is not `figure`.
+
+````tern
+:::figure[Pair]{#fig-p}
+:::box
+![A](a.jpg){#img-a}
+:::
+:::
+````
+
+````html
+<figure id="fig-p" class="t-block figure" data-t="figure"><div class="t-block box" data-t="box"><p><img id="img-a" src="a.jpg" alt="A"></p></div><figcaption class="t-title"><span class="t-label">Figure 1</span> Pair</figcaption></figure>
+````
+
+## figure/implicit-referenced
+
+spec: elements#figures elements#references
+
+An implicit figure is a counted block, so a reference to it reads "Figure 1".
+
+````tern
+![Osprey](osprey.jpg){#fig-o}
+
+See @fig-o.
+````
+
+````html
+<figure id="fig-o" class="t-block figure" data-t="figure"><img src="osprey.jpg" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span> Osprey</figcaption></figure>
+<p>See <a class="t-ref" href="#fig-o">Figure 1</a>.</p>
+````
+
+## figure/implicit-same-node
+
+spec: elements#figures elements#numbering
+
+The implicit figure becomes the same node as `:::figure[bracket text]{#id}`: a `figure` containerDirective holding the id and the number.
+
+````tern
+![Osprey](osprey.jpg){#fig-o}
+````
+
+````json transformed
+{"children":[{"type":"containerDirective","name":"figure","attributes":{"id":"fig-o"},
+  "data":{"tern":{"counter":"figure","number":1,"text":"Figure 1"}}}]}
+````
+
+## figure/end-mark-before-caption
+
+spec: elements#title-slots elements#output-contract
+
+A figure's caption is its last child, so an end mark from the schema goes just before it, after the body.
+In a figure the end mark comes just before the `figcaption`, which HTML allows only first or last.
+
+````tern
+:::proof[Sketch]{tag=figure}
+Body.
+:::
+````
+
+````html
+<figure class="t-block proof" data-t="proof"><p>Body.</p><span class="t-end" aria-hidden="true">∎</span><figcaption class="t-title"><span class="t-label">Proof</span> Sketch</figcaption></figure>
+````

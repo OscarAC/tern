@@ -1,0 +1,704 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Publishing · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
+
+:::meta
+description: How to publish Tern notes: the file and its first line, opening notes from disk, static hosts and GitHub Pages, pre-rendering with tern build, Content-Security-Policy, KaTeX and offline use, browsers, trust, performance, and what to do when a note does not render.
+:::
+
+::site-nav
+
+# Publishing {#top}
+
+::toc
+
+A note is a static file. To publish it, put it on any web server next to `tern.js`, or send it to someone: there is no build step, no server code and no database. This page covers what that file must contain, how it behaves from disk and from a host, how to tighten it with a Content-Security-Policy, how math is loaded, and what to do when a note does not render.
+
+Everything here was checked in Chromium and Firefox, which the test suite drives (see [Browsers](#browsers)). Messages quoted on this page are the real ones.
+
+## The file {#the-file}
+
+A note is one HTML file. Its first line loads `tern.js`; everything after that line is the note.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+```
+
+This is the canonical first line, and `tern new` writes it for you (see [tern new](tools.html#new)).
+
+| Part | Why it is there |
+|---|---|
+| `<!doctype html>` | Standards mode. Without it the note still renders, in quirks mode, with its math shown as TeX source and a `doc.quirks` error. See [The doctype](#doctype). |
+| `<meta charset="utf-8">` | The file is read as UTF-8 wherever it is served from. Without it, a server that does not name a charset makes browsers guess, and non-ASCII text comes out garbled. See [Garbled characters](#charset). |
+| `<script src="tern.js"></script>` | Loads the engine, which reads the rest of the file as the note and renders it in place. The `src` is a path relative to the note, or a URL. |
+
+**What the tag must be.** A plain, synchronous, classic script, on one line:
+
+- no `async`, `defer` or `type="module"`: `tern.js` must run while the browser is still reading the file, to capture the rest of it;
+- the file it names must be called exactly `tern.js` (any path, any query string). The browser would run a copy called `tern.min.js`, but the command line and editors would not take the file for a note;
+- the whole tag on one line, not inside a comment.
+
+The exact rule is [Note detection](tools.html#detection). Other attributes are allowed on the tag, and some configure `tern.js` (see [The tag's attributes](#tag-attributes)).
+
+### The doctype {#doctype}
+
+Without `<!doctype html>`, browsers render the page in **quirks mode**, which emulates old browsers' layout bugs. `tern.js` has a single way of rendering, in place, keeping the head. It cannot leave quirks mode without replacing the whole document, so it does not try. Instead:
+
+- the note still renders;
+- its math is shown as TeX source, because KaTeX refuses to run in quirks mode, and `tern.js` does not load it;
+- the [panel](#local) and the console report `doc.quirks`, an error, with the fix:
+
+```text
+error doc.quirks at the tern.js line (file line 1): the file has no <!doctype html>, so the browser renders it in quirks mode and math is shown as TeX source (make the first line <!doctype html><meta charset="utf-8"><script src="tern.js"></script>)
+```
+
+The fix is to put `<!doctype html>` first in the file. `tern build` adds it to the page it writes, with a warning (see [tern build](#build)).
+
+### The preserved head {#head}
+
+Everything before the `tern.js` tag is the **preserved head**: ordinary HTML that the browser reads before any script runs, and that `tern.js` keeps as it is. It is the place for what must be in the HTML itself, for crawlers, link previews and readers' browsers:
+
+```html
+<!doctype html><html lang="de" dir="ltr"><meta charset="utf-8"><title>Lineare Abbildungen</title><link rel="icon" href="icon.svg"><link rel="stylesheet" href="tern.css"><script src="tern.js"></script>
+```
+
+What belongs there:
+
+| Element | Use |
+|---|---|
+| `<html lang dir>` | The page's language and direction. `lang` also picks the language of generated labels. |
+| `<title>`, `<meta name="description">` … | What search engines and link previews show. A note's `:::meta` is written into the head only when `tern.js` runs, so a crawler that runs no scripts sees only what the head holds. |
+| `<link rel="icon">` | The tab icon. |
+| `<meta name="color-scheme">` | Your colour scheme; otherwise `tern.js` adds `light dark`. |
+| `<link rel="stylesheet" href="tern.css">` | Tern's base stylesheet as a file, instead of the copy `tern.js` inlines. Needed under a strict [CSP](#csp). |
+| `<style>`, `<link rel="stylesheet">` of your own | Your styles. Tern puts its own stylesheets before the first of yours, so yours win at equal specificity. |
+| `<script>window.TERN = {…}</script>` | The note's own vocabulary and configuration (see [window.TERN](schema.html#window-tern)). Head scripts run before `tern.js`. |
+
+What to keep out of it, or to know:
+
+- **Body content.** A `<p>` or other visible element before the tag starts the page's body, and `tern.js` replaces the body with the note when it mounts: the element disappears.
+- **The charset early.** Browsers look for `<meta charset>` only in the first 1024 bytes of the file. Keep it near the top, as the canonical line does, and before any long inline script.
+- **One line or several.** The head may span lines. The command line and editors count file lines exactly. The panel in the browser counts the line breaks the browser keeps, and the browser drops those right after `<!doctype html>`, `<html …>` and `<head>`: with each of those on its own line, the panel's "file line" reads too low by one per line. The canonical single line avoids it.
+- **Scripts and the tools.** `tern check`, `tern build` and the language server run the head's classic scripts to find the note's vocabulary, but not modules, not `async` or `defer` scripts, and not scripts from another origin (see [Vocabulary under Node](tools.html#vocabulary)).
+- **When the head and `:::meta` disagree**, the head wins, with a `meta.conflict` warning. The head is what non-script readers saw. An example, where the head is `<title>From the head</title>`:
+
+```tern {.live head="<title>From the head</title>" expect="meta.conflict"}
+:::meta
+title: From the note
+:::
+```
+
+See [Metadata](elements.html#metadata) for every key.
+
+### The tag's attributes {#tag-attributes}
+
+`tern.js` reads these attributes from its own tag. Each can also be set in `window.TERN`; the tag wins. The full list, with `tern.config`, is in the [JavaScript API](api.html#config).
+
+| Attribute | What it does |
+|---|---|
+| `data-use="a.js theme.css"` | Add-ons: scripts and stylesheets, separated by spaces, loaded in parallel and run in order before the note renders. A query string (`a.js?lang=de`) reaches the add-on as `tern.config.use.a.lang`. See [Add-ons](schema.html#addons). |
+| `data-css="URL"` | Tern's base stylesheet from this URL instead of the inline copy. |
+| `data-katex="URL"` or `data-katex="none"` | Where KaTeX is loaded from, or no math rendering at all. See [KaTeX](#katex). |
+| `data-nonce="VALUE"` | A CSP nonce for everything `tern.js` adds: stylesheets, scripts, links, and the note's own scripts. See [CSP](#csp). |
+| `data-lang="de"` | The language of generated labels, when it differs from `<html lang>`. |
+| `data-diagnostics` | Shows the diagnostics panel on any host, not only on your machine. `false`, `0`, `off` or `no` turn it off. |
+| `data-quiet` | Hides the panel everywhere. The console still reports. |
+
+`data-built` is written by `tern build`; do not write it yourself.
+
+### What follows the tag {#after-the-tag}
+
+Everything after the line holding the tag is the note, to the end of the file, including whatever a server or a tool appends to the file. A script tag added at the end becomes a raw HTML block of the note, and runs as a note script.
+
+## Opening locally {#local}
+
+Double-click the note, or drag it onto a browser window. It renders from disk, from a `file:` URL, with no server. This works in Chromium and Firefox, the two browsers the test suite runs.
+
+- **Relative paths work.** `tern.js`, add-ons, stylesheets and images found next to the note, or in folders below or above it, load from disk.
+- **Root-relative paths do not.** `/tern.js` means the root of your disk when the note is opened from a file. Use relative paths (`../tern.js`).
+- **Math needs the network**, because KaTeX comes from a CDN by default. Offline, formulas show as TeX with a `katex.unavailable` error. For a note that must work offline, see [Offline use](#offline).
+- **Garbled characters.** Opened from disk, both browsers read a note without `<meta charset>` as UTF-8 in our tests. From a server, they may not; keep the charset.
+
+**The diagnostics panel.** While you work, problems should be visible. When the note is opened from a `file:` URL, or from `localhost`, `127.0.0.1` or `[::1]`, `tern.js` adds a panel at the bottom of the page, after the note:
+
+```text
+tern: 2 problems (1 error, 1 warning)
+WARNING ref.dangling line 3:5 (file line 4) no id in this note has this name, so the reference stays text
+if it is not a reference, write \@rank
+ERROR block.unclosed line 5:1 (file line 6) `:::aside` opened on line 5 is still open at line 6
+add `:::` or `:::/aside`
+```
+
+- It lists every diagnostic, errors, warnings and infos, with its note line and its file line, and the hint.
+- It is open when there are errors, and folded otherwise.
+- It updates as problems appear later (a formula KaTeX rejects, an add-on that fails).
+- It is hidden when printing.
+- On any other host, readers do not see it. `data-diagnostics` on the tag shows it everywhere; `data-quiet` hides it everywhere.
+
+The browser console always gets the same list, as one collapsed group, `tern: N problems`, whose first line gives the timings.
+
+To see a note as it will be served, run any static file server in its folder, for example `python3 -m http.server`, and open `http://localhost:8000/note.html`. The panel shows there too.
+
+## Static hosts {#hosting}
+
+Any static host serves notes: a web server, object storage, a static-site service. Upload the notes, `tern.js`, and the add-ons and images they use, keeping the folder layout the relative paths expect.
+
+- **No configuration** is needed: no rewrites, no headers, no server code. `.html` files must be served as `text/html`, which every host does.
+- **One `tern.js`** for the whole site is the simplest: at the root, with each note pointing at it relatively (`tern.js`, `../tern.js`). `tern new` writes that path for you.
+- **Leave the HTML alone.** A host or CDN option that rewrites HTML, such as minification, changes the note, because the note is text inside the HTML file. Anything appended to the file becomes part of the note.
+- **Caching.** To make readers fetch a new `tern.js`, add a query string to the tag, `tern.js?v=2`: the tag is still recognised. The same works for add-ons in `data-use`.
+- **The panel** stays hidden for readers (see [Opening locally](#local)).
+- **Headers.** If your host lets you set a `Content-Security-Policy`, read [CSP](#csp) first.
+
+Before uploading, check every note:
+
+```sh
+tern check site/ --quiet
+```
+
+It exits 1 when a note has an error, so it can gate a deployment (see [tern check](tools.html#check)).
+
+## GitHub Pages {#github-pages}
+
+GitHub Pages serves a repository's files as a static site, either from a branch or from a workflow.
+
+**From a branch.** In the repository's settings, under Pages, publish a branch (and optionally its `/docs` folder):
+
+- Add an empty file called **`.nojekyll`** at the root of what is published. Without it, GitHub runs the Jekyll site generator over the files first, which skips files and folders whose names start with `_` or `.`. With it, every file is published as it is. This repository has one.
+- Put **`tern.js`** in the published folder, for example at its root, and reference it with **relative paths**.
+- **Project pages live under a sub-path.** A repository called `notes` is served at `https://USER.github.io/notes/`. A root-relative `/tern.js` there means `https://USER.github.io/tern.js`, which is not your file. Relative paths keep working at any depth, from disk and on the site.
+
+**From a workflow.** A GitHub Actions workflow can check the notes and publish a folder. GitHub then publishes exactly the folder you upload, without Jekyll:
+
+```yaml
+name: pages
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Optional: fail the deployment when a note has an error.
+      - run: node tools/tern/tern-cli.js check site/ --quiet
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+```
+
+Here `site/` holds the notes and `tern.js`, and `tools/tern/` is a copy of Tern's repository, for the check. Choose "GitHub Actions" as the Pages source in the repository's settings.
+
+## Pre-rendering with tern build {#build}
+
+A note renders in the reader's browser. `tern build` does the rendering ahead of time, and writes a page that already holds the HTML. The page still loads `tern.js`, which adds behaviours, math, the panel, and copy and print handling. How the command works is on [tern build](tools.html#build).
+
+```sh
+tern build notes/maps.html -o site/maps.html
+```
+
+**Pre-render when:**
+
+- **readers may have no JavaScript**, or `tern.js` may be blocked: the content and its styles show anyway (math stays as TeX unless you also use `--katex`);
+- **crawlers and link previews** that run no scripts should see the content, the title and the `:::meta` description, which the build writes into the head;
+- **long notes** should show their layout before any script runs.
+
+**Publish the note itself when:**
+
+- **its add-ons are remote** (`https://…` in `data-use`). They are not loaded under Node, so the build writes the names they declare without their schema: no labels, no numbers. The build warns about each one;
+- **the host sends a strict CSP** and the note has aligned table columns or `cols` grids, or you would pre-render math: those come as `style` attributes in a built page (see [Built pages and CSP](#csp-built));
+- you want one file that is both the source and the page.
+
+**What changes** between the note and the built page:
+
+| | The note | The built page |
+|---|---|---|
+| The content | written by `tern.js` when the page loads | in the HTML |
+| `:::meta` | written into the head by `tern.js` | in the HTML |
+| Without `tern.js` | the source, run together (or the [guard](tools.html#guarded)) | the content, styled |
+| The note's scripts | re-created by `tern.js`, with `document.write` and `DOMContentLoaded` intercepted and reported | real scripts, run while the page is parsed, not intercepted |
+| Add-ons | loaded by `tern.js` | static `<script>` and `<link>` tags |
+| Add-on transforms | run in the browser | ran at build time, under Node; not run again |
+| Math | typeset by `tern.js` | typeset by `tern.js`, or pre-rendered with `--katex` |
+| Diagnostics | computed in the browser | computed at build time and stored in the page, plus what `tern.js` finds on the page (a failed add-on, a formula KaTeX rejects) |
+| Recognised as a note by the tools | yes | no: `tern check` skips it and points to the source |
+
+Keep the note as the source, and rebuild the page when the note changes. The page keeps a copy of the note, but it is not meant to be edited.
+
+## Content-Security-Policy {#csp}
+
+A Content-Security-Policy (CSP) header tells the browser which scripts and styles a page may use. Tern works under a strict policy, one with no `'unsafe-inline'` for scripts or styles, if the page is set up for it.
+
+### A policy that works {#csp-policy}
+
+This policy, with a note that links `tern.css` in its head, renders with no violation from Tern itself, math included (tested in Chromium and Firefox):
+
+```text
+Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:
+```
+
+```html
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="tern.css"><script src="tern.js"></script>
+```
+
+- `script-src 'self'` allows `tern.js` and add-ons from your site; `https://cdn.jsdelivr.net` allows KaTeX's script, and must also be in `style-src` (its stylesheet) and `font-src` (its fonts). With a [local KaTeX copy](#offline), `'self'` is enough.
+- `tern.css` comes from the repository, next to `tern.js`. It is the same stylesheet `tern.js` would otherwise inline in a `<style>` element, which a strict `style-src` blocks.
+
+### Tern's own styles {#csp-cssom}
+
+A strict `style-src` blocks inline `<style>` elements and `style` attributes. `tern.js` keeps its own presentation clear of both:
+
+- **The base stylesheet.** Inline by default, as `<style id="tern-style">`. Under a strict policy, use one of three routes:
+  - **a link in the head** to `tern.css`, as above: `tern.js` sees it, treats it as its base, and inlines nothing;
+  - **`data-css="tern.css"`** on the tag: `tern.js` adds a `<link>` instead of the inline copy;
+  - **`data-nonce`**: the inline copy carries the nonce (below).
+- **Table column alignment and `cols` grids.** `tern.toHTML` writes them as `style` attributes, but in the browser `tern.js` sets them through the CSSOM (the `element.style` API), which no policy blocks. The page's HTML then reads exactly as `tern.toHTML`'s.
+- **Math.** `tern.js` typesets with `katex.render`, which also styles through the CSSOM.
+- **Long notes** are held with `content-visibility` set through the CSSOM too (see [Performance](#performance)).
+
+### What a strict policy still blocks {#csp-blocked}
+
+With the policy above, these remain, and they are yours:
+
+- **Your own `style` attributes**, whether written as `{style="…"}` or in raw HTML. They stay attributes, as in hand-written HTML, and the policy blocks them: one violation each, and the style is not applied. Use a class and a stylesheet instead.
+- **Inline scripts in the note**, such as a `<script>` block, are blocked unless the policy allows them, with a nonce or a hash. Scripts from your own origin (`<script src="app.js">`) are allowed by `'self'`.
+- **KaTeX's own MathML styles.** A few commands, such as `\fcolorbox` and `\pmb`, make KaTeX set a `style` attribute: one violation per formula using them.
+- **KaTeX for every note.** `tern.js` requests KaTeX as soon as it starts, before it knows whether the note has math. A policy that does not allow the CDN therefore logs violations for KaTeX's script and stylesheet on every note, even without math (no Tern diagnostic, since the note has no formula to show). Allow the CDN, use a [local copy](#offline), or put `data-katex="none"` on notes without math.
+
+### Nonces {#csp-nonce}
+
+A policy can allow inline styles and scripts that carry a nonce, a random value the server sends in the header and in the page. Give it to `tern.js` with `data-nonce`, and put it on the `tern.js` tag too if the policy requires nonces for scripts:
+
+```html
+<!doctype html><meta charset="utf-8"><script nonce="r4nd0m" src="tern.js" data-nonce="r4nd0m" data-use="box.js"></script>
+```
+
+```text
+Content-Security-Policy: default-src 'self'; script-src 'nonce-r4nd0m'; style-src 'nonce-r4nd0m'; font-src https://cdn.jsdelivr.net
+```
+
+With `data-nonce`, `tern.js` puts the nonce on everything it adds: the base `<style>`, add-on scripts and stylesheets, `tern.style` sheets, KaTeX's script and stylesheet, and every note script it re-creates. The page above renders under that policy with no violation, its add-on, its math and its inline note script included.
+
+:::warning
+A nonce protects only when it is new and unguessable for every response. A static file holds the same value every time, so a host that sends a fixed nonce gives no more protection than `'unsafe-inline'`. On a static host, prefer `'self'` and `tern.css`, as in [A policy that works](#csp-policy).
+:::
+
+### Built pages and CSP {#csp-built}
+
+A page written by `tern build` holds the HTML of `tern.toHTML`, which has `style` attributes for column alignment and `cols` grids: `tern.js` does not move them to the CSSOM on a built page. With `--katex`, the pre-rendered math adds many more. Under a strict policy, all of them are blocked, and the tables lose their alignment and the math its layout.
+
+The inline base `<style id="tern-style">` is blocked too, unless the note's head links `tern.css` (the build keeps that link as the base) or the tag has `data-nonce`.
+
+For a host with a strict policy, publish the note itself, or a built page whose head links `tern.css`, built without `--katex`, accepting that aligned columns and grids lose their styles.
+
+### Browsers report differently {#csp-reports}
+
+Chromium reports a blocked `style` attribute while it parses the HTML, Firefox when the element is inserted. Neither reports styles set through the CSSOM. The count of violations is the same in both.
+
+## KaTeX {#katex}
+
+Tern typesets math with [KaTeX](https://katex.org). `tern.js` loads it by itself; you only choose where from.
+
+**The default.** KaTeX **0.19.0** from jsDelivr, `https://cdn.jsdelivr.net/npm/katex@0.19.0/dist`, with `crossorigin="anonymous"` and Subresource Integrity hashes:
+
+| File | Integrity |
+|---|---|
+| `katex.min.js` | `sha384-QFFtAGzvvj+bfgCGxXJlNZZR1nXEZgvG8tDLCCY1F19xl20WlfTYgguB4VcNdxYk` |
+| `katex.min.css` | `sha384-3rdsX6e5mueWyoweR9NIVmtEsUkokpBT/0ALqKKIBMr9j4qhHkaIkAcGgsE6uVlp` |
+
+The browser refuses a file whose hash differs, so a changed file on the CDN cannot run in your page. The hashes were checked against the npm package.
+
+**When it loads.**
+
+- `tern.js` requests KaTeX's script and stylesheet as soon as it starts, at low priority, in parallel with the add-ons. So KaTeX is usually ready when the note mounts, and the first paint already shows typeset math.
+- It does so for every note, because the note has not been read yet. A note without math pays for the download; `data-katex="none"` avoids it.
+- When KaTeX cannot load, formulas stay as TeX and one `katex.unavailable` error is reported, only if the note has math.
+- In quirks mode (no doctype) nothing is loaded.
+
+**`data-katex`** on the tag changes the source:
+
+| Value | Effect |
+|---|---|
+| a URL, such as `data-katex="vendor/katex"` | loads `URL/katex.min.js` and `URL/katex.min.css`, with no integrity hash: you control those files. Relative URLs resolve from the note. |
+| `none` | no KaTeX: formulas are shown as TeX, with no error. |
+
+**A KaTeX already on the page.** If the head loads KaTeX itself, so that `window.katex` exists when `tern.js` starts, `tern.js` uses it and adds no KaTeX stylesheet: link its CSS yourself.
+
+```html
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="vendor/katex/katex.min.css"><script src="vendor/katex/katex.min.js"></script><script src="tern.js"></script>
+```
+
+**Options.** `window.TERN.katex` passes options to KaTeX: every KaTeX option except `displayMode` (Tern sets it per formula) and `throwOnError` (always on, so that Tern can report errors). `base` is the same as `data-katex`, and `window.TERN.katex` may also be just that string.
+
+```html
+<script>window.TERN = { katex: { base: 'vendor/katex', macros: { '\\RR': '\\mathbb{R}' }, strict: 'ignore' } }</script>
+<script src="tern.js"></script>
+```
+
+**Macros.** `macros` from `window.TERN.katex`, and every `:::macros` block of the note, go into one table that every formula shares. The `:::macros` blocks are read first, wherever they are in the note:
+
+```tern {.live}
+A vector in $\RR^n$.
+
+:::macros
+\newcommand{\RR}{\mathbb{R}}
+:::
+```
+
+See [raw-body containers](syntax-blocks.html#raw-body) for `:::macros`.
+
+**Failures.** A formula KaTeX rejects keeps its TeX, is marked as an error with KaTeX's message as its tooltip, and is reported as `math.error` at its position:
+
+```text
+error math.error at line 3:1 (file line 4): KaTeX cannot typeset this formula: KaTeX parse error: Undefined control sequence: \RR at position 1: … (the formula is shown as written; fix its TeX)
+```
+
+**Built pages.** `tern build --katex` pre-renders formulas at build time with the `katex` npm package, reading `:::macros` but not `window.TERN.katex` (see [--katex](tools.html#build-katex)).
+
+## Offline use {#offline}
+
+A note works without a network if everything it loads is local: `tern.js`, its add-ons, and KaTeX.
+
+1. Copy KaTeX 0.19.0's `dist/katex.min.js`, `dist/katex.min.css` and the `dist/fonts/` folder into your site, for example `vendor/katex/`. They are in the `dist/` folder of the `katex` npm package, which `npm pack katex@0.19.0` downloads as a tarball. The stylesheet loads the fonts from `fonts/` next to it, so keep that layout.
+2. Point the tag at it:
+
+   ```html
+   <!doctype html><meta charset="utf-8"><script src="tern.js" data-katex="vendor/katex"></script>
+   ```
+
+This renders math from disk, from a `file:` URL, with no network, in both browsers.
+
+A local base gets no integrity hash. To check that your copy is the pinned one, compare its hashes with the table in [KaTeX](#katex):
+
+```sh
+$ openssl dgst -sha384 -binary vendor/katex/katex.min.js | openssl base64 -A
+QFFtAGzvvj+bfgCGxXJlNZZR1nXEZgvG8tDLCCY1F19xl20WlfTYgguB4VcNdxYk
+```
+
+A note without math needs no KaTeX: `data-katex="none"` stops the request.
+
+## Browsers {#browsers}
+
+**What is tested.** The browser smoke suite (`npm run smoke`, `test/smoke.js`) drives **Chromium** and **Firefox** through Playwright, at the versions Playwright 1.61.1 installs (Chromium 149 and Firefox 151 when this page was written). It runs on every push. It covers, among others:
+
+- mounting in place, references, math, and note scripts run in order (inline, a large external script, a slow second origin);
+- UTF-8 without a charset header, a note without a doctype, a right-to-left note;
+- a missing add-on, KaTeX failing to load, `data-katex="none"`, a KaTeX error, unclosed math;
+- `:::meta` and the head, a second `tern.js`, a fragment target inside closed `<details>`;
+- a strict CSP with `tern.css`, and with `data-nonce`;
+- built pages (with `tern.js` blocked, with a missing add-on, with `--katex`) and the guard of `tern new --guarded`;
+- copying formulas, printing to PDF, the network waterfall on a slow connection, and long tasks on a 4,000-formula note (the last four in Chromium; copying also in Firefox).
+
+**Safari is not verified.** No test runs in Safari or WebKit, and nothing on these pages has been checked there.
+
+**Known differences** between the tested browsers:
+
+- Firefox logs a warning, "An unbalanced tree was written using document.write()", on every note. It comes from the way `tern.js` captures the note and is harmless.
+- Code-block line numbers use typed `attr()` in CSS, which only Chromium supports; `tern.js` sets the counter through the CSSOM so that both browsers number lines.
+- Under a CSP, Chromium reports blocked `style` attributes while parsing and Firefox when inserting (see [CSP](#csp-reports)).
+
+## Performance {#performance}
+
+The engine and the runtime have budgets, checked by the test suite:
+
+| Budget | How it is checked |
+|---|---|
+| Parse, transform and emit take at most 100 ms for a 10,000-line note. | `test/perf.js`, with the engine under Node |
+| At most three serial steps before the note shows: the HTML, then `tern.js`, the add-ons and KaTeX in parallel, then the mount. | a Slow-3G network waterfall, in Chromium |
+| No main-thread task over 50 ms caused by math, on a note with 4,000 formulas, and no white flash. | long-task measurement, in Chromium |
+
+**Reading the timings.** The console group's first line gives them for each note:
+
+```text
+tern 0.2.0-dev: 301 lines; parse, transform and emit 9 ms, mount 1 ms, then scripts, behaviours and math 92 ms (150 formulas)
+```
+
+**Math in time slices.** Typesetting is spread out so the page stays responsive:
+
+- Each slice typesets for 10 ms, at least one formula. The first runs in the mount itself, when KaTeX is ready, within a 40 ms budget for that task, so the first paint is typeset. Later slices run one per frame, and back to back while the tab is hidden.
+- Formulas inside a closed `<details>` wait until it opens.
+- Printing, and jumping to a fragment (`#id`), typeset what is still pending first.
+
+**Long notes.** Typesetting a formula costs the browser several times KaTeX's own time, in style, layout and paint. When more than 100 formulas wait, `tern.js` holds the note's top-level blocks with `content-visibility: auto`, so blocks out of view cost nothing. Each block is released, made plain again for good, before it comes into view: those near the viewport at once, the others when they come within one and a half screens, and all of them before printing, before a fragment jump, and when a copied selection reaches them. You never see a held block. On the 4,000-formula note, math takes about 1 to 1.3 seconds in Chromium, with no long task after the note shows.
+
+**What you can do:**
+
+- `data-katex="none"` on notes without math skips KaTeX's download and parse.
+- The note waits for every add-on to load or fail, with no timeout: host add-ons where they load fast.
+- Very long notes are fine; split them for readers, not for Tern.
+
+**A limit.** A full-page screenshot tool (Playwright's, or a browser's own) shows the held blocks of a long note as blank space, because they are not in view when it captures. Printing is not affected.
+
+## Trust {#trust}
+
+A note is a web page, and Tern does not sandbox it.
+
+- **A note runs its own scripts.** `<script>` blocks in the note are re-created and run in document order, with the page's full privileges, as are scripts in the head and add-ons in `data-use`. Opening someone's note is opening their web page.
+- **Raw HTML is the author's.** HTML written in the note reaches the page byte for byte: event-handler attributes, `<iframe>`s, forms. Links keep their destinations, including `javascript:` URLs.
+- **`safe: true` exists for untrusted input.** The engine's `safe` option escapes raw HTML (a raw block is shown in a `<pre>`, an inline tag as text), drops `on…` handlers, `srcdoc`, `formaction` and `style` attributes, and drops URLs that are not `http(s)`, `mailto` or relative. See [Raw HTML and safe mode](elements.html#safe) and [tern.toHTML](api.html#tohtml).
+- **The runtime never uses it.** The note on the page is always rendered without `safe`, and so is a source passed to [`tern.render(root, source)`](api.html#render). To show text you do not trust, such as comments posted by others, render it yourself and insert the result:
+
+  ```js
+  element.innerHTML = tern.toHTML(untrustedText, { safe: true });
+  ```
+- **KaTeX** comes from the CDN under an integrity hash (see [KaTeX](#katex)). Its `trust` option, which allows commands such as `\href` and `\includegraphics`, keeps KaTeX's default unless you set it in `window.TERN.katex`.
+- **Readers do not see diagnostics.** The panel shows only on your machine, unless the tag has `data-diagnostics`.
+
+## When it does not render {#troubleshooting}
+
+Find the symptom, then the section. The browser console always has more: a `tern:` group lists every problem, and `tern.js` warns there when it does not start.
+
+| What you see | Likely cause | Section |
+|---|---|---|
+| The source as one paragraph: `#`, `*` and `:::` visible, raw HTML rendered | `tern.js` did not load, or did not start | [tern.js not found](#not-found), [async, defer, module](#async-defer) |
+| The note renders, but math shows as TeX; `doc.quirks` | no doctype | [No doctype](#no-doctype) |
+| Math shows as TeX; `katex.unavailable` | KaTeX could not load | [KaTeX unavailable](#katex-unavailable) |
+| `Ã©` instead of `é`, `â€™` instead of `’` | no charset | [Garbled characters](#charset) |
+| Names render as plain boxes without labels; `addon.failed` | an add-on did not load, or threw | [An add-on fails](#addon-fails) |
+| Missing styles or scripts; "violates the following Content Security Policy directive" in the console | a CSP | [CSP violations](#csp-violations) |
+| A script's output is missing; `script.document-write` | `document.write` in a note script | [document.write](#document-write) |
+| A script's code never runs; `script.domcontentloaded` | a `DOMContentLoaded` listener | [DOMContentLoaded](#domcontentloaded) |
+| A code block lost trailing spaces | the editor strips whitespace | [Stripped whitespace](#whitespace) |
+| The whole note is one line after saving | an HTML formatter | [HTML formatters](#formatters) |
+| `block.opener-junk`, `leaf.demoted`, `attributes.orphan` after editing; a table cut short | automatic hard wrap | [Auto-wrap](#auto-wrap) |
+| Nothing new renders; "tern.js is already loaded" or "already has a main.tern" in the console | a second `tern.js`, or a page that already has its content | [Other console messages](#other-messages) |
+| 404s in Chromium's console for files the note only shows in code examples | Chromium's preload scanner | [Other console messages](#other-messages) |
+
+### No doctype {#no-doctype}
+
+**Symptom.** The note renders, but every formula is shown as TeX, and the panel and console report:
+
+```text
+error doc.quirks at the tern.js line (file line 1): the file has no <!doctype html>, so the browser renders it in quirks mode and math is shown as TeX source (make the first line <!doctype html><meta charset="utf-8"><script src="tern.js"></script>)
+```
+
+**Cause.** Without `<!doctype html>` the browser uses quirks mode, where KaTeX refuses to run (see [The doctype](#doctype)).
+
+**Fix.** Put `<!doctype html>` at the very start of the file. The hint gives the whole line, with your tag.
+
+### tern.js not found {#not-found}
+
+**Symptom.** The page shows the note's source as one run-together paragraph: `# Title A paragraph with *emphasis* and $x^2$. - one - two`, with any raw HTML in it rendered. There is no panel and no `tern` group in the console, only the browser's own error for the failed request (`net::ERR_FILE_NOT_FOUND`, or a 404).
+
+**Cause.** The `src` does not lead to `tern.js`: a wrong relative path, a root-relative path opened from disk, a file not uploaded, or a CDN that is unreachable.
+
+**Fix.** Check the path from the note's folder. `tern new` writes the right one for the `tern.js` it finds above the note. Open the browser's network panel to see the URL it tried.
+
+**The guard.** `tern new --guarded` adds a guard to the first line. When `tern.js` does not load, the reader then sees "tern.js did not load; the source follows." and the note exactly as written, as plain text, instead of the run-together paragraph. When JavaScript is off, they see "JavaScript is off; the source follows." The guard does nothing when `tern.js` loads. How it works is on [The guard](tools.html#guarded).
+
+### async, defer or module {#async-defer}
+
+**Symptom.** As when `tern.js` is not found: the source as one paragraph. With `async` or `defer`, the console says:
+
+```text
+tern: load tern.js with a plain <script src>, without async or defer; the note was not rendered
+```
+
+With `type="module"`, nothing is said.
+
+**Cause.** `tern.js` must run while the browser is still reading the file, so that it can capture the rest of it as the note. A deferred, asynchronous or module script runs after the whole file has been parsed as HTML. The command line and editors do not treat such a file as a note either, and `tern check` tells you why when you name it.
+
+**Fix.** Use a plain `<script src="tern.js"></script>`.
+
+### Garbled characters: the charset {#charset}
+
+**Symptom.** Accents and symbols come out as two or three odd characters: `CafÃ©` for `Café`, `æ—¥æœ¬èªž` for `日本語`. No diagnostic is reported: the bytes arrive correctly, but are decoded wrongly.
+
+**Cause.** The file has no `<meta charset="utf-8">`, and the server does not name a charset in its `Content-Type` header. Both browsers then decode the page as windows-1252. Opened from disk, both read it as UTF-8 in our tests, so the problem may appear only once the note is online.
+
+**Fix.** Add `<meta charset="utf-8">` near the start of the file, as in the canonical first line, and save the file as UTF-8.
+
+### An add-on fails {#addon-fails}
+
+**Symptom.** The note renders, but what the add-on declares is missing: no labels or numbers, names rendered as plain `div` boxes, no styles from a CSS add-on. The panel and console report one error per add-on:
+
+```text
+error addon.failed at the tern.js line (file line 1): the add-on missing-addon.js did not load; the note renders without it (check the path in data-use)
+```
+
+**Cause.** A path in `data-use` is wrong, the file is missing on the host, or the add-on's origin is unreachable. `tern.js` waits for every add-on to load or fail before it renders, so a failing add-on never blocks the note.
+
+**An add-on that throws.** An add-on that loads but throws while it runs is reported too. What it registered before the error stays in effect:
+
+```text
+error addon.failed at the tern.js line (file line 1): the add-on throwing.js threw while it ran: boom; the note renders with what it registered before the error (fix the add-on; the browser console shows where it threw)
+```
+
+The browser hides the message of an error thrown by a script from another origin that is served without CORS, and Chromium does the same for a note opened from disk: the message then reads only `Script error.`. The console shows the error in full.
+
+**A transform that throws.** A transform an add-on registered with `tern.transform` that throws is skipped, and the note renders without it:
+
+```text
+error addon.failed at the tern.js line (file line 1): the transform "broken" threw: boom; the note renders without it (fix the function given to tern.transform("broken", …))
+```
+
+**Fix.** Check the path, relative to the note, or fix the add-on. `tern check` reports the same problems before you publish (see [Add-ons and head scripts](tools.html#check-vocabulary)); it cannot load a remote add-on, and says so with an `addon.remote` info. On a [built page](#build), an add-on that fails to load or throws is reported as on a note, except a failed CSS add-on, which only the browser's console reports.
+
+### KaTeX unavailable {#katex-unavailable}
+
+**Symptom.** Formulas show as TeX, and the panel and console report:
+
+```text
+error katex.unavailable at the tern.js line (file line 1): KaTeX did not load from https://cdn.jsdelivr.net/npm/katex@0.19.0/dist; math is shown as TeX source (check the connection or data-katex; data-katex="none" turns math rendering off)
+```
+
+**Cause.** KaTeX's script or stylesheet did not load: no network, the CDN blocked by a network filter or a CSP, a wrong `data-katex` base, or a local copy without its files. It is reported once, and only when the note has math.
+
+**Fix.** Check the connection, or serve KaTeX yourself (see [Offline use](#offline)). If the note should not render math at all, use `data-katex="none"`.
+
+### CSP violations {#csp-violations}
+
+**Symptom.** The console shows errors such as "Applying inline style violates the following Content Security Policy directive", or "Executing inline script violates …". Tern's own stylesheet, a note script, or some styles are missing.
+
+**Cause and fix**, by what the message names:
+
+| Blocked | Cause | Fix |
+|---|---|---|
+| an inline style element (`style-src-elem`) | Tern's inline base stylesheet | link `tern.css` in the head, or use `data-css` or `data-nonce` |
+| inline style attributes (`style-src-attr`) | your `style=`, KaTeX's MathML styles, or a [built page](#csp-built) | use classes; publish the note rather than a built page |
+| an inline script (`script-src-elem`) | a `<script>` block in the note, or the guard | `data-nonce` with a nonce policy, or move the code to a file |
+| `katex.min.js`, `katex.min.css`, fonts | the CDN is not allowed | add `https://cdn.jsdelivr.net` to `script-src`, `style-src` and `font-src`, use a local copy, or `data-katex="none"` |
+
+The details are on [Content-Security-Policy](#csp).
+
+### document.write in a note script {#document-write}
+
+**Symptom.** A script in the note was supposed to write something, and nothing appears. The panel and console report, at the script's tag:
+
+```text
+error script.document-write at line 3:1 (file line 4): a note script called document.write("<p>hello</p>"); the page is already parsed, so its output is dropped (build elements with the DOM instead, for example document.currentScript.after(element))
+```
+
+**Cause.** `tern.js` runs the note's scripts after the page has been parsed, when `document.write` would erase the page. So while note scripts run, `document.write` and `document.writeln` drop their output and report it.
+
+**Fix.** Build elements with the DOM, for example `document.currentScript.after(element)`. Many embed snippets use `document.write`; look for a version that does not.
+
+### DOMContentLoaded {#domcontentloaded}
+
+**Symptom.** Code in a note script never runs. The panel and console report:
+
+```text
+error script.domcontentloaded at line 3:1 (file line 4): a note script listens for DOMContentLoaded, which fired before note scripts run, so the listener never runs (use tern.on('ready', fn), or run the code directly)
+```
+
+**Cause.** `DOMContentLoaded` has already fired when `tern.js` runs the note's scripts. So `tern.js` reports a listener for it, on `document` or `window`, and does not register it.
+
+**Fix.** Run the code directly: the note's elements already exist when its scripts run. To wait for math and behaviours, use `tern.on('ready', fn)` or `tern.ready` (see [the lifecycle](api.html#lifecycle)).
+
+### Stripped whitespace {#whitespace}
+
+**Symptom.** After saving in an editor, a code block, a raw `<pre>`, or a display formula lost the spaces at the ends of its lines.
+
+**Cause.** No Tern construct depends on trailing whitespace; there are no two-space line breaks, for instance. But the bodies of fences, raw HTML blocks, display math, `:::macros`, `:::meta` and `{raw}` containers are kept byte for byte, so an editor that trims trailing whitespace on save changes their content.
+
+**Fix.** Turn trimming off for `.html` files. With EditorConfig:
+
+```ini
+[*.html]
+trim_trailing_whitespace = false
+```
+
+For VS Code, `"files.trimTrailingWhitespace": false` under `"[html]"`; see [Settings for notes](tools.html#editor-settings).
+
+### HTML formatters {#formatters}
+
+**Symptom.** After formatting (on save, or "Format document"), the note is ruined: the `tern.js` tag moved to its own line, and the note ran together. For example, Prettier turns the note `# Kernel`, `:::aside` … into:
+
+```html
+<!doctype html><meta charset="utf-8" />
+<script src="tern.js"></script>
+# Kernel :::aside A *short* note with $x^2$. ::: - one - two
+```
+
+**Cause.** An HTML formatter (Prettier, js-beautify, an editor's built-in HTML formatter) reads the note as HTML, where line breaks in text mean nothing, and reflows it.
+
+**Fix.** Never run an HTML formatter on notes. Undo the change, then turn formatting off for notes:
+
+- Prettier: `"requirePragma": true` in `.prettierrc` makes it format only files that ask for it with a pragma comment. You can also list notes in `.prettierignore`. Tern's repository does both.
+- VS Code: `"editor.formatOnSave": false` and `"html.format.enable": false` for HTML (see [Settings for notes](tools.html#editor-settings)).
+
+### Auto-wrap {#auto-wrap}
+
+**Symptom.** After typing a long line, a container, a leaf, a heading's id, an equation's number or a table row stops working. Most breaks are reported with one of the diagnostics below; two pass silently.
+
+**Cause.** Automatic hard wrapping (Vim's `textwidth` with `formatoptions+=t`, an editor's "wrap at column") inserts a line break into a long line. Several constructs must stay on one line.
+
+**Fix.** Use soft wrap instead: in Vim and Neovim, `setlocal formatoptions-=t` for notes. Then join the broken line again. What each break does:
+
+**An opener.** A container's opener is one line. Broken inside its title, the rest becomes junk on the opener and the next line a paragraph:
+
+```tern {.live expect="block.opener-junk"}
+:::aside[The rank–nullity theorem, stated for finite
+dimensions]{#rn}
+Body.
+:::
+```
+
+**A leaf.** A leaf fills its line. Broken, it is demoted to paragraph text:
+
+```tern {.live expect="leaf.demoted"}
+::video[A short demonstration of the
+kernel]{src=kernel.mp4 controls}
+```
+
+**A heading's attribute group.** Moved to the next line, it becomes an attribute line, and the heading keeps its slug as its id. With a blank line after it, it applies to nothing, and references to the intended id dangle:
+
+```tern {.live expect="attributes.orphan ref.dangling"}
+## The kernel of a linear map
+{#kernel}
+
+See @kernel.
+```
+
+When a block follows it directly, the attribute line attaches to that block instead, with no diagnostic. The id lands on the paragraph, and the reference resolves to it:
+
+```tern {.live}
+## The kernel of a linear map
+{#kernel}
+The kernel is a subspace.
+
+See @kernel.
+```
+
+**A display-math closer's group.** `$$ {#eq}` broken after `$$` behaves the same way: the group becomes an attribute line, and the equation loses its id and its number:
+
+```tern {.live expect="attributes.orphan ref.dangling"}
+$$
+\ker f = \{v : f(v) = 0\}
+$$
+{#eq}
+
+See @eq.
+```
+
+**A table row.** A row is one line. Broken, the row ends at the break, the table ends there, and the rest of the row becomes a paragraph after the table, with no diagnostic:
+
+```tern {.live}
+| Name | Meaning |
+|---|---|
+| ker | the vectors that map
+to zero |
+```
+
+To continue a row on purpose, end the line with `\` (see [tables](syntax-blocks.html#tables)).
+
+### Other console messages {#other-messages}
+
+| Console message | Cause | Fix |
+|---|---|---|
+| `tern: tern.js is already loaded; this second copy does nothing` | a second `tern.js` tag, for example in the note's raw HTML | remove it: the first copy renders the note |
+| `tern: the page already has a main.tern; tern.js does nothing` | the page already holds Tern's output before the tag, for example a built page whose `data-built` was removed | rebuild the page, or publish the note |
+| `tern: load tern.js with a plain <script src>, without async or defer; the note was not rendered` | `async` or `defer` on the tag | see [async, defer or module](#async-defer) |
+| `tern: rendering failed; the note is shown as source` | a bug in the engine: the note is shown as escaped source | please report it, with the note |
+| `Failed to load resource` (Chromium) for a file the note only shows in a code example | While `tern.js` loads, Chromium's preload scanner reads ahead in the file and requests the URLs (`src=`, stylesheet links) of tags anywhere in the note's text, code examples included | nothing: a missing file logs a harmless 404, and the note renders as usual |

@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><script src="/tern.js"></script>
+
+# Smoke: note-script interception
+
+<script>
+  window.__dcl = { document: 0, window: 0 };
+  document.write('<p id="written">written by document.write</p>');
+  document.addEventListener('DOMContentLoaded', () => window.__dcl.document++);
+  window.addEventListener('DOMContentLoaded', () => window.__dcl.window++);
+</script>
+
+{#after}
+The paragraph after the script.

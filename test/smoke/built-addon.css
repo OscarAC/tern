@@ -1,0 +1,3 @@
+/* SPDX-License-Identifier: MIT */
+/* The CSS add-on of test/smoke/built.html (P5). */
+main.tern aside.box { border: 1px solid currentColor; }

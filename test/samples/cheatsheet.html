@@ -1,0 +1,70 @@
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+
+:::meta
+title: Neovim cheat sheet
+lang: en
+:::
+
+# Neovim cheat sheet
+
+Keys are shown as :kbd[Ctrl]+:kbd[w]. ==Highlighted== entries are new in 0.11;
+~~struck~~ ones were removed.
+
+:::row{cols=3 .wide}
+### Motion
+
+| Keys | Action |
+|---|---|
+| :kbd[h] :kbd[j] :kbd[k] :kbd[l] | left, down, up, right |
+| :kbd[w] / :kbd[b] | next / previous word |
+| :kbd[gg] / :kbd[G] | top / bottom |
+| :kbd[Ctrl]+:kbd[d] | half page down |
+| :kbd[%] | matching bracket |
+| :kbd[\`]:kbd[a] | jump to mark `a` |
++++
+### Editing
+
+| Keys | Action |
+|---|---|
+| :kbd[dd] | delete line |
+| :kbd[ciw] | change inner word |
+| :kbd[>>] | indent |
+| :kbd[.] | repeat last change |
+| :kbd[u] / :kbd[Ctrl]+:kbd[r] | undo / redo |
+| ~~:kbd[Ctrl]+:kbd[s]~~ | ~~save~~ (write `:w`) |
++++
+### Windows and the command line
+
+| Keys | Action |
+|---|---|
+| :kbd[Ctrl]+:kbd[w] :kbd[\|] | ==maximise the window's width== |
+| `:w` | write |
+| `:%s/a/b/g` | replace all |
+| `:'<,'>!sort | uniq` | filter the selection |
+| `:g/^$/d` | delete blank lines |
+:::
+
+:::tip[Counts go first]
+Any motion takes a count: `3dd`, `5j`. ==The count comes first==, not ~~last~~.
+:::
+
+:::warning
+`:q!` discards changes. Prefer `:x` (write if changed, then quit).
+:::
+
+## Pipes and backticks in code
+
+A shell filter in a sentence: `sort | uniq -c`. A backtick itself: `` ` ``, and a span that
+contains one: ``a`b``. In a table cell `` `a|b` `` and $|x|$ keep their pipes; a literal pipe
+anywhere else is `\|`, and a backtick inside :kbd[…] is `` \` ``.
+
+## Learning path
+
+- [x] Motions: `hjkl`, `w`, `b`, `e`
+- [ ] Operators + motions
+  - [x] `d`, `c`, `y`
+  - [ ] Text objects: `iw`, `i(`, `it`
+    1. inner vs around (`i` vs `a`)
+    2. counts
+- [ ] Registers: `"ayy`, `"ap`
+

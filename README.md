@@ -1,63 +1,45 @@
 # Tern
 
-Tern is a note format for studying: markdown's ease, LaTeX's structure, and the full power of the web, in one plain `.html` file.
+Documents with the full power of HTML, CSS and JavaScript, without the verbosity of HTML. A note is one HTML file: its first line loads `tern.js`, and everything below it is written in Tern's syntax and rendered in place when the file is opened.
 
-You add one line at the top of a file and write a markdown superset below it. Opening the file in a browser renders it. There is no build step, and HTML, CSS and JavaScript are always available when the built-in syntax runs out.
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
 
-```text
-<script src="tern.js"></script>
+# Linear maps {#maps}
 
-# Linear Algebra: Lecture 4
-
-A matrix $A$ is **invertible** if there is a $B$ with $AB = BA = I$.
-
-:::theorem[Rank–nullity] #rank-nullity
-For $T: V \to W$ with $V$ finite-dimensional,
-$$\dim V = \dim \ker T + \dim \operatorname{im} T$$
+:::theorem[Rank–nullity]{#thm-rn}
+If $V$ is finite-dimensional then $\dim V = \dim \ker T + \dim \operatorname{im} T$.
 :::
 
-By @rank-nullity, an injective map between spaces of equal dimension is surjective.
-
-?? What does rank–nullity say?
->> $\dim V = \dim \ker T + \dim \operatorname{im} T$
+By @thm-rn, an injective map between spaces of equal dimension is surjective.
 ```
+
 
 ## Documentation
 
-| File                               | What it is                                           |
-| ---------------------------------- | ---------------------------------------------------- |
-| [`index.html`](index.html)         | the full reference, with every example rendered live |
-| [`nvim/README.md`](nvim/README.md) | the Neovim plugin                                    |
+The documentation is itself a set of Tern notes: open [`index.html`](index.html) in a browser, or read them published at the project's GitHub Pages site.
 
-## Quick start
+## Using it
 
-1. Copy `tern.js` next to your notes.
-2. Create an `.html` file whose first line is `<script src="tern.js"></script>`.
-3. Write below that line and open the file in a browser.
+```
+node tern-cli.js new notes/linear-maps.html     # write the first line
+node tern-cli.js check notes/                    # diagnostics, with file lines
+node tern-cli.js build notes/linear-maps.html -o out.html   # a static, pre-rendered page
+node tern-cli.js lsp                              # the language server, over stdio
+```
 
-Math is rendered by KaTeX, loaded from a CDN, so it needs a network connection unless you point Tern at a local copy (see the documentation).
-
-## Publishing notes
-
-A Tern note is an ordinary HTML file, so any static host serves it as a finished page. On GitHub Pages, enable Pages for the repository and push your notes together with `tern.js`. The empty `.nojekyll` file in this repository tells Pages to serve files untouched.
-
-## AI-generated project
-
-This project was written by AI with a human reviewing every line of the code.
+Named blocks such as `:::theorem` get labels, counters and elements from a schema: an add-on listed in `data-use`, or `window.TERN = {schema: …}` in a script before the tern.js line ([Vocabulary and behaviour](docs/schema.html)).
 
 ## Development
 
 ```
-tern.js               the library: parser, styles and browser runtime in one file
-index.html            the documentation
-test/parser.test.js   parser tests
-nvim/                 the Neovim plugin
+npm run build       # src/ → tern.js and tern.css
+npm test            # build check, corpus, samples, perf, fuzz, API, CLI, LSP, documentation
+npm run smoke       # Chromium and Firefox (Playwright)
 ```
 
-Run the parser tests with Node:
+MIT licensed.
 
-```
-node test/parser.test.js
-```
+## AI-generated project
 
-The parser has no dependencies and no DOM requirements, so `require('./tern.js')` in Node exposes `toHTML` and `inline` for testing.
+This project was developed with assistance from AI. 

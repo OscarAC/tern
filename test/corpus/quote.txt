@@ -1,0 +1,383 @@
+# Blockquotes (and the quote prefix of the line algorithm)
+
+`> ` or a bare `>` opens a quote; `>5` does not. The quote is a prefix
+container: lines continue it by starting with `>`, or lazily.
+
+## quote/needs-space
+
+spec: syntax-blocks#blockquote syntax-inline#ambiguity
+
+A quote needs a space, a tab or the end of the line after `>`: `>5 people` and `>= 3` are paragraphs.
+
+````tern
+>5 people came
+>= 3 is enough
+````
+
+````html
+<p>&gt;5 people came
+&gt;= 3 is enough</p>
+````
+
+## quote/lazy-continuation
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+The blockquote example: a paragraph line without `>` continues the quoted paragraph lazily.
+
+````tern
+> A quote,
+lazily continued.
+````
+
+````html
+<blockquote><p>A quote,
+lazily continued.</p></blockquote>
+````
+
+## quote/bare-marker-continues
+
+spec: syntax-blocks#blockquote
+
+A bare `>` line is a blank line inside the quote: it ends the paragraph but not the quote.
+
+````tern
+> First paragraph.
+>
+> Second paragraph.
+````
+
+````html
+<blockquote><p>First paragraph.</p><p>Second paragraph.</p></blockquote>
+````
+
+## quote/blank-line-ends
+
+spec: syntax-blocks#blockquote
+
+A blank line ends the quote, so two quotes separated by a blank line stay two quotes.
+
+````tern
+> First quote.
+
+> Second quote.
+
+Not quoted.
+````
+
+````html
+<blockquote><p>First quote.</p></blockquote>
+<blockquote><p>Second quote.</p></blockquote>
+<p>Not quoted.</p>
+````
+
+## quote/tab-after-marker
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+options: escaped
+
+A tab after `>` opens a quote like a space.
+
+````tern
+>\tTabbed
+````
+
+````html
+<blockquote><p>Tabbed</p></blockquote>
+````
+
+## quote/empty
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+`>` alone on a line opens an empty quote.
+
+````tern
+>
+````
+
+````html
+<blockquote></blockquote>
+````
+
+## quote/one-space-stripped
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm syntax-blocks#lists
+
+Exactly one space after `>` is stripped: `>   b` leaves `b` at the item's content column (2), `>  c` leaves `c` at column 1, outside the item.
+
+````tern
+> - a
+>
+>   b
+>
+>  c
+````
+
+````html
+<blockquote><ul><li><p>a</p><p>b</p></li></ul><p>c</p></blockquote>
+````
+
+## quote/nests-container
+
+spec: syntax-blocks#blockquote
+
+The rest of a quoted line is parsed as blocks, so `> :::note` nests a container.
+
+````tern
+> :::note
+> Inside.
+> :::
+````
+
+````html
+<blockquote><div class="t-block note" data-t="note"><div class="t-title"><span class="t-label">Note</span></div><p>Inside.</p></div></blockquote>
+````
+
+## quote/nests-list
+
+spec: syntax-blocks#blockquote syntax-blocks#lists
+
+`> - item` nests a list.
+
+````tern
+> - item
+> - item two
+````
+
+````html
+<blockquote><ul><li>item</li><li>item two</li></ul></blockquote>
+````
+
+## quote/nested-quotes
+
+spec: syntax-blocks#blockquote
+
+`> > ` nests a quote in a quote.
+
+````tern
+> > deep
+````
+
+````html
+<blockquote><blockquote><p>deep</p></blockquote></blockquote>
+````
+
+## quote/glued-double-marker-is-text
+
+spec: syntax-blocks#blockquote syntax-inline#ambiguity
+
+`>>` is not two quote markers: the first `>` is followed by `>`, not by a space, so the line is a paragraph (unlike CommonMark).
+
+````tern
+>> deep
+````
+
+````html
+<p>&gt;&gt; deep</p>
+````
+
+## quote/continuation-without-space
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+The continuation prefix is `>` plus an *optional* space or tab, so `>b` inside an open quote continues it, although `>b` cannot open one.
+
+````tern
+> a
+>b
+````
+
+````html
+<blockquote><p>a
+b</p></blockquote>
+````
+
+## quote/indented-marker
+
+spec: syntax-blocks#blockquote syntax-blocks#r2
+
+Leading whitespace is ignored when a line is classified, so an indented `>` opens a quote (there is no indented code).
+
+````tern
+      > a
+````
+
+````html
+<blockquote><p>a</p></blockquote>
+````
+
+## quote/indented-continuation-marker
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm syntax-blocks#r2
+
+Leading whitespace may precede the `>` of the quote prefix, so an indented `>` on a continuation line continues the quote. (Without that rule the prefix would fail, `> b` would interrupt, and this would be two quotes.)
+
+````tern
+> a
+   > b
+````
+
+````html
+<blockquote><p>a
+b</p></blockquote>
+````
+
+## quote/interrupts-paragraph
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+Row 8: a quote interrupts a paragraph.
+
+````tern
+Some prose
+> A quote
+````
+
+````html
+<p>Some prose</p>
+<blockquote><p>A quote</p></blockquote>
+````
+
+## quote/no-lazy-after-heading
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+Lazy continuation needs an open paragraph; after a quoted heading the next line without `>` ends the quote.
+
+````tern
+> # Title
+continued
+````
+
+````html
+<blockquote><h1 id="title">Title</h1></blockquote>
+<p>continued</p>
+````
+
+## quote/thematic-break-ends
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+A line that would interrupt a paragraph is not lazy, so `---` ends the quote (and is no setext underline).
+
+````tern
+> a
+---
+````
+
+````html
+<blockquote><p>a</p></blockquote>
+<hr>
+````
+
+## quote/lazy-partial-prefix
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+When an inner prefix fails but an outer one matches, the line continues the innermost paragraph lazily.
+
+````tern
+> > a
+> b
+````
+
+````html
+<blockquote><blockquote><p>a
+b</p></blockquote></blockquote>
+````
+
+## quote/lazy-in-list
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm syntax-blocks#lists
+
+Laziness reaches through every failed prefix: `b` continues the paragraph of the item inside the quote.
+
+````tern
+> - a
+b
+````
+
+````html
+<blockquote><ul><li>a
+b</li></ul></blockquote>
+````
+
+## quote/lazy-ordered-non-1
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm syntax-blocks#lists
+
+The quote prefix fails and `2. b` starts a block, so it is not lazy: the quote closes and an ordered list starting at 2 begins (the lazy-continuation rule; as cmark).
+
+````tern
+> a
+2. b
+````
+
+````html
+<blockquote><p>a</p></blockquote>
+<ol start="2"><li>b</li></ol>
+````
+
+## quote/ended-by-closer
+
+spec: syntax-blocks#blockquote syntax-blocks#closer
+options: schema=none
+
+A closer is neither `>` nor lazy (it interrupts), so it ends the quote and then closes the container.
+
+````tern
+:::box
+> a
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><blockquote><p>a</p></blockquote></div>
+````
+
+## quote/tab-after-marker-list-column
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm syntax-blocks#columns syntax-blocks#lists
+options: escaped
+
+A tab after `>` is consumed whole by the prefix (Tern's simpler rule, unlike CommonMark's partial tab, which would keep two columns and put `b` inside the item), so `b` starts at column 0 of the remainder, outside the item.
+
+````tern
+> - a
+>
+>\tb
+````
+
+````html
+<blockquote><ul><li>a</li></ul><p>b</p></blockquote>
+````
+
+## quote/nesting-limit
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+The 65th nested quote opener would make the stack deeper than 64, so from there the line is paragraph text, with `nesting.limit` at that `>`. The root is not counted, so 64 nested quotes are allowed.
+
+````tern js
+'> '.repeat(65) + 'x\n'
+````
+
+````diagnostics
+1:129 error nesting.limit
+````
+
+## quote/depth-shared-with-containers
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+options: schema=none
+
+Containers, list items and quotes share one depth: after 63 containers, the first quote is level 64 and the second is refused.
+
+````tern js
+':::d\n'.repeat(63) + '> > x\n' + ':::\n'.repeat(63)
+````
+
+````diagnostics
+64:3 error nesting.limit
+````

@@ -1,0 +1,90 @@
+<!doctype html><meta charset="utf-8">
+<script>
+  // This note's vocabulary (window.TERN.schema): `code` is the entry for
+  // titled fences, so they are numbered listings and @lst-fib reads
+  // "Listing 1".
+  window.TERN = {schema: {
+    block: {
+      note: {tag: 'aside', label: 'Note'},
+      code: {counter: 'code', label: 'Listing'},
+    },
+  }};
+</script>
+<script src="../tern.js"></script>
+
+:::meta
+title: Notes on iterators
+lang: en
+:::
+
+# Notes on iterators
+
+:::note
+This example is about code. It shows a numbered listing with a title, line numbers and a
+highlighted line; a fence that starts its numbering at 10; code spans that hold pipes,
+backticks and tags; escapes; an HTML comment; a raw HTML form and table; and a note script
+that adds a copy button to every code block. Part of [Tern's documentation](../index.html).
+:::
+
+```js[A lazy Fibonacci generator]{#lst-fib lines hl=4}
+function* fib() {
+  let [a, b] = [0, 1];
+  for (;;) {
+    yield a;              // the highlighted line
+    [a, b] = [b, a + b];
+  }
+}
+```
+
+@lst-fib yields forever; take what you need with `take(fib(), 10)`.
+
+Inline code keeps every character: a pipeline `ls -l | sort -k5`, a comparison
+`a < b && c > d`, a backtick `` ` ``, a span that contains one ``a`b``, a closing tag
+`</script>` and a generic `Vec<T>`. Outside code, Vec<T> and List<int> are text as typed.
+
+```python {start=10 lines .wide}
+def take(it, n):
+    return [x for _, x in zip(range(n), it)]
+```
+
+## Escapes
+
+A literal asterisk \*, an underscore in snake_case (no escape needed), a price of $5 (no
+escape needed either) and a pair of dollars \$x\$ that must not become maths, a colon before
+a bracket \:kbd[x], an at-sign \@handle, and brackets \[not a span\]{.x}. Backslash
+itself: \\. Some_file_name.txt and 2 * 3 * 4 need nothing.
+
+\# Not a heading: the hash is escaped.
+
+<!-- TODO: async iterators, for await -->
+
+## A raw widget
+
+<form id="guess" onsubmit="event.preventDefault(); this.out.value = +this.n.value === 7 ? 'yes' : 'no'">
+  <label>Guess a number <input name="n" type="number" min="1" max="10"></label>
+
+  <button>Check</button> <output name="out"></output>
+</form>
+
+<table class="grid">
+  <tr><th rowspan="2">Iterator</th><th>next()</th><th>return()</th></tr>
+  <tr><td>{value, done}</td><td>closes it</td></tr>
+</table>
+
+<style>
+  [data-t="note"] { background: var(--t-soft); border-inline-start: 4px solid var(--t-link); padding: .7rem 1rem; border-radius: 4px; font-size: .92em; }
+  pre[data-lines] .t-line.t-hl { background: var(--t-mark); }
+  .copy { float: inline-end; margin: .4rem; font: .8rem var(--t-sans); }
+  #guess output { font-weight: 700; }
+  .grid td, .grid th { border: 1px solid var(--t-line); padding: .2rem .5rem; }
+</style>
+
+<script>
+  // Add a copy button to every code block. Note scripts run after the note is
+  // rendered, in document order, so the blocks are already there.
+  for (const pre of document.querySelectorAll('main.tern pre[data-t="code"], main.tern figure.code pre')) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Copy', className: 'copy' });
+    b.onclick = () => navigator.clipboard.writeText(pre.innerText);
+    pre.before(b);
+  }
+</script>

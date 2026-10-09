@@ -1,513 +1,195 @@
-<script src="tern.js"></script>
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Tern</title><script src="tern.js" data-use="docs/docs.js docs/docs.css"></script>
 
-# Tern
+:::meta
+description: Tern is a document format with the full power of HTML, CSS and JavaScript and none of HTML's verbosity: one file that renders itself in the browser.
+:::
 
-Tern is a note format for studying: markdown's ease, LaTeX's structure, and the full power
-of the web, in one plain `.html` file.
+::site-nav
 
-This page is a Tern note. Every example below is followed by its real output, rendered by
-the same script that renders the page. :aside[View this page's source to see the whole note. It is plain text under one script tag.]
+# Tern {#top}
 
 ::toc
 
-## Getting started
+**Tern gives you the full power of HTML, CSS and JavaScript without the verbosity of HTML.** A note is one HTML file that renders itself: its first line loads `tern.js`, and everything below it is written in a light, Markdown-like syntax that the browser turns into real HTML when the file is opened.
 
-1. Put `tern.js` somewhere your notes can reach.
-2. Create an `.html` file whose first line loads it, with a path relative to the note.
-3. Write below that line and open the file in a browser.
+## A first note {#first-note}
+
+This line is all the setup a note needs:
 
 ```html
-<script src="tern.js"></script>
-
-# My first note
-
-Some **bold** text and some math: $e^{i\pi} + 1 = 0$.
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
 ```
 
-There is no build step. Notes work when opened straight from disk.
+Everything after it is the note. Save the file next to `tern.js`, open it in a browser, and it renders:
 
-:::warning
-The script tag must be a plain one. `async`, `defer` and `type="module"` all break it,
-and Tern logs an error to the console if it is loaded that way.
-:::
+```tern {.live}
+# Hello
 
-Two optional attributes go on the script tag:
+This is a note. It has *emphasis*, a [link](https://example.com), a formula,
+$e^{i\pi} + 1 = 0$, and a key to press, :kbd[Ctrl]+:kbd[S].
 
-| Attribute | Effect |
-|---|---|
-| `data-katex="path"` | Load KaTeX from this folder instead of the CDN. Point it at a local copy of KaTeX's `dist` folder to work offline. |
-| `data-raw` | Show the note's source instead of rendering it. Useful for debugging. |
-
-Math needs KaTeX, which is fetched from the jsDelivr CDN by default. Without a network
-connection and without `data-katex`, math is shown as TeX source.
-
-## Markdown
-
-Tern supports the markdown you already know.
-
-````demo
-#### A small heading
-
-Text can be **bold**, *italic*, ~~struck~~ or ==highlighted==, and can hold `inline code`,
-a [link](https://katex.org "KaTeX") or an autolink like <https://example.com>.
-
-- Bullets use `-`, `*` or `+`
-- Indent to nest:
-  1. numbered items use `1.` or `1)`
-  2. and can sit inside bullets
-- [x] task lists work
-- [ ] with `[ ]` and `[x]`
-
-> A blockquote.
-
-```python
-total = sum(xs)   # fenced code, with an optional language
+- [x] Write the first line
+- [ ] Publish it
 ```
 
-| Space  | Dim   |
-|:-------|------:|
-| $\mathbb{R}^n$ | $n$   |
-| $P_k$  | $k+1$ |
-````
+Every example on these pages is live: it shows the source, the result, the HTML Tern made, and any diagnostics, all computed by `tern.js` in your browser.
 
-| Element | Syntax |
-|---|---|
-| Headings | `# Title` through `###### Title` |
-| Bold | `**text**` or `__text__` |
-| Italic | `*text*` or `_text_` |
-| Strikethrough | `~~text~~` |
-| Highlight | `==text==` |
-| Inline code | `` `code` `` |
-| Link | `[text](url)` or `[text](url "title")` |
-| Image | `![alt](url)` |
-| Autolink | `<https://example.com>` |
-| Line break | two trailing spaces, or a trailing `\` |
-| Horizontal rule | `---`, `***` or `___` |
-| Escape | `\*` shows a literal `*` |
+## A tour {#tour}
 
-A blank line between list items makes the list loose: each item becomes a paragraph.
-In tables, colons in the delimiter row set alignment. Pipes inside math or code spans are
-safe, so `$|x|$` works in a cell. Use `\|` for a literal pipe elsewhere.
+### Math {#tour-math}
 
-Characters that normally need care in HTML need none here: a < b, AT&T and x && y can be
-typed as they are. HTML entities such as `&nbsp;` still work.
+TeX between dollars, typeset by KaTeX. A display formula with an id is numbered, and `@id` refers to it.
 
-### Differences from standard markdown
-
-- **No indented code blocks.** Indentation never creates code; only fences do. This lets
-  you indent freely inside blocks.
-- **No underlined (setext) headings**, reference-style links or footnotes. Use `#`
-  headings, inline links and margin notes.
-- **Code is not syntax-highlighted.** A fenced block gets a `language-x` class, so you can
-  add a highlighter yourself.
-
-## Math
-
-````demo
-Inline math sits in the text: $a^2 + b^2 = c^2$, and $a < b$ needs no escaping.
-
+```tern {.live}
+The roots of $ax^2 + bx + c = 0$ are
 $$
-\begin{aligned}
-(a + b)^2 &= a^2 + 2ab + b^2 \\
-          &\ge 4ab
-\end{aligned}
-$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}.
+$$ {#eq-roots}
 
-$$\sum_{k=1}^{n} k = \frac{n(n+1)}{2}$$ #eq-gauss
+By @eq-roots, a real root needs $b^2 \ge 4ac$. Prices like $5 stay prices.
+```
 
-Equation @eq-gauss is numbered because it has a label.
-````
+### Blocks {#tour-blocks}
 
-| Form | Syntax |
-|---|---|
-| Inline | `$a < b$` |
-| Display | `$$ ... $$` on its own line or lines |
-| Numbered display | `$$ ... $$ #label` |
+Three colons and a name wrap anything in an element. HTML names become that element; other names become a `div` with the name as its class, ready for your CSS.
 
-Inline math follows Pandoc's rule: the opening `$` must be followed by a non-space, and the
-closing `$` must follow a non-space and not be followed by a digit. This means a sentence
-like "costs $5 and $10" is left alone. Write `\$` for a literal dollar sign when in doubt.
-
-### Macros
-
-Define TeX macros once per note in a `:::macros` block. They apply to all math in the note.
-
-````demo
-:::macros
-\gdef\R{\mathbb{R}}
-\gdef\norm#1{\lVert #1 \rVert}
+```tern {.live}
+:::details[Why is the sky blue?]
+Short wavelengths scatter more: *Rayleigh scattering*.
 :::
 
-For $x \in \R^n$ we have $\norm{x} \ge 0$.
-````
-
-## Directives
-
-Everything beyond markdown uses one syntax in three forms.
-
-| Form | Syntax | Use |
-|---|---|---|
-| Inline | `:name[content]` | a span of text |
-| Leaf | `::name` | a block with no body |
-| Container | `:::name` ... `:::` | a block with a body |
-
-Containers take an optional title and attributes on the opening line:
-
-```
-:::theorem[Rank–nullity] #rank-nullity .important key=value
-Body, written in normal Tern.
+:::aside
+This is an `<aside>`, because `aside` is an HTML element.
 :::
 ```
 
-| Attribute | Meaning |
-|---|---|
-| `[Title]` | the block's title; may contain inline markup |
-| `#id` | a label, for `@id` references and links |
-| `.class` | an extra CSS class |
-| `key=value`, `key="two words"` | becomes an HTML attribute, including `style` |
+### Numbered theorems {#tour-theorems}
 
-Inline directives take attributes in braces after the brackets: `:aside[text]{#id .class}`.
+A note's vocabulary turns names into numbered, labelled elements. This example uses the demo vocabulary from [the Vocabulary page](docs/schema.html#demo-schema); a note declares its own in one script.
 
-**Nesting.** Containers nest. With equal colon counts, each `:::` closes the innermost open
-block. To make deep nesting readable, give outer blocks more colons:
-
-````demo
-::::columns
-:::card
-Left
-:::
-:::card
-Right
-:::
-::::
-````
-
-**Unknown names work.** A name Tern does not know becomes an element with that name as its
-class, so you can invent directives freely. See @custom-directives.
-
-## Blocks
-
-### Environments
-
-Theorem-like blocks are labelled and numbered automatically.
-
-````demo
-:::definition[Kernel] #def-kernel
-For a linear map $T: V \to W$, the **kernel** is $\ker T = \{ v \in V : Tv = 0 \}$.
-:::
-
-:::theorem[Rank–nullity] #thm-rank
-For $T: V \to W$ with $V$ finite-dimensional,
-$\dim V = \dim \ker T + \dim \operatorname{im} T$.
+```tern {.live schema=demo}
+:::theorem[Pythagoras]{#thm-py}
+In a right triangle with legs $a$, $b$ and hypotenuse $c$, $a^2 + b^2 = c^2$.
 :::
 
 :::proof
-Pick a basis of the kernel (@def-kernel) and extend it to a basis of $V$.
-:::
-````
-
-| Name | Label | Numbering |
-|---|---|---|
-| `theorem`, `lemma`, `proposition`, `corollary` | Theorem 1, Lemma 2, ... | one shared counter |
-| `definition` | Definition 1 | own counter |
-| `example` | Example 1 | own counter |
-| `exercise` | Exercise 1 | own counter |
-| `remark` | Remark | not numbered |
-| `proof` | Proof | not numbered; ends with ∎ |
-
-### Callouts
-
-`note`, `info`, `tip`, `important` and `warning` draw a tinted box. The label is the name
-unless you give a title, which replaces it.
-
-````demo
-:::note
-The exam covers chapters 1 to 4 only.
+Arrange four copies of the triangle inside a square of side $a + b$.
 :::
 
-:::tip[Shortcut]
-Row-reduce first.
-:::
-
-:::important
-Bring a calculator.
-:::
-````
-
-### Other built-in blocks
-
-| Syntax | Result |
-|---|---|
-| `:::details[Title]` | a collapsible section, closed by default |
-| `:::macros` | TeX macro definitions (see @macros) |
-| `::toc` | a table of contents built from the note's `##` and `###` headings |
-| `:::columns`, `:::col`, `:::grid`, `:::card`, `:::center` | see @layout |
-
-````demo
-:::details[A longer derivation]
-Hidden until opened. Any content can go here.
-:::
-````
-
-## Inline directives
-
-````demo
-Press :kbd[Ctrl]+:kbd[S] to save. Water is H:sub[2]O and area is in m:sup[2].
-This is :hl[highlighted], and the capital of France is :hide[Paris].
-:aside[This is a margin note.]
-````
-
-| Syntax | Result |
-|---|---|
-| `:aside[text]` | a margin note: beside the text on wide screens, inline on narrow ones |
-| `:hide[text]` | hidden until clicked, for fill-in-the-blank recall |
-| `:kbd[Ctrl]` | a keyboard key |
-| `:hl[text]` | highlighted text, same as `==text==` |
-| `:sub[text]`, `:sup[text]` | subscript and superscript |
-
-The colon only starts a directive when it is not glued to a preceding word, so `10:30[x]`
-and `a:b[c]` are left alone.
-
-## Labels and references
-
-Anything with an id can be referenced with `@id`. The examples above defined a few labels,
-and this paragraph uses them: @thm-rank follows from @def-kernel, the sum is @eq-gauss, and
-the section on math is @math.
-
-| Target | How it gets an id | `@id` displays as |
-|---|---|---|
-| Environment | `:::theorem #thm-main` | "Theorem 1" |
-| Equation | `$$ ... $$ #eq-main` | "(1)" |
-| Heading | automatic from its text, or `## Title {#my-id}` | the heading's text |
-| Any other block or inline directive | `#id` in its attributes | the id |
-
-Heading ids are the lowercased title with punctuation removed and spaces turned into
-hyphens, so "Column widths" gets `column-widths`. A repeated title gets a numeric suffix
-(`-2`, `-3`).
-
-References are links that jump to their target. A name that matches no label is left as
-plain text, so mentions and email addresses are unaffected. Labels may contain letters,
-digits, `_`, `-` and `:`, so LaTeX-style names like `thm:main` work.
-
-## Recall cards
-
-A question line starting with `??` followed by answer lines starting with `>>` makes a card
-whose answer is hidden until clicked.
-
-````demo
-?? When is a square matrix invertible?
->> When its determinant is nonzero,
->> equivalently when its kernel is trivial.
-
-?? What is the derivative of $\sin x$?
->> $$\cos x$$
-````
-
-The answer may contain any Tern content, including display math. A `??` line with no `>>`
-after it is an ordinary paragraph. To hide a word inside a sentence, use `:hide[...]`.
-
-## Layout
-
-````demo
-:::columns widths="2 1"
-:::col
-**Main column.** `widths` gives one number per column, as proportions.
-Here the text gets twice the room of the card.
-:::
-:::card
-A card.
-:::
-:::
-
-:::grid cols=3
-:::card
-one
-:::
-:::card
-two
-:::
-:::card
-three
-:::
-:::
-````
-
-| Syntax | Result |
-|---|---|
-| `:::columns` | each direct child block becomes a column |
-| `:::col` | groups several blocks into one column |
-| `:::columns widths="2 1"` | column proportions |
-| `:::columns widths="12rem 1fr"` | fixed sizes; any CSS length works |
-| `:::grid cols=3` | wraps children into rows of three (default two) |
-| `:::card` | a bordered box |
-| `:::center` | centres text, tables and images |
-| `.wide` on any block | extends into the margin-note area on large screens |
-
-`.center` and `.wide` also work as classes on any other block, for example
-`:::grid cols=4 .wide`. All column and grid layouts collapse to a single stack on narrow
-screens. The [layout examples](layouts.html) show more, including a Cornell-notes layout
-built from a custom block.
-
-## Raw HTML, CSS and JavaScript
-
-HTML can be written anywhere in a note.
-
-- **Inline tags** such as `<b>`, `<span style="...">` or `<br>` pass straight through
-  inside a paragraph.
-- **Block tags** such as `<div>`, `<table>`, `<canvas>` or any custom element start an HTML
-  block that runs until the next blank line. Its content is not parsed as Tern.
-- **`<script>`, `<style>`, `<pre>` and `<textarea>`** run until their closing tag, blank
-  lines included.
-- **Comments** are passed through and stay invisible.
-
-To put Tern content inside an HTML element, separate it from the tags with blank lines:
-
-````demo
-<div style="border-left: 4px solid var(--t-link); padding-left: 1rem">
-
-This paragraph is **parsed**, and so is $x^2$.
-
-</div>
-````
-
-Scripts run in the order they appear, as the rendered page is built, so a script can look
-up any element defined above it. This button is plain HTML with a script, written directly
-in this note:
-
-<p><button id="doc-counter">Clicked 0 times</button></p>
-<script>
-  let clicks = 0;
-  document.getElementById('doc-counter').onclick = e =>
-    e.target.textContent = `Clicked ${++clicks} times`;
-</script>
-
-```html
-<p><button id="doc-counter">Clicked 0 times</button></p>
-<script>
-  let clicks = 0;
-  document.getElementById('doc-counter').onclick = e =>
-    e.target.textContent = `Clicked ${++clicks} times`;
-</script>
+By @thm-py, a triangle with sides 3, 4 and 5 has a right angle.
 ```
 
-## Custom directives
+### Tables {#tour-tables}
 
-A directive Tern does not know becomes a plain element you can style and script.
+Pipe tables, with alignment from the colons.
 
-| You write | You get |
-|---|---|
-| `:::name` ... `:::` | `<div class="t-block name" data-t="name">` |
-| `:::name[Title]` | the same, with the title in a `.t-head` element first |
-| `::name[content]` | `<div class="name" data-t="name">` |
-| `:name[content]` | `<span class="name" data-t="name">` |
+```tern {.live}
+| Element | Symbol | Mass |
+|---|:-:|--:|
+| Hydrogen | H | 1.008 |
+| Helium | He | 4.003 |
+| Lithium | Li | 6.94 |
+```
 
-**Styling only.** A few lines of CSS in the note define a new block:
+### Figures {#tour-figures}
 
-````demo
-<style>
-  .keyidea { border: 2px solid var(--t-link); border-radius: 8px; padding: .5rem 1rem; }
-</style>
+An image with an id becomes a figure, its bracket text the caption (demo vocabulary, for the number).
 
-:::keyidea
-Eigenvectors are the directions a linear map leaves alone.
+```tern {.live schema=demo}
+![Osprey over the estuary, at dawn.](examples/img/osprey.svg){#fig-osprey width=320}
+
+@fig-osprey was drawn from memory.
+```
+
+### References {#tour-references}
+
+`@id` links to anything with an id, and its text comes from the target: a heading's text, a title, a number. Nothing to keep in sync by hand.
+
+```tern {.live}
+## Results {#results}
+
+:::aside[A caveat]{#caveat}
+The sample was small.
 :::
-````
 
-**With behaviour.** `tern.define(name, fn)` runs `fn` once for each element of that
-directive, with the element as its argument. This sentence uses one: :shout[hello].
-
-```html
-This sentence uses one: :shout[hello].
-
-<script>
-  tern.define('shout', el => el.textContent = el.textContent.toUpperCase() + '!');
-</script>
+See @results, and read @caveat before relying on them.
 ```
 
-<script>
-  tern.define('shout', el => el.textContent = el.textContent.toUpperCase() + '!');
-</script>
+### Footnotes {#tour-footnotes}
 
-The same call works for containers and leaves, which makes it the hook for plots, diagrams
-or anything interactive.
+```tern {.live}
+Terns are long-distance migrants.[^arctic]
 
-### JavaScript API
-
-| Member | Purpose |
-|---|---|
-| `tern.define(name, fn)` | attach behaviour to a directive |
-| `tern.source` | the note's source text |
-| `tern.toHTML(source)` | convert Tern source to an HTML string |
-
-The live examples on this page are built with that API. Each example is a fenced block
-with the language `demo`, and a short script at the end of the note renders every such
-block with `tern.toHTML` and inserts the result after it.
-
-## Styling
-
-Tern's look is controlled by CSS variables. Override them in a `<style>` block in the note.
-
-| Variable | Controls |
-|---|---|
-| `--t-bg`, `--t-fg` | page background and text colour |
-| `--t-muted` | secondary text (asides, quotes, equation numbers) |
-| `--t-line` | borders and rules |
-| `--t-soft` | soft backgrounds (code, cards, table headers) |
-| `--t-link` | link colour |
-| `--t-mark` | highlight background |
-| `--t-font`, `--t-sans`, `--t-mono` | body, heading and code fonts |
-| `--t-accent` | set on a block to change its bar or callout colour |
-
-```html
-<style>
-  :root { --t-font: "EB Garamond", serif; --t-link: #a03050; }
-  .t-block.theorem { --t-accent: crimson; }
-</style>
+[^arctic]: The Arctic tern's yearly journey, from the Arctic to the
+  Antarctic and back, is among the longest of any animal.
 ```
 
-Dark mode follows the system setting automatically. Printing uses a clean stylesheet, so a
-note can be saved as a PDF from the browser's print dialog.
+### Grids {#tour-grids}
 
-All content sits inside `<main class="tern">`. Tern's own classes are prefixed `t-`
-(`t-block`, `t-head`, `t-card`, `t-eq`, and so on).
+`+++` splits a block into cells, and the block becomes a grid. On a phone, it is one column.
 
-## How it works
+```tern {.live}
+:::row{cols=3}
+**Write** a note in any editor.
++++
+**Open** it in a browser.
++++
+**Publish** it on any static host.
+:::
+```
 
-Understanding two details explains most surprises.
+## Why Tern {#why}
 
-1. **The rest of the file is never parsed as HTML.** When the browser reaches the `tern.js`
-   script tag, the script switches the browser's parser into plain-text mode for the
-   remainder of the file. That is why `<`, `>` and `&` need no escaping, and why the script
-   tag must be the first thing in the file and must load synchronously.
-2. **The page rewrites itself.** Once loaded, Tern converts the source and replaces the
-   document with the rendered result. "View source" shows your note; the browser's
-   inspector shows the rendered page.
+- **One file.** A note is a single `.html` file next to `tern.js`. Open it from disk, keep it in a repository, put it on any static host. There is no project to set up.
+- **No build.** The browser renders the note when it opens. `tern build` can pre-render a page for search engines, but you never need it to see your work.
+- **Real HTML out.** Every construct becomes ordinary, accessible HTML: headings, sections, figures, tables, real `<kbd>` and `<details>`. Labels such as "Theorem 1" are text, so they copy, print and are found by search. When you need more, HTML, CSS and JavaScript are right there in the note.
+- **Your vocabulary.** Theorems, callouts, cards or web components: a note names what it needs, and a few lines of schema give the names labels, numbers and behaviour.
+- **Diagnostics.** Nothing is lost silently. Malformed markup stays visible where you wrote it, and Tern reports a positioned diagnostic with a hint that spells the fix:
 
-## Publishing
+  ```tern {.live expect="block.unclosed ref.dangling"}
+  :::aside
+  An aside nobody closed, with a reference to @nowhere.
+  ```
+- **A language server.** `tern lsp` brings the same diagnostics to your editor as you type, with completion of names and ids, go to definition, rename and an outline. `tern check` prints them for a whole folder of notes.
 
-A Tern note is an ordinary HTML file, so any static host serves it as a finished page.
-On GitHub Pages, enable Pages for the repository and push your notes together with
-`tern.js`. Add an empty `.nojekyll` file at the root so Pages serves files untouched.
+## Get started {#get-started}
 
-## Editor support
+1. **Download [`tern.js`](tern.js)** and put it in the folder where your notes live. It is the whole engine, with no dependencies.
+2. **Start a note.** Write the first line yourself, or let the command line write it with the right path:
 
-A Neovim plugin lives in the `nvim/` folder of the repository. It provides highlighting,
-folding, completion and navigation for labels, in-buffer rendering, and a live browser
-preview. Its documentation is in `nvim/README.md`.
+   ```sh
+   node tern-cli.js new notes/hello.html --title="Hello"
+   ```
+3. **Open the file** in your browser, from disk. Edit, save, reload. A panel in the corner lists any problems while you work.
 
-<style>
-  .result { border: 1px dashed var(--t-line); border-radius: 6px; padding: .8rem 1rem; margin: -.5rem 0 1.4rem; }
-  .result::before { content: "Result"; display: block; margin-bottom: .4rem; color: var(--t-muted);
-    font: 600 .7rem var(--t-sans); text-transform: uppercase; letter-spacing: .06em; }
-  .result > :last-child { margin-bottom: 0; }
-  .shout { font-weight: 700; color: var(--t-link); }
-</style>
-<script>
-  // Render every ```demo block and show the output right after its source.
-  document.querySelectorAll('code.language-demo').forEach(code => {
-    const out = document.createElement('div');
-    out.className = 'result';
-    out.innerHTML = tern.toHTML(code.textContent);
-    code.parentElement.after(out);
-  });
-</script>
+Then read [the Guide](docs/guide.html#top), which goes from the first line to vocabularies, styling and publishing.
+
+## Documentation {#documentation}
+
+| Page | What it covers |
+|---|---|
+| [Guide](docs/guide.html#top) | a complete tutorial, from the first line to schemas, publishing and the editor |
+| [Syntax: blocks](docs/syntax-blocks.html#top) | the eight rules, attributes, and every block construct |
+| [Syntax: inline](docs/syntax-inline.html#top) | every inline construct, the ambiguity rules, escapes |
+| [Elements and output](docs/elements.html#top) | how names become elements, titles and labels, numbering, references, ids, figures, raw HTML, metadata |
+| [Vocabulary and behaviour](docs/schema.html#top) | schemas, `window.TERN.schema`, add-ons, `tern.define`, styling |
+| [Diagnostics](docs/diagnostics.html#top) | every diagnostic: when it fires, what happens to the content, the fix |
+| [Command line and editors](docs/tools.html#top) | `tern new`, `check`, `parse`, `build`, `corpus` and `lsp`; editor setup |
+| [Publishing](docs/publishing.html#top) | hosting, `tern build`, CSP, KaTeX and offline use, browsers, trust |
+| [JavaScript API](docs/api.html#top) | `tern.*`, the AST, the runtime lifecycle, events, config |
+
+## Examples {#examples}
+
+Complete notes, each declaring its own vocabulary in a few lines at the top. Open one, then view its source next to the result.
+
+| Example | What it shows |
+|---|---|
+| [Lecture notes](examples/lecture.html) | numbered definitions and theorems, proofs, numbered equations, references, macros, a footnote, a figure |
+| [Cheat sheet](examples/cheatsheet.html) | keys, highlight and strikethrough, a three-column grid of tables, callouts, task lists |
+| [Code notes](examples/code.html) | a numbered listing with line numbers and highlights, code spans, escapes, raw HTML, a note script |
+| [Field notes](examples/media.html) | images and numbered figures, video, an embedded page, a web component, a plot drawn by a script |
+| [Project plan](examples/layout.html) | a floating contents box, rows and grids of cards, collapsible sections, a captioned table |
+
+## Status {#status}
+
+**1.0.** The syntax these pages describe is Tern 1.0. These pages and the engine's conformance tests are its reference, and every live example on these pages is checked against the engine. Tern is MIT licensed; the source is at [github.com/OscarAC/tern](https://github.com/OscarAC/tern).

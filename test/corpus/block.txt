@@ -1,0 +1,621 @@
+# The line algorithm (blocks own their lines, indentation is insignificant, line-start escapes)
+
+Classification order, the "interrupts a paragraph" column (one case per row),
+prefix containers and verbatim leaves, lazy continuation, the end of the
+note, and the line-start escapes. Quote- and list-specific laziness lives in
+quote.txt and list.txt.
+
+## block/leading-whitespace-ignored
+
+spec: syntax-blocks#r2 syntax-blocks#line-algorithm syntax-blocks#columns
+options: escaped
+
+Outside lists and footnotes, leading whitespace is ignored when a line is classified: there are no indented code blocks.
+
+````tern
+    # Heading
+        > quote
+\t---
+````
+
+````html
+<h1 id="heading">Heading</h1>
+<blockquote><p>quote</p></blockquote>
+<hr>
+````
+
+## block/container-body-indented
+
+spec: syntax-blocks#r2 syntax-blocks#line-algorithm
+options: schema=none
+
+Container bodies may be indented freely; the indentation means nothing.
+
+````tern
+:::box
+    # Title
+        Indented text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><h1 id="title">Title</h1><p>Indented text.</p></div>
+````
+
+## block/fence-dedent-by-opener
+
+spec: syntax-blocks#r2 syntax-blocks#fence
+
+Fence content is dedented by the indentation of its opening fence, and no more.
+
+````tern
+  ```
+  a
+    b
+  ```
+````
+
+````html
+<pre data-t="code"><code>a
+  b</code></pre>
+````
+
+## block/blank-whitespace-only
+
+spec: syntax-blocks#line-algorithm syntax-blocks#r3 syntax-blocks#paragraph
+options: escaped
+
+A line holding only spaces and tabs is blank (row 1), so it ends the paragraph.
+
+````tern
+One
+ \t
+Two
+````
+
+````html
+<p>One</p>
+<p>Two</p>
+````
+
+## block/closer-ends-paragraph
+
+spec: syntax-blocks#line-algorithm syntax-blocks#paragraph syntax-blocks#closer
+options: schema=none
+
+Row 2: a closer ends the open paragraph and closes the container.
+
+````tern
+:::box
+Inside
+:::
+After
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Inside</p></div>
+<p>After</p>
+````
+
+## block/interrupt-fence
+
+spec: syntax-blocks#line-algorithm syntax-blocks#fence
+
+Row 3: a fence opener interrupts a paragraph.
+
+````tern
+Some prose
+```js
+x
+```
+````
+
+````html
+<p>Some prose</p>
+<pre data-t="code"><code class="language-js">x</code></pre>
+````
+
+## block/interrupt-raw-html
+
+spec: syntax-blocks#line-algorithm syntax-blocks#raw-html
+
+Row 4: a block-level tag interrupts a paragraph.
+
+````tern
+Some prose
+<div class="x">raw</div>
+````
+
+````html
+<p>Some prose</p>
+<div class="x">raw</div>
+````
+
+## block/phrasing-tag-continues
+
+spec: syntax-blocks#line-algorithm syntax-blocks#raw-html
+
+A phrasing tag is not row 4, so it continues the paragraph and passes through inline.
+
+````tern
+Some prose
+<b>bold</b> continues it
+````
+
+````html
+<p>Some prose
+<b>bold</b> continues it</p>
+````
+
+## block/interrupt-table
+
+spec: syntax-blocks#line-algorithm syntax-blocks#tables
+
+Row 7, first form: a `|` line followed by a delimiter row interrupts a paragraph.
+
+````tern
+Some prose
+| a | b |
+|---|---|
+| 1 | 2 |
+````
+
+````html
+<p>Some prose</p>
+<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>
+````
+
+## block/delimiter-row-does-not-interrupt
+
+spec: syntax-blocks#line-algorithm syntax-blocks#tables syntax-blocks#paragraph
+
+Row 7, second form: a delimiter row starts a table only at a block start, so inside a paragraph it is text, with a warning.
+
+````tern
+Some prose
+|---|---|
+````
+
+````html
+<p>Some prose
+|---|---|</p>
+````
+
+````diagnostics
+2:1 warning table.stray-delimiter
+````
+
+## block/interrupt-container
+
+spec: syntax-blocks#line-algorithm syntax-blocks#container
+options: schema=none
+
+Row 10: a container opener interrupts a paragraph.
+
+````tern
+Some prose
+:::box
+Inside
+:::
+````
+
+````html
+<p>Some prose</p>
+<div class="t-block box" data-t="box"><p>Inside</p></div>
+````
+
+## block/interrupt-cell
+
+spec: syntax-blocks#line-algorithm syntax-blocks#cells
+options: schema=none
+
+Row 11: a `+++` line inside a container interrupts the paragraph and starts a new cell.
+
+````tern
+:::box
+Left text
++++
+Right text
+:::
+````
+
+````html
+<div class="t-block box t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="box"><div class="t-cell"><p>Left text</p></div><div class="t-cell"><p>Right text</p></div></div>
+````
+
+## block/interrupt-leaf
+
+spec: syntax-blocks#line-algorithm syntax-blocks#leaf
+options: schema=none
+
+Row 12: a line that is a whole leaf interrupts a paragraph.
+
+````tern
+Some prose
+::box[x]
+````
+
+````html
+<p>Some prose</p>
+<div class="box" data-t="box">x</div>
+````
+
+## block/demoted-leaf-continues
+
+spec: syntax-blocks#line-algorithm syntax-blocks#leaf
+
+A leaf interrupts only on a whole-line match; a prose line starting with `::` continues the paragraph. A line that never matched a block row is an ordinary paragraph line and carries its diagnostic wherever it appears, continuation lines included, so `leaf.demoted` fires here.
+
+````tern
+Some prose about CSS:
+::before and ::after are pseudo-elements.
+````
+
+````html
+<p>Some prose about CSS:
+::before and ::after are pseudo-elements.</p>
+````
+
+````diagnostics
+2:1 info leaf.demoted
+````
+
+## block/interrupt-display-math
+
+spec: syntax-blocks#line-algorithm syntax-blocks#display-math
+
+Row 13: a `$$` line interrupts a paragraph.
+
+````tern
+Some prose
+$$
+x^2
+$$
+````
+
+````html
+<p>Some prose</p>
+<div class="t-eq"><span class="t-math" data-display>x^2</span></div>
+````
+
+## block/interrupt-footnote-definition
+
+spec: syntax-blocks#line-algorithm syntax-blocks#footnote-definition
+
+Row 14: a footnote definition interrupts a paragraph.
+
+````tern
+Closed under addition.[^a]
+[^a]: Scaling too.
+````
+
+````html
+<p>Closed under addition.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol><li id="fn-a"><p>Scaling too. <a class="t-fnback" href="#fnref-a">↩</a></p></li></ol></section>
+````
+
+## block/interrupt-attribute-line
+
+spec: syntax-blocks#line-algorithm syntax-blocks#attribute-line
+
+Row 15: an attribute line interrupts a paragraph and attaches to the next block.
+
+````tern
+Some prose
+{.lead}
+Next paragraph
+````
+
+````html
+<p>Some prose</p>
+<p class="lead">Next paragraph</p>
+````
+
+## block/weak-attribute-line-continues
+
+spec: syntax-blocks#line-algorithm syntax-blocks#attribute-line
+
+Weak or unparsable groups are not row 15, so they continue the paragraph, silently.
+
+````tern
+Some prose
+{x}
+{1, 2}
+````
+
+````html
+<p>Some prose
+{x}
+{1, 2}</p>
+````
+
+## block/prefix-fail-closes-fence
+
+spec: syntax-blocks#line-algorithm syntax-blocks#fence syntax-blocks#blockquote
+
+Step 2: when a prefix fails, an open verbatim leaf closes as unclosed (no lazy continuation into code), with its diagnostic at the opener.
+
+````tern
+> ```
+> code
+after
+````
+
+````html
+<blockquote><pre data-t="code"><code>code</code></pre></blockquote>
+<p>after</p>
+````
+
+````diagnostics
+1:3 error block.unclosed-fence
+````
+
+## block/prefix-fail-closes-display-math
+
+spec: syntax-blocks#line-algorithm syntax-blocks#display-math syntax-blocks#lists
+
+Step 2 for display math: the list item's prefix fails, so the equation closes as unclosed and `y` starts a paragraph after the list. The error block holds the remainders, without the item's prefix.
+
+````tern
+- $$
+  x
+y
+````
+
+````html
+<ul><li><div class="t-eq t-error">$$
+x</div></li></ul>
+<p>y</p>
+````
+
+````diagnostics
+1:3 error math.unclosed
+````
+
+## block/prefix-fail-closes-raw-html
+
+spec: syntax-blocks#line-algorithm syntax-blocks#raw-html syntax-blocks#blockquote
+
+Step 2 for a generic raw block: the quote's prefix fails, which is a parent end, so the block closes with `html.unclosed` at the tag line, at the remainder's column inside the quote. A generic block stays raw HTML (the error block applies only to comment and raw-text blocks), and `inside` holds no Tern syntax, so there is no `html.wrapper`.
+
+````tern
+> <div>
+> inside
+outside
+````
+
+````html
+<blockquote><div>
+inside</blockquote>
+<p>outside</p>
+````
+
+````diagnostics
+1:3 error html.unclosed
+````
+
+## block/verbatim-leaf-gets-remainder
+
+spec: syntax-blocks#line-algorithm syntax-blocks#fence syntax-blocks#blockquote
+
+Step 2: when every prefix matches, the remainder goes to the open leaf as content, so `#` inside a quoted fence is code.
+
+````tern
+> ```
+> # not a heading
+> ```
+````
+
+````html
+<blockquote><pre data-t="code"><code># not a heading</code></pre></blockquote>
+````
+
+## block/end-of-note-closes-each
+
+spec: syntax-blocks#line-algorithm syntax-blocks#fence syntax-blocks#closer
+options: schema=none
+
+Step 5: at the end of the note every open block is closed, each with its own diagnostic.
+
+````tern
+:::box
+```js
+x
+````
+
+````html
+<div class="t-block box" data-t="box"><pre data-t="code"><code class="language-js">x</code></pre></div>
+````
+
+````diagnostics
+1:1 error block.unclosed
+2:1 error block.unclosed-fence
+````
+
+## block/escape-heading
+
+spec: syntax-inline#line-start-escapes syntax-blocks#heading
+
+`\#` at the start of a line is text, not a heading.
+
+````tern
+\# Not a heading
+````
+
+````html
+<p># Not a heading</p>
+````
+
+## block/escape-quote
+
+spec: syntax-inline#line-start-escapes syntax-blocks#blockquote
+
+`\>` at the start of a line is text, not a quote.
+
+````tern
+\> Not a quote
+````
+
+````html
+<p>&gt; Not a quote</p>
+````
+
+## block/escape-list-markers
+
+spec: syntax-inline#line-start-escapes syntax-blocks#lists
+
+`\-`, `\+`, `\*` and `1\.` at the start of a line are text, not list items.
+
+````tern
+\- not a bullet
+\+ not a bullet
+\* not a bullet
+1\. not an item
+````
+
+````html
+<p>- not a bullet
++ not a bullet
+* not a bullet
+1. not an item</p>
+````
+
+## block/escape-table
+
+spec: syntax-inline#line-start-escapes syntax-blocks#tables
+
+`\|` at the start of a line is text, not a table row.
+
+````tern
+\| not | a row |
+````
+
+````html
+<p>| not | a row |</p>
+````
+
+## block/escape-container-and-leaf
+
+spec: syntax-inline#line-start-escapes syntax-blocks#container syntax-blocks#leaf
+
+`\:::` and `\::` at the start of a line are text, not an opener or a leaf.
+
+````tern
+\:::box
+\::box
+````
+
+````html
+<p>:::box
+::box</p>
+````
+
+## block/escape-display-math
+
+spec: syntax-inline#line-start-escapes syntax-blocks#display-math
+
+`\$$` at the start of a line is text; the remaining single `$` is followed by a space, so nothing opens.
+
+````tern
+\$$ is not display math
+````
+
+````html
+<p>$$ is not display math</p>
+````
+
+## block/escape-attribute-line
+
+spec: syntax-inline#line-start-escapes syntax-blocks#attribute-line
+
+`\{` at the start of a line is text, not an attribute line.
+
+````tern
+\{.lead}
+Text
+````
+
+````html
+<p>{.lead}
+Text</p>
+````
+
+## block/escape-raw-html
+
+spec: syntax-inline#line-start-escapes syntax-blocks#raw-html
+
+`\<` at the start of a line is text, not a raw HTML block.
+
+````tern
+\<div> is not raw HTML
+````
+
+````html
+<p>&lt;div&gt; is not raw HTML</p>
+````
+
+## block/escape-footnote-definition
+
+spec: syntax-inline#line-start-escapes syntax-blocks#footnote-definition syntax-inline#escape
+
+`\[^x]:` at the start of a line is text, not a footnote definition, and a lone `\[` draws no LaTeX hint.
+
+````tern
+\[^x]: not a definition
+````
+
+````html
+<p>[^x]: not a definition</p>
+````
+
+````diagnostics
+````
+
+## block/escape-cell
+
+spec: syntax-inline#line-start-escapes syntax-blocks#cells
+options: schema=none
+
+`\+++` at the start of a line inside a container is text, not a cell separator.
+
+````tern
+:::box
+Left
+\+++
+Right
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Left
++++
+Right</p></div>
+````
+
+## block/escape-rule
+
+spec: syntax-inline#line-start-escapes syntax-blocks#thematic-break
+
+`\---` at the start of a line is text, not a thematic break.
+
+````tern
+\---
+````
+
+````html
+<p>---</p>
+````
+
+## block/escape-fence
+
+spec: syntax-inline#line-start-escapes syntax-blocks#fence
+
+``\``` `` at the start of a line is text, not a fence; the remaining two backticks find no closing run and stay literal.
+
+````tern
+\```js
+````
+
+````html
+<p>```js</p>
+````

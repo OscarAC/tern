@@ -1,0 +1,31 @@
+{
+  "name": "tern",
+  "version": "0.2.0-dev",
+  "description": "Documents with the full power of HTML, CSS and JS.",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OscarAC/tern.git"
+  },
+  "main": "tern.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node tools/concat.js",
+    "test": "node test/all.js",
+    "test:corpus": "node test/run.js",
+    "lint:corpus": "node test/run.js --lint",
+    "samples": "node test/samples.js",
+    "perf": "node test/perf.js",
+    "fuzz": "node test/fuzz.js",
+    "smoke": "node test/smoke.js"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  },
+  "bin": {
+    "tern": "tern-cli.js"
+  }
+}

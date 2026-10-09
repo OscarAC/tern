@@ -1,0 +1,1252 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Command line and editors · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
+
+:::meta
+description: The tern command line (new, check, parse, build, corpus), the language server and its tern/outline notification, editor setup for Neovim, VS Code and Helix, and the note-detection rule editors share.
+:::
+
+::site-nav
+
+# Command line and editors {#top}
+
+::toc
+
+Tern has one command-line program, `tern-cli.js`. It writes new notes, checks them, prints their syntax tree, pre-renders them into static pages, and runs a language server for your editor. It runs under Node and is never loaded by a note: a note needs only `tern.js`.
+
+Every command runs the same engine the browser runs, on the same note, with the same vocabulary. So `tern check` reports the same diagnostics as the browser's panel, for everything the browser does not find only at run time (a formula KaTeX rejects, a script that fails), and your editor shows them again as you type.
+
+The examples on this page are real output, run against the engine in this repository. Paths in them are relative to the folder the command ran in. A few long absolute paths are shortened with `…`.
+
+## Installing and running {#install}
+
+You need **Node 22 or later** (`package.json` asks for `node >= 22`). The command line has no dependencies of its own: a checkout of the repository is all it needs.
+
+| How | Command | Notes |
+|---|---|---|
+| Directly | `node path/to/tern/tern-cli.js check notes/` | Works from anywhere. |
+| npx, inside the checkout | `npx --no -- tern check notes/` | Uses the `bin` entry of the checkout's `package.json`. |
+| A `tern` command | `npm link` in the checkout | Puts `tern` on your `PATH`, linked to the checkout. |
+| A symbolic link | `ln -s ~/src/tern/tern-cli.js ~/.local/bin/tern` | `tern-cli.js` is executable and starts with `#!/usr/bin/env node`. |
+
+The rest of this page writes `tern` for whichever you chose.
+
+:::warning
+Run `npx` only inside the checkout. Elsewhere, `npx tern` looks for a package called `tern` on the npm registry, which is an unrelated project. The `--no` flag makes `npx` refuse to install anything, so a mistake fails instead of downloading it. Also put `--` before the command: `npx --no tern --version` prints npm's own version.
+:::
+
+`tern help` (or `tern` alone, `tern --help`, `tern -h`) prints the usage to stdout and exits 0. `tern --version` (or `-v`, `version`) prints the engine's version:
+
+```sh
+$ tern --version
+0.2.0-dev
+$ tern bogus
+tern: unknown command "bogus"
+usage: tern COMMAND …
+…
+$ echo $?
+2
+```
+
+| Command | What it does | Section |
+|---|---|---|
+| `tern new FILE` | writes a new note's first line | [tern new](#new) |
+| `tern check PATH…` | prints the diagnostics of notes; exits 1 on errors | [tern check](#check) |
+| `tern parse FILE` | prints the note's syntax tree as JSON | [tern parse](#parse) |
+| `tern build FILE` | writes a static, pre-rendered page | [tern build](#build) |
+| `tern corpus PATH…` | prints documentation pages' live examples as corpus cases | [tern corpus](#corpus) |
+| `tern lsp [--stdio]` | the language server, over stdio | [The language server](#lsp) |
+
+## What every command shares {#common}
+
+### Exit codes {#exit-codes}
+
+| Code | Meaning |
+|---|---|
+| `0` | Done. |
+| `1` | `tern check` found a diagnostic at or above `--fail-on`, `tern new` refused to write the file, or `tern corpus` left out an example. |
+| `2` | A usage error (a missing argument, an unknown option, a bad value), or a path that cannot be used: a missing or unreadable file, or, for `tern parse` and `tern build`, a file that is not a note. |
+
+Every command takes `--help` (or `-h`), which prints its synopsis and exits 0. Options are strict: an unknown option is a usage error, printed with the synopsis.
+
+```sh
+$ tern new x.html --bogus
+tern new: Unknown option '--bogus'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- "--bogus"
+usage: tern new FILE [--tern=PATH] [--use=LIST] [--title=TEXT] [--guarded] [--force]
+```
+
+### How diagnostics print {#output}
+
+`tern check` and `tern build` print each diagnostic on one line, with its hint indented on the next:
+
+```sh
+notes/kernel.html:6:1: error block.unclosed: `:::aside` opened on line 5 is still open at line 9
+    add `:::` or `:::/aside`
+```
+
+The parts are `FILE:LINE:COLUMN: SEVERITY CODE: MESSAGE`. This is the shape most editors and CI systems recognise as a clickable location.
+
+- **Lines are file lines.** The note starts on the line after the `tern.js` tag, so with the canonical first line, note line 5 is file line 6. Your editor shows file lines, so these are the numbers to jump to.
+- **Messages cite note lines.** The message comes from the engine, which counts lines from the first line of the note. Above, `opened on line 5` is the same line as `:6:1`.
+- **Columns** count UTF-16 code units from 1, as the engine does. They are the same in the file and in the note.
+
+Every code, with what it means and how to fix it, is on the [Diagnostics](diagnostics.html#top) page.
+
+### Which files are notes {#notes}
+
+A file is a note when one of its lines loads `tern.js` with a plain script tag. The rule is exact and shared by every command, the language server and editors; it is [Note detection](#detection) below. The note is everything after that line, and everything before the tag is the preserved head.
+
+When a command is given a file that is not a note, it says why:
+
+| The file | What the commands say |
+|---|---|
+| has no line loading `tern.js` | `no line loads tern.js` |
+| loads it with `defer`, `async` or `type=module` | `it loads tern.js with defer, so tern.js does not render it; use a plain <script src>` |
+| was written by `tern build` (`data-built` on the tag) | `it is a page written by tern build; check its source note` |
+| has the tag inside a comment, or split over lines | `its tern.js tag is commented out or not on one line` |
+
+### Vocabulary under Node {#vocabulary}
+
+A note's vocabulary comes from its own files: the scripts in its head, and the add-ons in `data-use` (see [Vocabulary and behaviour](schema.html#window-tern)). Every command and the language server load them the way the browser does, so names, labels and numbering match the page. They run in one sandbox, in this order:
+
+1. **The head's scripts**, those before the `tern.js` tag, in document order: inline scripts, and scripts with a local `src`. Modules, data blocks, and scripts with a `src` and `async` or `defer` (which run after `tern.js` has started) are left out. `tern` is not defined yet, as in the browser.
+2. **`window.TERN`** is read, as `tern.js` reads it when it starts: its `lang` and its `schema`.
+3. **The script add-ons** of `data-use`, in order. Every entry that does not end in `.css` is run as a classic script, as the browser runs it. Here `tern.block`, `tern.leaf` and `tern.inline` write the vocabulary, and `tern.transform(name, fn)` registers a transform, which then runs on the note as it does in the browser. `tern.define`, `tern.on`, `tern.style` and `tern.render` are accepted and do nothing. CSS add-ons are skipped.
+4. **`window.TERN.schema`** goes on top: the note's own entry wins over an add-on's for the same name. Its `strict: true` turns on strict mode, so a name with no schema entry gets [`name.unknown`](diagnostics.html#name-unknown); `strict: false` turns it off, whatever an add-on set.
+
+The label language follows the browser's order too: `data-lang` on the tag, then `window.TERN.lang`, then `lang` in `:::meta`, then `<html lang>`. With a theorem labelled `{ en: 'Theorem', de: 'Satz', fr: 'Théorème' }` and `<html lang="fr">`, `tern build` writes "Théorème 1"; adding `data-lang="de"` to the tag makes it "Satz 1", as in the browser.
+
+How the sandbox behaves:
+
+- **Browser globals** (`document`, `customElements`, `HTMLElement`, `location`, `fetch` …) exist but do nothing. So an add-on that defines a custom element or adds a listener while it loads still reaches its `tern.block` calls.
+- **Output.** An add-on's `console` writes to stderr. stdout carries only the command's output: JSON for `tern parse` and `tern check --json`, the protocol for `tern lsp`.
+- **Paths.** A relative URL is resolved from the note's folder. A root-relative URL (`/lib/theorems.js`) is looked for under the note's folder and then under each folder above it, since the site root is not known.
+- **Time.** Each script may run for 2 seconds; a script still running then is stopped, and counts as having thrown.
+
+What cannot be loaded is reported, and the note is still checked without it:
+
+| Problem | Code | Severity | Where |
+|---|---|---|---|
+| an add-on that is missing, is a folder, does not parse as a classic script (an ES module, for example), or throws | [`addon.failed`](diagnostics.html#addon-failed) | error | the `tern.js` line, column 1 |
+| a transform an add-on registered that throws; it is skipped, and the rest of the note is analysed | [`addon.failed`](diagnostics.html#addon-failed) | error | the `tern.js` line, column 1 |
+| a remote add-on (`https://…`), which is not fetched under Node | [`addon.remote`](diagnostics.html#addon-remote) | info | the `tern.js` line, column 1 |
+| a head script with a remote `src` | [`head.script`](diagnostics.html#head-script) | info | its `<script` tag |
+| a head script that is missing or throws | [`head.script`](diagnostics.html#head-script) | warning | its `<script` tag |
+
+`head.script` and `addon.remote` exist only on the command line and in the language server: in a browser, head scripts are the browser's business, and remote add-ons load like any other.
+
+A transform that throws is reported like this, and the note is checked without it:
+
+```sh
+$ tern check tx-throws.html
+tx-throws.html:1:1: error addon.failed: the transform "broken" of the add-on throws-tx.js threw: boom
+tern check: 1 note: 1 error, 0 warnings, 0 infos
+```
+
+- **Transforms run; behaviours do not.** A transform an add-on registers changes what `tern check`, `tern parse --transformed`, `tern build` and the language server see, as it changes the page. A note whose add-on uppercases every word reads `QUIET WORDS` in the browser and in the page `tern build` writes. Behaviours (`tern.define`, a schema's `dom`) act on the page's elements, so they run only in the browser.
+- **Remote add-ons are not fetched.** An add-on from another origin is an `addon.remote` info, not an error, so it does not fail `tern check`. The names it declares are unknown under Node, so the note may get diagnostics the browser would not give, and `tern build` writes those names without their schema. To check such a note fully, keep a local copy of the add-on and point `data-use` at it.
+
+## tern new {#new}
+
+`tern new` writes a new note: the canonical first line, with the right path to `tern.js`.
+
+:::syntax[tern new]
+```sh
+tern new FILE [--tern=PATH] [--use=LIST] [--title=TEXT] [--guarded] [--force]
+```
+:::
+
+```sh
+$ tern new notes/kernel.html
+created notes/kernel.html, loading ../tern.js
+$ cat notes/kernel.html
+<!doctype html><meta charset="utf-8"><script src="../tern.js"></script>
+```
+
+| Option | What it does |
+|---|---|
+| `--tern=PATH` | The `src` of the script tag, as given: a relative path, a root-relative path, or a URL. Without it, see below. |
+| `--use=LIST` | The add-ons, written to `data-use`. Separate them with commas or spaces; the option may repeat. |
+| `--title=TEXT` | Adds a `:::meta` block with `title: TEXT`, then a blank line. One non-empty line. |
+| `--guarded` | Adds the guard, which shows the note's source when `tern.js` does not run. See [The guard](#guarded). |
+| `--force` | Overwrites an existing file. |
+
+### The path to tern.js {#new-path}
+
+Without `--tern`, `tern new` looks for a file called `tern.js` in the new note's folder, then in each folder above it, and writes the nearest one as a relative path with forward slashes. Two folders down, that is `../../tern.js`.
+
+When there is none, it writes `tern.js` (the note's own folder) and says so on stderr:
+
+```sh
+$ tern new note.html
+created note.html, loading tern.js
+tern new: no tern.js in . or above; the note loads tern.js from its own directory
+```
+
+Relative paths are what you want for publishing: they keep working when the folder is copied, opened from disk, or served under a sub-path such as a GitHub project page (see [Publishing](publishing.html#github-pages)).
+
+### Add-ons and a title {#new-options}
+
+```sh
+$ tern new notes/first.html --title="Linear maps" --use=theorems.js,theme.css
+created notes/first.html, loading ../tern.js
+tern new: data-use names theorems.js, which does not exist yet
+tern new: data-use names theme.css, which does not exist yet
+$ cat notes/first.html
+<!doctype html><meta charset="utf-8"><script src="../tern.js" data-use="theorems.js theme.css"></script>
+:::meta
+title: Linear maps
+:::
+
+```
+
+- `--use=a.js,b.css`, `--use "a.js b.css"` and `--use=a.js --use=b.css` all give `data-use="a.js b.css"`.
+- A local add-on that does not exist yet (relative to the note's folder) gets a note on stderr. The file is still written: you may be about to create it. Remote URLs and root-relative paths are not checked.
+- `--title` is written as `:::meta` (see [Metadata](elements.html#metadata)). Before writing, `tern new` reads the file back and checks that the title survives as written; a title that would not is refused.
+
+### The guard (--guarded) {#guarded}
+
+A note whose `tern.js` does not load shows its source run together as one paragraph of text, with any raw HTML in it rendered. The guard makes that case readable: it shows a one-line message, then the note exactly as written.
+
+```sh
+$ tern new notes/guarded.html --guarded
+created notes/guarded.html, loading ../tern.js, guarded
+$ cat notes/guarded.html
+<!doctype html><meta charset="utf-8"><script src="../tern.js"></script><noscript><p>JavaScript is off; the source follows.</p><xmp hidden></noscript><script>self.tern||document.write('<p>tern.js did not load; the source follows.</p><xmp hidden>')</script></xmp><plaintext>
+```
+
+The guard is the rest of the first line, after the tag. It is still one line, so the file is still a note. What happens in each case (all three are tested in Chromium and Firefox):
+
+| Case | What the reader sees | How |
+|---|---|---|
+| `tern.js` loads | the rendered note | `tern.js` takes everything after its tag as text, the guard included, and the note starts on the next line. The guard is never parsed as HTML. |
+| `tern.js` does not load | "tern.js did not load; the source follows.", then the note as plain text | The `<noscript>` is inert while scripts run. The guard's script finds no `tern`, writes the message and a hidden `<xmp>`, which the `</xmp>` right after closes. `<plaintext>` shows the rest as text. |
+| JavaScript is off | "JavaScript is off; the source follows.", then the note as plain text | The `<noscript>`'s paragraph starts the body, and its hidden `<xmp>` hides the guard script up to the same `</xmp>`. Then `<plaintext>`. |
+
+- The guard adds nothing to the rendered page: when `tern.js` loads, its script never runs.
+- **CSP.** The guard's script is an inline script. When `tern.js` loads, the guard is never parsed, so it causes no violation. When `tern.js` does not load under a Content-Security-Policy that blocks inline scripts, the guard's script is blocked: the reader sees the note as plain text, without the message line.
+- `tern build` drops the guard from the page it writes (see [tern build](#build)).
+
+### Refusals {#new-refusals}
+
+`tern new` writes one file, creates no folders, and overwrites only with `--force`. When it declines, it says why on stderr and exits 1:
+
+| Situation | Message |
+|---|---|
+| the file exists | `tern new: notes/kernel.html exists; --force overwrites it` |
+| the path is a directory | `tern new: notes is a directory` |
+| the folder does not exist (it creates none) | `tern new: there is no directory drafts` |
+| `--tern` names a file not called `tern.js` | `tern new: <script src="lib/tern.min.js"> would not make notes/min.html a note: the src must name a file called tern.js` |
+| the title does not read back from `:::meta` | `tern new: the title does not read back from :::meta` |
+
+Before writing, `tern new` checks that the line it would write is detected as a note line, with the same rule every tool uses. That is why `--tern=lib/tern.min.js` is refused: a file called `tern.min.js` is not detected, so the result would not be a note.
+
+These are usage errors instead, which exit 2 and print the synopsis: no `FILE`, more than one, a path with no file name (`notes/`, `.`, `..`), an empty `--title` or one with a line break, an empty `--tern`, an unknown option.
+
+## tern check {#check}
+
+`tern check` prints every diagnostic of one or more notes, and exits 1 when any is serious enough. It is the gate for CI and for publishing.
+
+:::syntax[tern check]
+```sh
+tern check PATH… [--json] [--fail-on=error|warning|info] [--quiet]
+```
+:::
+
+```sh
+$ tern check notes/kernel.html
+notes/kernel.html:4:5: warning ref.dangling: no id in this note has this name, so the reference stays text
+    if it is not a reference, write \@rank
+notes/kernel.html:6:1: error block.unclosed: `:::aside` opened on line 5 is still open at line 9
+    add `:::` or `:::/aside`
+notes/kernel.html:9:1: error math.unclosed: `$$` opened on line 8 is never closed
+    add a line holding only `$$`
+tern check: 1 note: 2 errors, 1 warning, 0 infos
+$ echo $?
+1
+```
+
+The diagnostics go to stdout, in the order they occur in each file. The summary line goes to stderr. The note it checked is this one, after the canonical first line; here it is live, so you can see the same three diagnostics at note lines 3, 5 and 8:
+
+```tern {.live expect="ref.dangling block.unclosed math.unclosed"}
+# The kernel
+
+See @rank for the dimension count.
+
+:::aside
+Every linear map has a kernel.
+
+$$
+\ker f = \{ v : f(v) = 0 \}
+```
+
+| Option | What it does |
+|---|---|
+| `PATH…` | Files and folders, at least one. Each file is checked once, even if named twice. |
+| `--fail-on=LEVEL` | The lowest severity that makes the exit code 1: `error` (the default), `warning` or `info`. Anything else is a usage error. |
+| `--quiet` | Prints only the diagnostics at or above `--fail-on`, and no summary and no notes about skipped files. |
+| `--json` | Prints one JSON array of the diagnostics instead of lines. See [--json](#check-json). |
+
+### Folders {#check-folders}
+
+A folder is searched for notes:
+
+- every `.html` and `.htm` file in it and below, in sorted order;
+- folders whose names start with a dot, and `node_modules`, are skipped;
+- symbolic links to files are followed, symbolic links to folders are not;
+- a file found this way that is not a note is skipped silently.
+
+A file you **name** that is not a note is skipped with a note on stderr, and does not change the exit code:
+
+```sh
+$ tern check notes/plain.html notes/deferred.html
+tern check: notes/plain.html is not a note (no line loads tern.js); skipped
+tern check: notes/deferred.html is not a note (it loads tern.js with defer, so tern.js does not render it; use a plain <script src>); skipped
+tern check: no notes found
+$ echo $?
+0
+```
+
+A path that does not exist is a usage error (exit 2). A file that exists but cannot be read is reported on stderr; the other files are still checked, and the exit code is 2.
+
+### --fail-on and --quiet {#check-fail-on}
+
+`--fail-on` decides the exit code; `--quiet` decides what is printed. Without `--quiet`, every diagnostic is printed whatever `--fail-on` says.
+
+| The notes have | default | `--fail-on=warning` | `--fail-on=info` |
+|---|---|---|---|
+| an error | exit 1 | exit 1 | exit 1 |
+| a warning, no error | exit 0 | exit 1 | exit 1 |
+| only infos | exit 0 | exit 0 | exit 1 |
+| nothing | exit 0 | exit 0 | exit 0 |
+
+```sh
+$ tern check notes --quiet
+notes/kernel.html:6:1: error block.unclosed: `:::aside` opened on line 5 is still open at line 9
+    add `:::` or `:::/aside`
+notes/kernel.html:9:1: error math.unclosed: `$$` opened on line 8 is never closed
+    add a line holding only `$$`
+$ tern check notes --quiet --fail-on=warning
+notes/kernel.html:4:5: warning ref.dangling: no id in this note has this name, so the reference stays text
+    if it is not a reference, write \@rank
+notes/kernel.html:6:1: error block.unclosed: `:::aside` opened on line 5 is still open at line 9
+…
+```
+
+In CI, `tern check site/ --quiet` prints only what fails the build. Add `--fail-on=warning` to hold notes to a stricter standard.
+
+### --json {#check-json}
+
+`--json` prints one array with every diagnostic of every note, in the same order as the lines would be. `--quiet` filters it the same way; with nothing to report, the array is empty (`[]`). The summary line still goes to stderr unless `--quiet`.
+
+```sh
+$ tern check notes/warn.html --json
+[
+  {
+    "file": "notes/warn.html",
+    "code": "ref.dangling",
+    "severity": "warning",
+    "message": "no id in this note has this name, so the reference stays text",
+    "position": {
+      "start": { "line": 1, "column": 5, "offset": 4 },
+      "end": { "line": 1, "column": 13, "offset": 12 }
+    },
+    "hint": "if it is not a reference, write \\@nowhere",
+    "filePosition": {
+      "start": { "line": 2, "column": 5 },
+      "end": { "line": 2, "column": 13 }
+    }
+  }
+]
+tern check: 1 note: 0 errors, 1 warning, 0 infos
+```
+
+(The real output puts each `line`, `column` and `offset` on a line of its own.)
+
+| Field | What it holds |
+|---|---|
+| `file` | The path as named, or as found in a folder. |
+| `code` | The diagnostic's code, such as `ref.dangling`. |
+| `severity` | `error`, `warning` or `info`. |
+| `message` | What happened. It cites note lines. |
+| `position` | Where, in the note: `start` and `end`, each with `line` and `column` (1-based) and `offset` (0-based UTF-16 index into the note). The end is exclusive. Missing for `addon.failed`, `addon.remote` and `head.script`, which are about the file, not the note. |
+| `hint` | How to fix it, when there is a hint. |
+| `filePosition` | Where, in the file: `start` and `end`, each with `line` and `column`. Always present. |
+
+The engine's own diagnostics have the shape described on [Diagnostics](diagnostics.html#positions) and in the [JavaScript API](api.html#diagnostics); `file` and `filePosition` are what the command line adds.
+
+### Add-ons and head scripts {#check-vocabulary}
+
+`tern check` loads the note's vocabulary as described in [Vocabulary under Node](#vocabulary). Problems loading it come first in a file's diagnostics. This note has a head script on a remote origin, an inline head script that throws, a missing add-on and a remote one:
+
+```html
+<!doctype html><meta charset="utf-8">
+<script src="vocab.js"></script>
+<script src="https://cdn.example/analytics.js"></script>
+<script>window.TERN.schema.leaf = { toc: { tag: 'nav', transform: 'toc' } }; undefinedFunction();</script>
+<script src="../tern.js" data-use="theorems.js missing.js https://cdn.example/remote.js theme.css"></script>
+```
+
+```sh
+$ tern check notes/addons.html
+theorems.js loaded
+notes/addons.html:3:1: info head.script: the head script https://cdn.example/analytics.js is not run under node, so vocabulary it declares in window.TERN.schema is unknown here
+notes/addons.html:4:1: warning head.script: the head script inline script on line 4 threw under node: undefinedFunction is not defined; vocabulary it declares may be missing
+notes/addons.html:5:1: error addon.failed: the add-on missing.js did not load: cannot read …/site/notes/missing.js
+notes/addons.html:5:1: info addon.remote: the add-on https://cdn.example/remote.js is not loaded under node; names it declares are unknown to tern check
+tern check: 1 note: 1 error, 1 warning, 2 infos
+```
+
+- `theorems.js loaded` is the add-on's own `console.log`, on stderr.
+- `vocab.js` and `theorems.js` loaded, so the names they declare are known, and the note's theorems are numbered as in the browser.
+- `theme.css` is a stylesheet, so it is not loaded under Node and not reported.
+- The inline script set `window.TERN.schema.leaf` before it threw, and that part stays in effect.
+
+## tern parse {#parse}
+
+`tern parse` prints the note's syntax tree as JSON: the AST that `tern.parse` returns, with the note's vocabulary and head.
+
+:::syntax[tern parse]
+```sh
+tern parse FILE [--transformed] [--compact]
+```
+:::
+
+| Option | What it does |
+|---|---|
+| `--transformed` | Runs the transforms first, so the tree has ids, numbers, labels, resolved references and `root.data.tern` (see [The transformed AST](api.html#transformed-ast)). |
+| `--compact` | One line of JSON instead of two-space indentation. |
+
+```sh
+$ cat notes/small.html
+<!doctype html><meta charset="utf-8"><script src="../tern.js"></script>
+# Hello {#top}
+
+See @top.
+$ tern parse notes/small.html --transformed --compact | jq '.data.tern.ids'
+{
+  "top": {
+    "kind": "heading",
+    "explicit": true,
+    "line": 1,
+    "column": 10
+  }
+}
+```
+
+- **Positions are note positions**: line 1 is the line after the `tern.js` tag. Add the number of lines up to and including the tag to get file lines.
+- **No diagnostics.** `tern parse` prints the tree and nothing else; use `tern check` for diagnostics. With `--transformed`, the transforms' own diagnostics are in `root.data.tern.diagnostics`.
+- **Vocabulary problems** (a missing or remote add-on, a head script or transform that threw) are printed on stderr as `tern parse: …` and do not change the exit code.
+- **Exit codes.** 0 when the tree is printed; 2 when the file is missing or is not a note.
+
+The node types and their fields are on [The AST](api.html#ast).
+
+## tern build {#build}
+
+`tern build` turns a note into a static page: the same HTML the browser would mount, already in the file. The page still loads `tern.js`, which adds what HTML alone cannot: behaviours, math, the diagnostics panel, copy and print handling. When to use it, and when not to, is on [Publishing](publishing.html#build).
+
+:::syntax[tern build]
+```sh
+tern build FILE [-o OUT] [--katex]
+```
+:::
+
+| Option | What it does |
+|---|---|
+| `-o OUT`, `--output=OUT` | Where to write the page. Without it, or with `-o -`, the page goes to stdout. When `OUT` ends with `/`, or is an existing folder, the page is written into that folder under the note's file name, and the folder is created if needed. Any other `OUT` is the page's file name, and missing folders on its path are created. `OUT` may not be the note itself. |
+| `--katex` | Pre-renders the math with KaTeX, if the `katex` npm package can be loaded. See [--katex](#build-katex). |
+
+```sh
+$ tern build notes/maps.html -o dist/
+theorems.js loaded
+notes/maps.html:14:13: warning ref.dangling: no id in this note has this name, so the reference stays text
+    if it is not a reference, write \@nowhere
+tern build: relative URLs (tern.js, add-ons, images, links) are kept as written, so they resolve from dist
+tern build: wrote dist/maps.html; 2 formulas
+```
+
+- **Diagnostics** go to stderr, in the same format as `tern check`. The page is written whatever they are, and the exit code is 0, just as a browser renders a note whatever its diagnostics. Run `tern check` first if problems should stop you.
+- **Relative URLs** in the note, the head and the tag are kept exactly as written. When `OUT` is in a different folder from the note, `tern build` warns you, because they now resolve from the new folder. Above, `../tern.js` now points one level above `dist/`.
+- **Folders.** `-o dist/` writes `dist/maps.html`, creating `dist/`. `-o out/deep/page.html` creates `out/deep/`. Without the final `/`, a name that is not an existing folder is a file name, and the build says so:
+
+  ```sh
+  $ tern build notes/maps.html -o dist2
+  …
+  tern build: wrote dist2; 2 formulas
+  tern build: dist2 is written as a file; end -o with / to write maps.html into a directory of that name
+  ```
+- **Warnings** about the note's files go to stderr too, prefixed `tern build:`: a missing doctype or charset that the page adds, a head script or add-on that did not load (the page then writes its names without its schema), and a remote add-on, which is not loaded under Node:
+
+  ```sh
+  tern build: the add-on https://cdn.example/remote.js is not loaded under node, so the page uses its names without its schema
+  ```
+- **Not a note**, `-o` naming the note itself, a missing file: exit 2.
+- The last line says how many formulas the page has, and with `--katex` how many were pre-rendered.
+
+### The built page {#built-page}
+
+The page `tern build` writes has these parts, in order. This is `dist/maps.html` from the example above, with tern.css cut short:
+
+```html
+<!doctype html><html lang="en"><meta charset="utf-8">
+<style id="tern-style">
+:root {
+  color-scheme: light dark;
+  …
+</style>
+<title>Linear maps</title>
+<meta name="author" content="O. Carrera">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<script data-built="math" src="../tern.js" data-use="theorems.js"></script><script src="theorems.js"></script>
+<main class="tern"><h1 id="linear-maps">Linear maps</h1>
+<section id="rn" class="t-block theorem" data-t="theorem" data-pos="9:1"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div><p>For <span class="t-math" data-pos="10:5">f : V \to W</span>, …</p>
+</section>
+<p>See <a class="t-ref" href="#rn">Theorem 1</a> and @nowhere.</p>
+</main>
+<script type="text/tern" id="tern-source" data-line="1">:::meta
+title: Linear maps
+…
+</script>
+<script type="application/json" id="tern-diagnostics">[{"code":"ref.dangling","severity":"warning",…}]</script>
+```
+
+1. **The preserved head**, as written. When it lacks `<!doctype html>` or a `<meta charset>`, the page gets them, with a warning for each:
+
+   ```sh
+   tern build: the note has no <!doctype html>; the page adds it
+   tern build: the note has no <meta charset>; the page adds <meta charset="utf-8">
+   ```
+2. **`:::meta`, written statically**, as the browser would write it at mount: `<title>`; `lang` and `dir` on `<html>` (into its tag, or a new `<html>` tag after the doctype); a `<meta name>` for every other key. A key the head already sets is left alone. Then a viewport meta and a `color-scheme` meta, unless the head has them.
+3. **Tern's stylesheets**, in the order the runtime uses, placed before the head's first stylesheet of your own, so yours win:
+   - KaTeX's CSS, when math was pre-rendered;
+   - the base: tern.css inlined as `<style id="tern-style">`. If the head links `tern.css` (or the `data-css` URL), that link is the base and stays where it is; `data-css` without such a link becomes a `<link>`;
+   - each CSS add-on of `data-use`, as a `<link>`, not inlined, so its relative `url()`s keep working;
+   - with `data-nonce`, each of them carries the nonce, and so do the script add-on tags. The `tern.js` tag is kept as written: give it a `nonce` yourself if your policy needs one.
+4. **The `tern.js` tag**, as written plus `data-built` (or `data-built="math"` when some formulas were left for `tern.js`). Anything after the tag on its line, such as a [guard](#guarded), is dropped. Then each script add-on of `data-use`, as a static `<script src>` tag, in order. Both run before the body is parsed, so the note's own scripts find `tern` and the add-ons' globals, as after a mount.
+5. **`<main class="tern">`** holding the emitted HTML, exactly what `tern.toHTML` returns for the note, with its vocabulary and head. So the page has its layout before any script runs.
+6. **The note's source**, in `<script type="text/tern" id="tern-source" data-line="N">`, where `N` is the number of file lines before the note. See [The source kept](#build-source).
+7. **The diagnostics**, when there are any, in `<script type="application/json" id="tern-diagnostics">`: the parse and transform diagnostics, at note positions, as JSON with each `<` written `\u003c`.
+
+A built page is not a note: its tag has `data-built`, which [detection](#detection) refuses. `tern check dist/maps.html` skips it and tells you to check its source note.
+
+### The source kept {#build-source}
+
+The page keeps the note so that `tern.js` can position errors it finds on the page (a formula KaTeX rejects), and so that the source can be read back.
+
+Script contents cannot hold `</script` or `<!--`, so the build adds one backslash after the `<` of each, and of each such run already escaped: `</script` becomes `<\/script`, `<\/script` becomes `<\\/script`, and so on. Removing one backslash after each `<` gives the note back exactly. `tern.js` does that on the page, and `cli/build.js` exports it as `decodeSource`.
+
+### --katex {#build-katex}
+
+With `--katex`, formulas are rendered to HTML and MathML at build time, so the page shows typeset math without loading KaTeX's script.
+
+```sh
+$ tern build notes/maps.html --katex -o dist/
+…
+tern build: wrote dist/maps.html; 2 formulas, 2 pre-rendered
+```
+
+- **Opt-in**, so the output never depends on what happens to be installed. Without it, formulas are left as TeX for `tern.js` to typeset.
+- **The package.** `katex` is not a dependency of Tern. The build loads it from where Node would find it for `tern-cli.js` (including `NODE_PATH`), then from the note's folder, then from the current folder. Install it with `npm install katex` in one of those. When it cannot be loaded, the build says so and leaves the formulas to `tern.js`:
+
+  ```sh
+  tern build: the katex package cannot be required (npm install katex); formulas are left to tern.js
+  ```
+- **As the runtime does it.** Every `:::macros` body is read first, into one table of macros, then each formula is rendered with errors thrown. Other KaTeX options are KaTeX's defaults: `window.TERN.katex` is not read by the build.
+- **A formula KaTeX rejects** is left as TeX for `tern.js`, which reports `math.error` on the page. The build prints it as a warning:
+
+  ```sh
+  notes/bad.html:2:15: warning math.error: KaTeX cannot typeset this formula, so tern.js will: KaTeX parse error: Expected '\right', got 'EOF' at end of input: \left( x
+  tern build: wrote the page; 2 formulas, 1 pre-rendered
+  ```
+- **`data-katex="none"`** on the tag turns math rendering off, so nothing is pre-rendered either, with a warning.
+- **The output.** Each pre-rendered `span.t-math` gets `data-tex` (its TeX, for copying) and KaTeX's HTML and MathML. Formulas in a `::toc` entry are pre-rendered too.
+- **The stylesheet.** The page links `katex.min.css` from jsDelivr at the installed package's version, with a Subresource Integrity hash computed from the package's own copy (for KaTeX 0.19.0, the same hash `tern.js` pins). With a `data-katex` base, it links `BASE/katex.min.css` instead, with no hash.
+- **`data-built="math"`.** When any formula is left for `tern.js`, the tag says so, and `tern.js` requests KaTeX at once. When every formula was pre-rendered, `tern.js` loads no KaTeX at all, not even for `:::macros`.
+
+:::warning
+Pre-rendered KaTeX output carries `style` attributes. A page served with a strict Content-Security-Policy blocks them, and the math loses its layout. See [Publishing: CSP](publishing.html#csp).
+:::
+
+### What tern.js does on a built page {#built-start}
+
+`tern.js` sees `data-built` on its own tag and skips what a note needs: it does not capture the file, mount, or re-create the note's scripts. Instead:
+
+- **At once**, it reads its configuration from the tag and `window.TERN`, adopts the stylesheets in the head as its own (so `tern.style` sheets of an add-on land in that add-on's place), requests KaTeX if the tag says `data-built="math"`, and starts noting add-on scripts that fail to load or throw while they run.
+- **When the page is parsed**, it applies `window.TERN.schema`, reads the source and its `data-line`, loads the build's diagnostics, adds an `addon.failed` for each script add-on that failed to load or threw, then runs the behaviours, fires `render`, typesets the formulas that have no KaTeX output yet, fires `math`, scrolls to the URL's fragment, prints the console group (whose first line says "a built page") and fires `ready`.
+- Copy, print and the opening of `<details>` behave as on a note.
+
+How a built page differs from a note:
+
+- **The note's scripts are real scripts.** They run while the page is parsed. `document.write` writes, `DOMContentLoaded` listeners run, and nothing is intercepted or reported.
+- **A failed CSS add-on is not reported.** Its link comes before `tern.js`, so its error has already happened. The browser's console reports it.
+- **When `tern.js` does not load**, the content still shows, with its styles. The add-ons, and any note script that calls `tern`, throw.
+- **The transforms ran at build time**, the add-ons' included (see [Vocabulary under Node](#vocabulary)). `tern.js` does not run them again on a built page.
+
+## tern corpus {#corpus}
+
+`tern corpus` turns the live examples of documentation pages, such as this one, into cases of the conformance corpus, the test format of `test/corpus/`. So every example in the documentation is also a test of the engine.
+
+:::syntax[tern corpus]
+```sh
+tern corpus PATH… [--out=DIR]
+```
+:::
+
+| Option | What it does |
+|---|---|
+| `PATH…` | Pages and folders, at least one. Folders are searched as by [tern check](#check-folders). |
+| `--out=DIR` | Writes one file per page with examples, `DIR/docs-PAGE.txt`, and creates `DIR` if needed. Without it, the cases go to stdout, page after page. |
+
+An example is a `tern` fence with the class `live` (see `docs/README.md`). Its attributes say how to run it: `expect="…"`, the codes it must produce; `schema=none` (the default) or `schema=demo`; `head="…"`, a preserved head; and `spec="syntax-blocks#fence"`, the documentation sections it illustrates. For the first example on this page:
+
+`````sh
+$ tern corpus docs/tools.html
+# docs/tools.html: live examples (tern corpus)
+
+## docs/tools-check-1
+
+spec: tools#check
+options: schema=none
+
+The live example on line 269 of docs/tools.html.
+
+````tern
+# The kernel
+
+See @rank for the dimension count.
+
+:::aside
+Every linear map has a kernel.
+
+$$
+\ker f = \{ v : f(v) = 0 \}
+````
+
+````diagnostics
+3:5 warning ref.dangling
+5:1 error block.unclosed
+8:1 error math.unclosed
+````
+…
+tern corpus: 3 cases from 1 page
+`````
+
+- **The id** is `docs/PAGE-SLUG`. `PAGE` is the file name (`examples-NAME` for a page in `examples/`). `SLUG` is the fence's own `#id` when it has one; otherwise the id of the heading the example follows and its number under that heading, as `check-1` above. Adding an example renumbers only its own section.
+- **`spec:`** cites documentation sections as `PAGE#ID`, where `PAGE` is a page of `docs/` without `.html`. It is the fence's `spec=`, else the section the example is in: the nearest heading before it with an id, as `tools#check` above, or `PAGE#top` before any heading. Examples on a page outside `docs/`, such as `index.html` or an example note, cite `guide#top`.
+- **`options:`** is `schema=none` for an example without a schema. An example with `schema=demo` has no such line: the corpus's own schema, `test/fixtures/schema.js`, is the demo schema. `escaped` is added when the source holds tabs, carriage returns, NUL, a byte-order mark or trailing spaces.
+- **The blocks.** `tern` is the example's text; `html head` its `head=`; `diagnostics` its expected codes, with the positions and severities the engine gives them.
+
+**Problems.** An example that cannot become a case is left out and reported on stderr as `FILE:LINE: message`, and the command exits 1:
+
+```sh
+$ tern corpus page.html
+page.html:10: schema=demo, but the page's add-ons expose no demo schema (window.ternDocs.demo from docs.js)
+page.html:16: schema="other" is not a schema the docs know (none, demo)
+page.html:6: example page-first-1: expect="" but the engine reports ref.dangling (missing nothing, unexpected ref.dangling)
+tern corpus: 0 cases from 0 pages
+```
+
+- **Exit codes.** 0 when every example became a case; 1 when one was left out; 2 for a usage error: no `PATH`, an empty `--out`, a path that does not exist, or two pages that would write the same file.
+- A page you name that is not a note is skipped, with a note on stderr.
+- `test/docs.js` extracts the examples of every page this way, and checks that the cases parse and pass the corpus lint.
+
+## The language server {#lsp}
+
+`tern lsp` is a language server: it speaks the Language Server Protocol over stdin and stdout, so any editor with an LSP client can use it. It runs the same analysis as `tern check` on every note you open, as you type, and answers questions about ids, references and element names from the syntax tree, at exact columns. It never guesses with a second grammar.
+
+:::syntax[tern lsp]
+```sh
+tern lsp [--stdio]
+```
+:::
+
+It always speaks over stdio. `--stdio` and `--clientProcessId=N`, which some editors pass, are accepted and change nothing. Any other argument is a usage error (exit 2), and `--help` prints the synopsis. It is written in plain Node, with no dependencies.
+
+The examples in this section are real requests and responses for this file, `notes/maps.html`, whose add-on `theorems.js` declares `tern.block('theorem', { tag: 'section', counter: 'theorem', label: 'Theorem' })`, a `proof` block and an inline `kbd`:
+
+```html
+<!doctype html><meta charset="utf-8">
+<title>Linear maps</title>
+<script src="tern.js" data-use="theorems.js"></script>
+## Kernel {#kernel}
+
+:::theorem[Rank–nullity]{#rn}
+Every linear map satisfies the rank–nullity identity.
+:::/theorem
+
+## Image
+
+See @rn, @kernel and @eq; press :kbd[Ctrl].[^1]
+
+:::aside
+$$
+\dim V = r + n
+$$ {#eq}
+:::
+
+[^1]: About @nowhere.
+```
+
+The note starts on file line 4. LSP positions are 0-based, so file line 4 is LSP line 3. Here is the note rendered with the [demo schema](schema.html#demo-schema), which declares `theorem` the same way:
+
+```tern {.live schema=demo expect="ref.dangling"}
+## Kernel {#kernel}
+
+:::theorem[Rank–nullity]{#rn}
+Every linear map satisfies the rank–nullity identity.
+:::/theorem
+
+## Image
+
+See @rn, @kernel and @eq; press :kbd[Ctrl].[^1]
+
+:::aside
+$$
+\dim V = r + n
+$$ {#eq}
+:::
+
+[^1]: About @nowhere.
+```
+
+### Protocol {#lsp-protocol}
+
+**Lifecycle.** `initialize` (once), `initialized`, then requests, `shutdown` and `exit`. The process exits with 0 after `shutdown` and `exit`, and with 1 on an `exit` without `shutdown`, or when stdin closes first.
+
+**The answer to `initialize`:**
+
+```json
+{
+  "capabilities": {
+    "positionEncoding": "utf-16",
+    "textDocumentSync": { "openClose": true, "change": 1 },
+    "completionProvider": { "triggerCharacters": [":", "@", "/", "#"] },
+    "hoverProvider": true,
+    "definitionProvider": true,
+    "referencesProvider": true,
+    "renameProvider": { "prepareProvider": true },
+    "documentSymbolProvider": true,
+    "foldingRangeProvider": true
+  },
+  "serverInfo": { "name": "tern", "version": "0.2.0-dev" }
+}
+```
+
+| Capability | What it means for a client |
+|---|---|
+| `positionEncoding: "utf-16"` | Columns count UTF-16 code units, the engine's own unit. It is the only encoding offered. |
+| `textDocumentSync` | Open and close notifications, and **full** sync: every change sends the whole text. |
+| `completionProvider` | Completion, triggered by `:`, `@`, `/` and `#`. See [Completion](#lsp-completion). |
+| `hoverProvider` | Hover on ids, references and names. See [Hover](#lsp-hover). |
+| `definitionProvider`, `referencesProvider` | Go to an id's declaration, and find its references. See [Definition and references](#lsp-definition). |
+| `renameProvider` | Rename an id or an element name, with `prepareRename`. See [Rename](#lsp-rename). |
+| `documentSymbolProvider` | The outline of headings, containers and leaves. See [Symbols](#lsp-symbols). |
+| `foldingRangeProvider` | Folds for blocks and sections. See [Folding](#lsp-folding). |
+
+**Errors.** A request the server cannot answer gets a JSON-RPC error; the server keeps running.
+
+| Code | When |
+|---|---|
+| `-32002` | a request before `initialize` |
+| `-32600` | a request after `shutdown`; a second `initialize`; a message that is not a JSON-RPC object |
+| `-32601` | a method the server does not support, such as `textDocument/formatting` |
+| `-32602` | a request on a document that was never opened (`unknown document: it was never opened`), or a rename to a name that is not allowed |
+| `-32700` | a body that is not JSON, answered with `id: null` |
+| `-32803` | a rename the note cannot take, such as a footnote's generated id |
+| `-32603` | an exception in the server, also logged to stderr |
+
+- **Notifications** are never answered. Unknown ones are ignored.
+- **stdout** carries protocol messages only. The server sends everything that scripts print through `console`, its own and the add-ons', to stderr, where most clients show it in a log.
+
+### Analysis and the debounce {#lsp-analysis}
+
+- **`didOpen`** analyses the note at once and publishes its diagnostics, then the [`tern/outline`](#outline) notification.
+- **`didChange`** waits 150 ms after the last change, then analyses once. Typing fast publishes once, for the last text.
+- **Requests never read stale text.** A request on a document with a change still waiting analyses it first. So the debounce only spaces out publishing.
+- **`didClose`** forgets the document and publishes an empty list of diagnostics for it.
+- **Files that are not notes** get an empty list of diagnostics and no outline, and requests on them answer nothing. A file that stops being a note (you deleted its `tern.js` line) gets one last, empty outline. So it is safe to attach the server to every `.html` file.
+- **The analysis** is the one `tern check` runs, so the diagnostics are the same, in the same order.
+- **Untitled buffers.** The server finds a note's add-ons from its `file:` URI. A document with another kind of URI (an unsaved buffer) loads its add-ons relative to the server's working folder.
+
+### Vocabulary and caching {#lsp-cache}
+
+The server loads each note's vocabulary as the commands do ([Vocabulary under Node](#vocabulary)), and caches it so that typing does not re-run the add-ons:
+
+- **The key** is the note's folder, its `tern.js` tag, and its head scripts as written. Editing the head (adding a `window.TERN.schema` entry, changing `data-use`) reloads the vocabulary at once.
+- **The stamp** is the modification time of every local file the head scripts and add-ons may load. A root-relative URL may resolve in any folder above the note, so each candidate is stamped. An add-on edited on disk takes effect at the note's next change.
+- The 64 most recently used vocabularies are kept.
+
+### Diagnostics {#lsp-diagnostics}
+
+Each analysis sends `textDocument/publishDiagnostics` with the document's `version`. Each engine diagnostic becomes an LSP one:
+
+```json
+{
+  "range": { "start": { "line": 19, "character": 12 }, "end": { "line": 19, "character": 20 } },
+  "severity": 2,
+  "code": "ref.dangling",
+  "source": "tern",
+  "message": "no id in this note has this name, so the reference stays text\nif it is not a reference, write \\@nowhere",
+  "data": { "hint": "if it is not a reference, write \\@nowhere" }
+}
+```
+
+| Field | Value |
+|---|---|
+| `range` | The file position, 0-based: file line 20, column 13 becomes line 19, character 12. Vocabulary problems are a point at their file position. |
+| `severity` | `1` error, `2` warning, `3` info. |
+| `code` | The Tern code, as on [Diagnostics](diagnostics.html#top). |
+| `source` | `"tern"`. |
+| `message` | The message, then a line break and the hint, when there is one. |
+| `data` | `{ "hint": … }` when there is a hint, for clients that show it apart. |
+
+### Completion {#lsp-completion}
+
+Completion offers what may come next where you are typing. It never offers anything inside code, inline code, math, inline math, raw HTML or the body of a raw container (`:::meta`, `:::macros`, `{raw}`), where Tern syntax does not apply.
+
+| After | At | Offers |
+|---|---|---|
+| `:::` (or more colons) | a line start, after any `>` and list markers | container names, and a closer for each open container |
+| `:::/` | the same | only the closers of the containers open at that line, innermost first |
+| `::` | the same | leaf names |
+| `:` | anywhere, not right after an ASCII letter or digit, `_`, `:` or `/` | inline element names |
+| `@` | anywhere, not right after an ASCII letter or digit, `_`, `.`, `/`, `@` or `-` | ids |
+| `](#` | in a link | ids |
+
+**Names** come in this order: the note's own vocabulary (head scripts and add-ons), then `meta` and `macros` for containers, then the HTML elements allowed at that level ([allowlists](elements.html#allowlists)). Each item's detail says where it comes from:
+
+```text
+:::  →  theorem   schema → <section>
+        proof     schema
+        meta      core
+        macros    core
+        address   <address>
+        article   <article>
+        …
+:    →  kbd       schema → <kbd>
+        abbr      <abbr>
+        b         <b>
+        …
+```
+
+**Closers.** After `:::`, the closers come first: in the note above, typing `:::` inside the theorem offers `/theorem`, with the detail `closes :::theorem (line 6)`.
+
+**Ids** are every id in the note, with what a reference to it would show as the detail. Footnote reference ids (`fnref-…`) are left out, and so are ids that `@` cannot reach, such as one that starts with a digit. After `See @` in the note above:
+
+```text
+kernel   Kernel
+rn       Theorem 1 — Rank–nullity
+eq       (1)
+fn-1     Footnote 1 — About @nowhere.
+image    Image
+```
+
+Each item replaces what you typed after the trigger (a `textEdit`), and is sorted closers first, then the vocabulary, the core blocks, and the allowlist.
+
+### Definition and references {#lsp-definition}
+
+The server knows every place an id or a name occurs, with its exact columns:
+
+- a reference `@id`;
+- a fragment link `[text](#id)`, at its `#id`;
+- a footnote reference `[^label]`;
+- a declaration: the `#id` or `id=` item of an attribute group, a footnote's `[^label]:`, or a heading whose id is its slug (the whole heading line);
+- an element's name: in `:::name`, `::name`, `:name`, and a named closer `:::/name`.
+
+A request acts on the innermost occurrence at the cursor, its last character included.
+
+**Definition** goes from a reference, a fragment link or a footnote reference to the declaration: the `#rn` of `{#rn}`, a footnote's `[^1]:`, a slug's heading. From a named closer, it goes to the opener's name. On `@rn` above, it answers `{"line": 5, "character": 25}` to `{"line": 5, "character": 28}`, the `#rn` on the theorem's line. A dangling reference has no definition.
+
+**References** work from the declaration or from any reference. They list every `@id`, fragment link and footnote reference to the id, as their whole extents, plus the declaration first when the client asks for it (`includeDeclaration`). References never occur inside code or math: `@rn` in a code span is text, not a reference.
+
+### Rename {#lsp-rename}
+
+Rename changes an id with all its references, or an element's name with its named closer, in one edit. `prepareRename` tells the client what would be renamed:
+
+```json
+{ "range": { "start": { "line": 11, "character": 5 }, "end": { "line": 11, "character": 7 } }, "placeholder": "rn" }
+```
+
+On text where there is nothing to rename, it answers `null`.
+
+**An id.** Renaming `rn` to `rank`, from `@rn` or from `{#rn}`, edits the declaration's characters and every `@rn` and `(#rn)` destination. Nothing inside code or math is touched, because no reference occurs there.
+
+```json
+{ "changes": { "file:///…/notes/maps.html": [
+  { "range": { "start": { "line": 5, "character": 26 }, "end": { "line": 5, "character": 28 } }, "newText": "rank" },
+  { "range": { "start": { "line": 11, "character": 5 }, "end": { "line": 11, "character": 7 } }, "newText": "rank" }
+] } }
+```
+
+**A heading's slug.** `## Image` has the id `image`, made from its text. Renaming it to `img` adds an explicit id at the end of the heading line, ` {#img}`, and renames the references. A heading that already has an attribute group without an id is refused, with the code `-32803`: `the heading's id is its slug; write {#image} in its attribute group first`. Add the id yourself, then rename. After the rename, the heading reads:
+
+```tern {.live}
+## Image {#img}
+
+See @img.
+```
+
+**An element's name.** Renaming `theorem` to `lemma`, from its opener or from `:::/theorem`, edits both. The same works for a leaf's or an inline element's name. Only that one element changes, not other elements with the same name, and not the vocabulary.
+
+**Refusals.** The note is left alone, and the client shows the message:
+
+| Rename | Error | Message |
+|---|---|---|
+| to an id that does not start with a letter or `_`, or has other characters than letters, digits, `_` and `-` | `-32602` | `"9x" is not an id @ can reach: a letter or _, then letters, digits, _ or -, not ending in -` |
+| to an id ending in `-` (a reference would stop before it) | `-32602` | the same |
+| to an id the note already uses | `-32602` | `the id "kernel" is already used in this note` |
+| an element to a name that does not start with a letter | `-32602` | `"_x" is not an element name: a letter, then letters, digits, _ or -` |
+| a footnote's id (`fn-1`, `fnref-1`), which comes from its label | `-32803` | `"fn-1" is generated from a footnote label; it cannot be renamed` |
+| a heading's slug when the heading has an attribute group | `-32803` | `the heading's id is its slug; write {#image} in its attribute group first` |
+
+The id rules are those of a [reference](syntax-inline.html#reference): an id that `@` could not reach would break the references.
+
+### Hover {#lsp-hover}
+
+Hovering over an id, a reference or a declaration shows what a reference to it reads, then its kind, its id and the file line where it is declared:
+
+| Hover over | Shows |
+|---|---|
+| `@rn` | **Theorem 1 — Rank–nullity** · theorem · `#rn` · line 6 |
+| `@kernel` | **Kernel** · heading · `#kernel` · line 4 |
+| `@eq` | **(1)** · math · `#eq` · line 15 |
+| `[^1]` | **Footnote 1 — About \@nowhere.** · footnoteDefinition · `#fn-1` · line 20 |
+| `@nowhere` | `@nowhere` names no id in this note |
+
+Hovering over an element's name shows the element it becomes, and why:
+
+| Hover over | Shows |
+|---|---|
+| `theorem` in `:::theorem` | `:::theorem` → `<section>`, declared in the schema · Theorem 1 |
+| `kbd` in `:kbd[Ctrl]` | `:kbd` → `<kbd>`, declared in the schema |
+| `aside` in `:::aside` | `:::aside` → `<aside>`, an HTML element |
+| `remark` in `:::remark` | `:::remark` → `<div>`, no schema entry |
+
+The hover is Markdown, and its range is the occurrence under the cursor.
+
+### Symbols {#lsp-symbols}
+
+`textDocument/documentSymbol` gives the note's outline as a tree:
+
+- **Headings** (symbol kind String) nest by level. Each spans its section, to the end of the last block before the next heading of the same or a higher level.
+- **Containers** (kind Class) and **leaves** (kind Field) sit where they are written. A container holds the symbols inside it. Containers and leaves inside quotes, lists, cells and footnotes are found too.
+- **Names and details.** A symbol's name is what a reference would show: "Theorem 1 — Rank–nullity", a heading's text, or else the element's name. Its detail is how it is written: `## #kernel`, `:::theorem #rn`, `::toc`.
+
+For the note above:
+
+```text
+Kernel                    ## #kernel        lines 3–7
+  Theorem 1 — Rank–nullity  :::theorem #rn  lines 5–7
+Image                     ## #image         lines 9–19
+  aside                     :::aside        lines 13–17
+```
+
+### Folding {#lsp-folding}
+
+`textDocument/foldingRange` folds every block that spans lines: containers, fences, display math, tables, lists, footnote definitions and raw HTML blocks, and each heading's section. For the note above, the ranges are (0-based file lines) 5–7 (the theorem), 13–17 (the aside), 14–16 (the math), 3–7 (Kernel) and 9–19 (Image).
+
+## Editor setup {#editors}
+
+Any editor with an LSP client can use Tern: point it at `tern lsp` for HTML files. The Neovim plugin is a client of `tern lsp` that lives in its own repository; this repository keeps only what every client shares: the server, the [`tern/outline`](#outline) notification and the [detection pattern](#detection).
+
+### What a client needs {#editors-client}
+
+| Setting | Value |
+|---|---|
+| Command | `node /path/to/tern/tern-cli.js lsp`, or `tern lsp` if `tern` is on your `PATH`. A client may add `--stdio`. |
+| Transport | stdio |
+| Files | HTML (`.html`, `.htm`). Notes are HTML files, so the server is attached to HTML buffers; it answers nothing for files that are not notes. |
+| Position encoding | UTF-16 |
+| Root folder | Not needed. Each note's add-ons are found from its own path. A folder holding `tern.js`, or the repository root, is a sensible root. |
+| Custom notification | `tern/outline`, optional: see [The tern/outline notification](#outline) |
+
+You may run it beside an HTML language server. Tern's diagnostics come with `source: "tern"`.
+
+The Neovim configurations below were run against `tern lsp` with Neovim 0.12. The others are those editors' usual way of adding a language server.
+
+### Neovim {#neovim}
+
+With Neovim 0.11 or later, declare the server and enable it:
+
+```lua
+vim.lsp.config('tern', {
+  cmd = { 'node', '/path/to/tern/tern-cli.js', 'lsp' },
+  filetypes = { 'html' },
+  root_markers = { 'tern.js', '.git' },
+  handlers = {
+    ['tern/outline'] = function(_, outline, ctx)
+      -- outline.headings, outline.blocks, outline.refs … (file lines, 1-based)
+    end,
+  },
+})
+vim.lsp.enable('tern')
+```
+
+With `vim.lsp.start`, from a `FileType` autocommand:
+
+```lua
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'html',
+  callback = function(args)
+    vim.lsp.start({
+      name = 'tern',
+      cmd = { 'node', '/path/to/tern/tern-cli.js', 'lsp' },
+      root_dir = vim.fs.root(args.buf, { 'tern.js', '.git' }),
+    })
+  end,
+})
+```
+
+Either way, opening an HTML file starts the server, or attaches it to the running one, and a note's diagnostics appear with the source `tern`. The `handlers` entry is optional; without it, Neovim ignores the outline notification.
+
+To start the server only for notes, test the buffer's lines against the [detection pattern](#detection) before `vim.lsp.start`.
+
+### VS Code {#vscode}
+
+VS Code adds a language server through an extension. Either install a generic LSP client extension and give it the command and the `html` language from the table above, or write a small extension of your own with Microsoft's `vscode-languageclient` package:
+
+```js
+// extension.js; package.json: "main": "extension.js",
+// "activationEvents": ["onLanguage:html"], "dependencies": {"vscode-languageclient": "^9"}
+const { LanguageClient } = require('vscode-languageclient/node');
+
+let client;
+
+exports.activate = () => {
+  client = new LanguageClient(
+    'tern',
+    'Tern',
+    { command: 'node', args: ['/path/to/tern/tern-cli.js', 'lsp'] },
+    { documentSelector: [{ scheme: 'file', language: 'html' }] },
+  );
+  return client.start();
+};
+
+exports.deactivate = () => client && client.stop();
+```
+
+### Helix {#helix}
+
+In `languages.toml`, declare the server and add it to HTML, after the servers HTML already uses:
+
+```toml
+[language-server.tern]
+command = "node"
+args = ["/path/to/tern/tern-cli.js", "lsp"]
+
+[[language]]
+name = "html"
+language-servers = ["vscode-html-language-server", "tern"]
+```
+
+### Settings for notes {#editor-settings}
+
+A note is an `.html` file whose body is not HTML, so a few editor habits that suit HTML damage notes:
+
+- **Formatters.** An HTML formatter (Prettier, js-beautify, an editor's "format document") rewrites the note as HTML and runs it together. Turn formatting off for notes. This repository's `.prettierrc` sets `requirePragma: true` and its `.prettierignore` lists `*.html`.
+- **Trailing whitespace.** No construct depends on it, but fences, raw HTML, display math, `:::macros`, `:::meta` and `{raw}` bodies are kept byte for byte, so trimming changes their content. Leave it off for `.html` files, as this repository's `.editorconfig` does.
+- **Hard wrapping.** Automatic hard wrap (Vim's `textwidth`) breaks constructs that must stay on one line. Use soft wrap.
+
+The repository's `.vscode/settings.json` does all three for VS Code:
+
+```json
+{
+  "[html]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false,
+    "editor.wordWrap": "on",
+    "files.trimTrailingWhitespace": false
+  },
+  "html.format.enable": false,
+  "prettier.requirePragma": true
+}
+```
+
+In Vim and Neovim, `setlocal formatoptions-=t` for HTML buffers stops wrapping while you type. What each of these does to a note is on [When it does not render](publishing.html#troubleshooting).
+
+## The tern/outline notification {#outline}
+
+After every analysis of a note, the server sends a notification of its own, `tern/outline`. It is a digest of the note's structure, so an editor can draw an outline, highlight exact extents, or show labels, without parsing the note itself. It is one walk over the same syntax tree the browser renders (`tern.outline`, see the [API](api.html#outline)), so it cannot disagree with the page.
+
+A client that does not know the method ignores it.
+
+For the note in [The language server](#lsp), the notification is:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tern/outline",
+  "params": {
+    "uri": "file:///…/notes/maps.html",
+    "version": 1,
+    "headings": [
+      { "line": 4, "depth": 2, "id": "kernel", "text": "Kernel" },
+      { "line": 10, "depth": 2, "id": "image", "text": "Image" }
+    ],
+    "blocks": [
+      { "line": 6, "endLine": 8, "kind": "container", "name": "theorem", "id": "rn", "title": "Rank–nullity", "label": "Theorem 1", "colons": 3 },
+      { "line": 14, "endLine": 18, "kind": "container", "name": "aside", "colons": 3 }
+    ],
+    "refs": [
+      { "line": 12, "col": 5, "end": 8, "id": "rn", "text": "Theorem 1", "resolved": true },
+      { "line": 12, "col": 10, "end": 17, "id": "kernel", "text": "Kernel", "resolved": true },
+      { "line": 12, "col": 22, "end": 25, "id": "eq", "text": "(1)", "resolved": true },
+      { "line": 20, "col": 13, "end": 21, "id": "nowhere", "resolved": false }
+    ],
+    "math": [
+      { "line": 15, "col": 1, "endLine": 17, "end": 9, "display": true, "number": "(1)", "tex": "\\dim V = r + n" }
+    ],
+    "tables": [],
+    "raw": [],
+    "inline": [
+      { "line": 12, "col": 33, "end": 43, "name": "kbd" }
+    ]
+  }
+}
+```
+
+**Lines and columns.** Unlike the rest of the protocol, the outline uses **1-based file lines**: the note's line plus the lines of the head. `col` and `end` are **1-based** UTF-16 columns, and `end` is exclusive. A field with no value is left out.
+
+**`params`:**
+
+| Field | What it holds |
+|---|---|
+| `uri` | The document. |
+| `version` | The document version that was analysed, as in `publishDiagnostics`. |
+| `headings`, `blocks`, `refs`, `math`, `tables`, `raw`, `inline` | Arrays, each in document order, described below. Always present, possibly empty. |
+
+**`headings`**, one per heading:
+
+| Field | What it holds |
+|---|---|
+| `line` | Its line. |
+| `depth` | 1 to 6. |
+| `id` | Its id: explicit, or the slug made from its text. |
+| `text` | Its plain text: text, code and math values, with markup dropped. |
+
+**`blocks`**, one per container and leaf:
+
+| Field | What it holds |
+|---|---|
+| `line`, `endLine` | Its first and last lines. An unclosed container runs to where it ends. |
+| `kind` | `"container"` or `"leaf"`. |
+| `name` | Its name, as written. |
+| `id` | Its id, when it has one. |
+| `title` | The plain text of a container's title (`[Rank–nullity]`), or of a leaf's content. |
+| `label` | The label the vocabulary gives it, with its number: `"Theorem 1"`. Missing without a label. |
+| `colons` | How many colons open it. |
+
+**`refs`**, one per `@id` reference:
+
+| Field | What it holds |
+|---|---|
+| `line`, `col`, `end` | Where the reference is written, from the `@` to after the id. |
+| `id` | The id it names. |
+| `text` | What it reads on the page: "Theorem 1", a heading's text, "(1)". Missing when it does not resolve. |
+| `resolved` | Whether the id exists. |
+
+**`math`**, one per formula, inline or display:
+
+| Field | What it holds |
+|---|---|
+| `line`, `endLine` | Its first and last lines. |
+| `col`, `end` | Where it starts on `line`, at the opening `$`, and where it ends on `endLine`, after the closing `$`. A display equation runs from an attribute line before it, when it has one, to after the closer's attributes. |
+| `display` | `true` for display math (`$$`), `false` for inline math. |
+| `number` | Its equation number, `"(1)"`, when it is numbered. |
+| `tex` | The TeX source. |
+
+**`tables`**: `line` and `endLine` of each table.
+
+**`raw`**, one per raw HTML block: `line`, `endLine`, and `kind`, the kind of block: `"generic"`, `"comment"`, `"rawtext"` (`<script>`, `<style>`, `<pre>`, `<textarea>`), `"oneline"` (a block that ends on its first line, such as `<hr>`) or `"fence"` (an `=html` fence). The kinds are those of [raw HTML blocks](syntax-blocks.html#raw-html).
+
+**`inline`**, one per inline element (`:kbd[Ctrl]`): `line`, `col`, `end` and `name`.
+
+Text that the transforms copy (a reference's text, a `::toc` entry) is not in the source, so it never appears in the outline. When a file stops being a note, the server sends one outline with every array empty.
+
+## Note detection {#detection}
+
+Editors, the command line and the language server must agree on which `.html` files are notes. They all use one regular expression, `DETECT` in `cli/note.js`, published with test cases for editor authors.
+
+### The rule {#detection-rule}
+
+Test each line of the file, in order. The **first line that matches is the `tern.js` line**: the note is every line after it, and the preserved head is everything before the tag on it. A line matches when it has a `<script` tag that:
+
+- has a `src` whose file name is exactly `tern.js`: any path before it, any quotes or none, and a query string or fragment after it (`tern.js?v=2`);
+- is not inside a comment opened earlier on the same line;
+- has no `async`, `defer` or `type=module`, because then `tern.js` could not read the note;
+- has no `data-built`, because a page written by `tern build` is not a note;
+- is written on one line, with no `<` or `>` inside the tag.
+
+The match ignores case. Every tag it accepts is one `tern.js` starts from. The file name is the one condition the browser does not share: a copy of `tern.js` renamed `tern.min.js` still runs in the browser, but the tools do not take the file for a note.
+
+**Lines that count:**
+
+| Line | Why |
+|---|---|
+| `<!doctype html><meta charset="utf-8"><script src="tern.js"></script>` | the canonical first line |
+| `<script src="../../tern.js"></script>`, `<script src="/tern.js"></script>` | relative and root-relative paths |
+| `<script src="https://cdn.example/tern/tern.js"></script>` | a URL |
+| `<script src='tern.js'></script>`, `<script src=tern.js></script>`, `<script src = "tern.js"></script>` | any quotes, spaces around `=` |
+| `<script src="tern.js?v=2"></script>`, `<script src="lib/tern.js#x"></script>` | a query or a fragment |
+| `<script nonce="r4nd0m" src="tern.js" data-katex="none"></script>` | other attributes before and after |
+| `<script type="text/javascript" src="tern.js"></script>` | a classic script type |
+| `<SCRIPT SRC="TERN.JS"></SCRIPT>` | upper case |
+| `<html lang="de"><title>Notizen</title><script src="tern.js"></script>` | the tag after other head elements |
+| `<!-- my notes --><script src="tern.js"></script>` | a comment closed before the tag |
+| `<script src="tern.js" data-use="async.js defer.css" data-async="1"></script>` | `async` and `defer` inside other attributes do not count |
+
+**Lines that do not:**
+
+| Line | Why |
+|---|---|
+| `<script src="mytern.js"></script>`, `<script src="tern.min.js"></script>`, `<script src="tern.json"></script>` | the file name is not exactly `tern.js` |
+| `<!-- <script src="tern.js"></script> -->` | inside a comment |
+| `<script defer src="tern.js"></script>`, `<script src="tern.js" async></script>` | `defer` or `async` |
+| `<script type="module" src="tern.js"></script>` | a module |
+| `<script data-built src="tern.js"></script>` | a built page |
+| `<script data-src="tern.js"></script>` | `data-src` is not `src` |
+| `<link rel="preload" href="tern.js" as="script">`, `<img src="tern.js">` | not a script tag |
+
+**Limits.** A tag split over two lines, or a comment that spans lines, is not seen, so a tag inside a multi-line comment still counts. Each attempt stops at the next `<` or `>`, so testing a line takes time linear in its length, even on hostile input.
+
+### The pattern and its fixtures {#detection-fixtures}
+
+`test/fixtures/detect.json` holds the pattern, its flags and 42 cases (20 lines that match, each with the tag it must capture, and 22 that do not). Load it in your editor's tests rather than copying the pattern by hand. `test/cli.js` checks that its pattern is `DETECT` itself and that every case holds.
+
+```json
+{
+  "description": "Lines that make an HTML file a Tern note, and lines that do not …",
+  "pattern": "^(?:[^<]|<(?!!--)|<!--(?:[^-]|-(?!->))*-->)*?(<script(?=[\\s>/])…",
+  "flags": "i",
+  "tagGroup": 1,
+  "match": [
+    { "why": "the canonical first line",
+      "line": "<!doctype html><meta charset=\"utf-8\"><script src=\"tern.js\"></script>",
+      "tag": "<script src=\"tern.js\">" },
+    …
+  ],
+  "noMatch": [
+    { "why": "a file named mytern.js", "line": "<script src=\"mytern.js\"></script>" },
+    …
+  ]
+}
+```
+
+- **`pattern`** and **`flags`** build the regular expression. It uses lookahead, lazy repetition and a back-reference. JavaScript and Python's `re` run it unchanged and pass every case, capture included; PCRE (`grep -P`) matches the same lines.
+- **`tagGroup`** is the capture group holding the tag. Everything on the line before the tag is the end of the preserved head.
+- **`match`** cases give the line and the tag the group must capture; **`noMatch`** cases must not match at all. Each says why in `why`.
+
+In JavaScript:
+
+```js
+const fixture = require('./test/fixtures/detect.json');
+const DETECT = new RegExp(fixture.pattern, fixture.flags);
+
+// The note's first line (0-based), or -1 when the file is not a note.
+function noteStart(lines) {
+  const i = lines.findIndex((line) => DETECT.test(line));
+  return i < 0 ? -1 : i + 1;
+}
+```
+
+From Node, `cli/note.js` exports `DETECT` itself, `detect(line)`, which returns `{index, tag}` (the tag and where it starts on the line) or `null`, and `split(text)`, which returns `{head, tag, note, line}` for a whole file, `line` being the number of file lines before the note.

@@ -1,0 +1,1111 @@
+# Display math
+
+Display math: the three opener forms, the closer and its attributes, the terminators
+(each ends the block with `math.unclosed` at the opener and is then reprocessed), numbering
+and `@eq` references, and display math inside containers, quotes and list items. Inline math,
+verbatim math and `$$` in the middle of a line are in inline-math.txt.
+
+Conventions used throughout: display math is `<div class="t-eq"><span class="t-math"
+data-display>TeX</span></div>` (README, output conventions); TeX lines are joined with `\n`;
+an unclosed block is `<div class="t-eq t-error">` holding its escaped source (the remainders,
+without prefixes, inside a quote or list item). The whitespace of a TeX value: the
+rest of the opener line loses its leading whitespace, TeX lines in an indented body lose up to
+the opener's indentation, and the closer line's leading whitespace is not TeX.
+
+## math/spec-example
+
+spec: syntax-blocks#display-math elements#numbering
+
+The display-math example: a multi-line equation with an id on its closer is numbered; the one-line form after it is not.
+
+````tern
+$$
+\dim V = \dim \ker T + \dim \im T.
+$$ {#eq-rn}
+
+$$ e^{i\pi} + 1 = 0 $$
+````
+
+````html
+<div class="t-eq" id="eq-rn"><span class="t-math" data-display>\dim V = \dim \ker T + \dim \im T.</span><span class="t-eqno">(1)</span></div>
+<div class="t-eq"><span class="t-math" data-display>e^{i\pi} + 1 = 0</span></div>
+````
+
+## math/multi-line
+
+spec: syntax-blocks#display-math syntax-blocks#lines
+
+Form (c) with an empty rest: the lines between the opener and the closer are the TeX, joined with `\n`.
+
+````tern
+$$
+a = b
+c = d
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>a = b
+c = d</span></div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","value":"a = b\nc = d"}]}
+````
+
+## math/one-line
+
+spec: syntax-blocks#display-math
+
+Form (a): an unescaped `$$` later on the opener line, followed by nothing, completes the equation; the TeX between is trimmed as in the display-math example.
+
+````tern
+$$ \int_0^1 x\,dx = \tfrac12 $$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>\int_0^1 x\,dx = \tfrac12</span></div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","value":"\\int_0^1 x\\,dx = \\tfrac12"}]}
+````
+
+## math/one-line-glued
+
+spec: syntax-blocks#display-math
+
+Form (a) needs no spaces: `$$x^2$$` is a complete equation.
+
+````tern
+$$x^2$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x^2</span></div>
+````
+
+## math/one-line-attrs
+
+spec: syntax-blocks#display-math syntax-blocks#positions elements#numbering elements#references
+
+Form (a) takes an attribute group after the second `$$`; with an id the equation is numbered and `@eq-e` renders `(1)`.
+
+````tern
+$$ E = mc^2 $$ {#eq-e}
+
+See @eq-e.
+````
+
+````html
+<div class="t-eq" id="eq-e"><span class="t-math" data-display>E = mc^2</span><span class="t-eqno">(1)</span></div>
+<p>See <a class="t-ref" href="#eq-e">(1)</a>.</p>
+````
+
+## math/one-line-escaped-dollar
+
+spec: syntax-blocks#display-math syntax-inline#escapes
+
+On the opener line `\$` is skipped as a pair, so in `5\$$$` the closing `$$` is the last two dollars and the TeX keeps `\$`.
+
+````tern
+$$\text{cost} = 5\$$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>\text{cost} = 5\$</span></div>
+````
+
+## math/inline-display-info
+
+spec: syntax-blocks#display-math syntax-inline#inline-display syntax-inline#ambiguity
+
+Form (b): text after the second `$$` makes the whole line a paragraph, and each `$$` in it is text with `math.inline-display`, which fires once per `$$` run, so twice here.
+
+````tern
+$$ E = mc^2 $$, as Einstein wrote.
+````
+
+````html
+<p>$$ E = mc^2 $$, as Einstein wrote.</p>
+````
+
+````diagnostics
+1:1 info math.inline-display
+1:13 info math.inline-display
+````
+
+## math/opener-rest-first-line
+
+spec: syntax-blocks#display-math
+
+Form (c) with a non-empty rest: the text glued after `$$` is the first TeX line.
+
+````tern
+$$\begin{aligned}
+a &= b
+\end{aligned}
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>\begin{aligned}
+a &amp;= b
+\end{aligned}</span></div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","value":"\\begin{aligned}\na &= b\n\\end{aligned}"}]}
+````
+
+## math/opener-rest-leading-space
+
+spec: syntax-blocks#display-math syntax-blocks#r3
+
+Form (c) with a space between `$$` and the first TeX line, the way most authors write it: the rest of the opener line has its leading whitespace stripped, as the one-line form strips it in the display-math example.
+
+````tern
+$$ \begin{aligned}
+a &= b
+\end{aligned}
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>\begin{aligned}
+a &amp;= b
+\end{aligned}</span></div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","value":"\\begin{aligned}\na &= b\n\\end{aligned}"}]}
+````
+
+## math/opener-tail-error
+
+spec: syntax-blocks#display-math diagnostics#math-opener-tail
+
+A rest that is a strong group starting with `#` is `math.opener-tail` at the group; the block still opens and closes normally (the TeX value is asserted in math/opener-tail-glued-kept-as-tex).
+
+````tern
+$$ {#eq-x}
+x = 1
+$$
+````
+
+````json ast
+{"type":"root","children":[{"type":"math"}]}
+````
+
+````diagnostics
+1:4 error math.opener-tail "after the closing"
+````
+
+## math/opener-tail-glued-kept-as-tex
+
+spec: syntax-blocks#display-math diagnostics#math-opener-tail
+
+The misplaced group stays in the TeX (KaTeX shows it as an error), and the equation gets no id and no number.
+
+````tern
+$${#eq-x}
+x = 1
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>{#eq-x}
+x = 1</span></div>
+````
+
+````diagnostics
+1:3 error math.opener-tail
+````
+
+## math/opener-tail-class
+
+spec: syntax-blocks#display-math
+
+A rest that is a strong group starting with `.` is `math.opener-tail` too.
+
+````tern
+$$ {.wide}
+x = 1
+$$
+````
+
+````json ast
+{"type":"root","children":[{"type":"math"}]}
+````
+
+````diagnostics
+1:4 error math.opener-tail
+````
+
+## math/opener-key-value-group-is-tex
+
+spec: syntax-blocks#display-math syntax-blocks#strong-and-weak
+
+Only a strong group starting with `#` or `.` is an opener tail; `{n=1}` is strong but is ordinary TeX, with no diagnostic.
+
+````tern
+$${n=1}
+\implies x
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>{n=1}
+\implies x</span></div>
+````
+
+## math/closer-attrs
+
+spec: syntax-blocks#display-math syntax-blocks#positions syntax-blocks#merging-and-emission elements#numbering
+
+The closer takes any attribute group after spaces; the id numbers the equation, and other attributes go on `div.t-eq`.
+
+````tern
+$$
+x = 1
+$$ {#eq-a data-k=v}
+````
+
+````html
+<div class="t-eq" id="eq-a" data-k="v"><span class="t-math" data-display>x = 1</span><span class="t-eqno">(1)</span></div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","value":"x = 1","attributes":{"id":"eq-a"}}]}
+````
+
+## math/closer-attrs-glued
+
+spec: syntax-blocks#display-math syntax-blocks#positions
+
+The closer's group may be glued to the `$$`.
+
+````tern
+$$
+x = 1
+$${#eq-x}
+````
+
+````html
+<div class="t-eq" id="eq-x"><span class="t-math" data-display>x = 1</span><span class="t-eqno">(1)</span></div>
+````
+
+## math/closer-weak-group
+
+spec: syntax-blocks#display-math syntax-blocks#positions syntax-blocks#strong-and-weak
+
+The closer is a structural line, so a weak group is accepted too: `{hidden}` becomes a boolean attribute, and without an id there is no number.
+
+````tern
+$$
+x = 1
+$$ {hidden}
+````
+
+````html
+<div class="t-eq" hidden><span class="t-math" data-display>x = 1</span></div>
+````
+
+## math/closer-tail
+
+spec: syntax-blocks#display-math diagnostics#math-closer-tail
+
+Text after the closing `$$` is `math.closer-tail` at its first character and is emitted as a paragraph after the equation.
+
+````tern
+$$
+x = 1
+$$ where x is real.
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x = 1</span></div>
+<p>where x is real.</p>
+````
+
+````diagnostics
+3:4 warning math.closer-tail
+````
+
+## math/closer-tail-malformed-group
+
+spec: syntax-blocks#display-math syntax-blocks#positions
+
+A group after the closer that does not parse (`#1` is not an IDENT) is a closer tail, not `attr.malformed`, and becomes paragraph text.
+
+````tern
+$$
+x = 1
+$$ {#1}
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x = 1</span></div>
+<p>{#1}</p>
+````
+
+````diagnostics
+3:4 warning math.closer-tail
+````
+
+## math/closer-tail-after-group
+
+spec: syntax-blocks#display-math
+
+A valid group followed by more text after the closer: the whole tail is junk, so `math.closer-tail` is at the `{`, the equation gets no id and no number, and the tail paragraph is `{#e} more`.
+
+````tern
+$$
+x = 1
+$$ {#e} more
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x = 1</span></div>
+<p>{#e} more</p>
+````
+
+````diagnostics
+3:4 warning math.closer-tail
+````
+
+## math/closer-tail-next-line
+
+spec: syntax-blocks#display-math
+
+A closer tail followed directly by a paragraph line: the tail paragraph continues on the following lines by the normal paragraph rules.
+
+````tern
+$$
+x = 1
+$$ where
+x is real.
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x = 1</span></div>
+<p>where
+x is real.</p>
+````
+
+````diagnostics
+3:4 warning math.closer-tail
+````
+
+## math/closer-text-before
+
+spec: syntax-blocks#display-math
+
+Text before the closing `$$` on the closer line is the last TeX line.
+
+````tern
+$$
+a = b
+c = d$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>a = b
+c = d</span></div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","value":"a = b\nc = d"}]}
+````
+
+## math/closer-line-leading-whitespace
+
+spec: syntax-blocks#display-math syntax-blocks#r2
+
+The closer line's leading whitespace is not TeX: text before an indented closing `$$` is the last TeX line without that whitespace.
+
+````tern
+$$
+a = b
+   c = d$$
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","value":"a = b\nc = d"}]}
+````
+
+## math/closer-trailing-whitespace
+
+spec: syntax-blocks#display-math syntax-blocks#r3 syntax-blocks#lines
+options: escaped
+
+The closer is tested on the right-trimmed line, so trailing spaces after the closing `$$` are not a closer tail.
+
+````tern
+$$
+x = 1
+$$\u0020\u0020
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x = 1</span></div>
+````
+
+````diagnostics
+````
+
+## math/closer-escaped-dollar
+
+spec: syntax-blocks#display-math syntax-inline#escapes
+
+The closer is the first unescaped `$$`: in `5\$$$` the `\$` is skipped as a pair, so the closer is the last two dollars and `\$` stays in the TeX.
+
+````tern
+$$
+\text{price} = 5\$$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>\text{price} = 5\$</span></div>
+````
+
+## math/non-terminator-lines
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm
+
+Only the listed terminators end display math: lines shaped like a list item, a quote, a table row, raw HTML, a leaf and an attribute line are TeX.
+
+````tern
+$$
+- x
+> y
+| z |
+<div>
+::toc
+{#id}
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>- x
+&gt; y
+| z |
+&lt;div&gt;
+::toc
+{#id}</span></div>
+````
+
+## math/blank-line-ends-with-error-heading-survives
+
+spec: syntax-blocks#display-math diagnostics#three-mistakes
+
+The third likely mistake: a blank line inside `$$` ends the block with `math.unclosed`; the intended closer then opens a second block that the next blank line ends too, and the heading survives. Each `math.unclosed` runs from its opener to where its terminating blank line starts.
+
+````tern
+$$
+a = b
+
+c = d
+$$
+
+## Next
+````
+
+````html
+<div class="t-eq t-error">$$
+a = b</div>
+<p>c = d</p>
+<div class="t-eq t-error">$$</div>
+<h2 id="next">Next</h2>
+````
+
+````diagnostics
+1:1-3:1 error math.unclosed "line 3"
+5:1-6:1 error math.unclosed
+````
+
+## math/terminator-blank
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm
+
+A blank line ends unclosed display math; the source, opening `$$` included, is shown escaped in `div.t-eq.t-error`. The diagnostic ends where the terminating line starts.
+
+````tern
+$$
+a < b
+
+After.
+````
+
+````html
+<div class="t-eq t-error">$$
+a &lt; b</div>
+<p>After.</p>
+````
+
+````diagnostics
+1:1-3:1 error math.unclosed
+````
+
+## math/terminator-heading
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm
+
+A heading line ends unclosed display math and is reprocessed as a heading; the diagnostic ends where the heading line starts.
+
+````tern
+$$
+x = 1
+## Results
+````
+
+````html
+<div class="t-eq t-error">$$
+x = 1</div>
+<h2 id="results">Results</h2>
+````
+
+````diagnostics
+1:1-3:1 error math.unclosed
+````
+
+## math/terminator-fence
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm
+
+A fence line ends unclosed display math and is reprocessed as a fence opener.
+
+````tern
+$$
+x = 1
+```js
+let a = 1;
+```
+````
+
+````html
+<div class="t-eq t-error">$$
+x = 1</div>
+<pre data-t="code"><code class="language-js">let a = 1;</code></pre>
+````
+
+````diagnostics
+1:1 error math.unclosed
+````
+
+## math/terminator-container-opener
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm
+
+A `:::` opener line ends unclosed display math and is reprocessed, so the container opens.
+
+````tern
+$$
+x = 1
+:::idea[K]
+Body.
+:::
+````
+
+````html
+<div class="t-eq t-error">$$
+x = 1</div>
+<div class="t-block idea" data-t="idea"><div class="t-title">K</div><p>Body.</p></div>
+````
+
+````diagnostics
+1:1 error math.unclosed
+````
+
+## math/closer-line-ends-container-terminator
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm syntax-blocks#closer
+
+A `:::` closer line ends unclosed display math and is reprocessed, so it still closes its container and the next line is outside it.
+
+````tern
+:::idea[K]
+$$
+x = 1
+:::
+After.
+````
+
+````html
+<div class="t-block idea" data-t="idea"><div class="t-title">K</div><div class="t-eq t-error">$$
+x = 1</div></div>
+<p>After.</p>
+````
+
+````diagnostics
+2:1 error math.unclosed
+````
+
+## math/terminator-stray-closer
+
+spec: syntax-blocks#display-math syntax-blocks#closer
+
+A `:::` closer line terminates display math even with no container open; reprocessed, it is a stray closer.
+
+````tern
+$$
+x = 1
+:::
+````
+
+````html
+<div class="t-eq t-error">$$
+x = 1</div>
+<p>:::</p>
+````
+
+````diagnostics
+1:1 error math.unclosed
+3:1 warning block.stray-closer
+````
+
+## math/terminator-cell
+
+spec: syntax-blocks#display-math syntax-blocks#cells
+
+A `+++` line ends unclosed display math and is reprocessed as a cell separator.
+
+````tern
+:::row
+$$
+x = 1
++++
+Right.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><div class="t-eq t-error">$$
+x = 1</div></div>
+<div class="t-cell"><p>Right.</p></div>
+</div>
+````
+
+````diagnostics
+2:1 error math.unclosed
+````
+
+## math/terminator-cell-outside-container
+
+spec: syntax-blocks#display-math syntax-blocks#cells
+
+A `+++` line always terminates display math, inside a container or not (the terminator is lexical); outside a container it is then reprocessed as an orphan cell line.
+
+````tern
+$$
+x = 1
++++
+````
+
+````html
+<div class="t-eq t-error">$$
+x = 1</div>
+<p>+++</p>
+````
+
+````diagnostics
+1:1 error math.unclosed
+3:1 warning cell.orphan
+````
+
+## math/terminator-quote-end
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm syntax-blocks#blockquote
+
+The end of the parent ends display math: a line without `>` closes the leaf as unclosed together with the quote, and is then a paragraph after the quote. The `.t-eq.t-error` source holds the remainders, without the `> ` prefixes.
+
+````tern
+> $$
+> x = 1
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"blockquote","children":[{"type":"math"}]},{"type":"paragraph"}]}
+````
+
+````html
+<blockquote>
+<div class="t-eq t-error">$$
+x = 1</div>
+</blockquote>
+<p>After.</p>
+````
+
+````diagnostics
+1:3 error math.unclosed
+````
+
+## math/terminator-list-item-end
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm syntax-blocks#lists
+
+A closing `$$` at a column below the item's content column ends the item: the math closes as unclosed, and the `$$` line opens a new block at the top level, which the end of the note leaves unclosed. The item's error block holds the remainders, without the item's indentation.
+
+````tern
+- $$
+  x = 1
+$$
+````
+
+````json ast
+{"type":"root","children":[{"type":"list","children":[{"type":"listItem","children":[{"type":"math"}]}]},{"type":"math"}]}
+````
+
+````html
+<ul>
+<li><div class="t-eq t-error">$$
+x = 1</div></li>
+</ul>
+<div class="t-eq t-error">$$</div>
+````
+
+````diagnostics
+1:3 error math.unclosed
+3:1 error math.unclosed
+````
+
+## math/terminator-end-of-note
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm
+
+The end of the note ends unclosed display math.
+
+````tern
+$$
+x = 1
+````
+
+````html
+<div class="t-eq t-error">$$
+x = 1</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"math","data":{"tern":{"unclosed":true}}}]}
+````
+
+````diagnostics
+1:1 error math.unclosed
+````
+
+## math/terminator-before-closer
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm syntax-blocks#heading
+
+Terminators are tested before the closer: `## $$` is a heading line, so it ends the block instead of closing it, and its `$$` is then heading text.
+
+````tern
+$$
+x = 1
+## $$
+````
+
+````html
+<div class="t-eq t-error">$$
+x = 1</div>
+<h2 id="section">$$</h2>
+````
+
+````diagnostics
+1:1 error math.unclosed
+3:4 info math.inline-display
+````
+
+## math/no-lazy-continuation
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm syntax-blocks#blockquote
+
+Lazy continuation needs an open paragraph, so a line without `>` never continues display math in a quote: it closes the block and the quote, and the later `> $$` opens a new quote and block.
+
+````tern
+> $$
+x = 1
+> $$
+````
+
+````json ast
+{"type":"root","children":[{"type":"blockquote","children":[{"type":"math"}]},{"type":"paragraph"},{"type":"blockquote","children":[{"type":"math"}]}]}
+````
+
+````html
+<blockquote>
+<div class="t-eq t-error">$$</div>
+</blockquote>
+<p>x = 1</p>
+<blockquote>
+<div class="t-eq t-error">$$</div>
+</blockquote>
+````
+
+````diagnostics
+1:3 error math.unclosed
+3:3 error math.unclosed
+````
+
+## math/blank-quote-line-terminates
+
+spec: syntax-blocks#display-math syntax-blocks#blockquote
+
+A bare `>` line continues the quote with an empty remainder, which is a blank line for the display math inside it.
+
+````tern
+> $$
+> x = 1
+>
+> y
+````
+
+````json ast
+{"type":"root","children":[{"type":"blockquote","children":[{"type":"math"},{"type":"paragraph"}]}]}
+````
+
+````html
+<blockquote>
+<div class="t-eq t-error">$$
+x = 1</div>
+<p>y</p>
+</blockquote>
+````
+
+````diagnostics
+1:3 error math.unclosed
+````
+
+## math/escaped-dollars-line-start
+
+spec: syntax-blocks#display-math syntax-inline#ambiguity syntax-inline#escapes
+
+`\$$` at the start of a line is text: the escaped `$` is not a dollar, so the next `$` is not adjacent to one, and it is followed by a space so it does not open.
+
+````tern
+\$$ is not display math
+````
+
+````html
+<p>$$ is not display math</p>
+````
+
+## math/interrupts-paragraph
+
+spec: syntax-blocks#display-math syntax-blocks#paragraph
+
+A `$$` line interrupts a paragraph.
+
+````tern
+Consider
+$$
+x = 1
+$$
+````
+
+````html
+<p>Consider</p>
+<div class="t-eq"><span class="t-math" data-display>x = 1</span></div>
+````
+
+## math/in-container-numbered
+
+spec: syntax-blocks#display-math syntax-blocks#container elements#numbering elements#references
+
+Display math in a theorem body (the "In one screen" example): the theorem and the equation are numbered on their own counters, and both references resolve.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+If $V$ is finite-dimensional then
+$$
+\dim V = \dim \ker T + \dim \operatorname{im} T.
+$$ {#eq-rn}
+:::
+
+By @thm-rn and @eq-rn.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem">
+<div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div>
+<p>If <span class="t-math">V</span> is finite-dimensional then</p>
+<div class="t-eq" id="eq-rn"><span class="t-math" data-display>\dim V = \dim \ker T + \dim \operatorname{im} T.</span><span class="t-eqno">(1)</span></div>
+</section>
+<p>By <a class="t-ref" href="#thm-rn">Theorem 1</a> and <a class="t-ref" href="#eq-rn">(1)</a>.</p>
+````
+
+## math/in-quote
+
+spec: syntax-blocks#display-math syntax-blocks#blockquote
+
+Display math inside a blockquote: each line's `> ` prefix is stripped before the remainder reaches the block.
+
+````tern
+> $$
+> x^2
+> $$
+````
+
+````html
+<blockquote><div class="t-eq"><span class="t-math" data-display>x^2</span></div></blockquote>
+````
+
+## math/in-list-item
+
+spec: syntax-blocks#display-math syntax-blocks#lists
+
+Display math inside a list item, at its content column, interrupting the item's paragraph.
+
+````tern
+- Item:
+  $$
+  x^2
+  $$
+- Next.
+````
+
+````html
+<ul>
+<li>Item:<div class="t-eq"><span class="t-math" data-display>x^2</span></div></li>
+<li>Next.</li>
+</ul>
+````
+
+## math/indented-in-container
+
+spec: syntax-blocks#display-math syntax-blocks#r2 syntax-blocks#lines
+
+Container bodies may be indented freely: indented `$$` lines still open and close display math. TeX lines are dedented by the opener's indentation, as fence content is, and the closer line's leading whitespace is not TeX, so the TeX is `x^2`.
+
+````tern
+:::idea[K]
+  $$
+  x^2
+  $$
+:::
+````
+
+````json ast
+{"type":"root","children":[{"type":"containerDirective","name":"idea","children":[{"type":"paragraph","data":{"directiveLabel":true}},{"type":"math","value":"x^2"}]}]}
+````
+
+````html
+<div class="t-block idea" data-t="idea"><div class="t-title">K</div><div class="t-eq"><span class="t-math" data-display>x^2</span></div></div>
+````
+
+````diagnostics
+````
+
+## math/numbering-only-with-id
+
+spec: syntax-blocks#display-math elements#numbering elements#references
+
+Equations are numbered in document order, and only those with an id; an equation without one takes no number.
+
+````tern
+$$ a = b $$ {#eq-a}
+
+$$ c = d $$
+
+$$ e = f $$ {#eq-e}
+
+See @eq-a and @eq-e.
+````
+
+````html
+<div class="t-eq" id="eq-a"><span class="t-math" data-display>a = b</span><span class="t-eqno">(1)</span></div>
+<div class="t-eq"><span class="t-math" data-display>c = d</span></div>
+<div class="t-eq" id="eq-e"><span class="t-math" data-display>e = f</span><span class="t-eqno">(2)</span></div>
+<p>See <a class="t-ref" href="#eq-a">(1)</a> and <a class="t-ref" href="#eq-e">(2)</a>.</p>
+````
+
+## math/ref-dangling
+
+spec: syntax-blocks#display-math syntax-inline#reference elements#references
+
+A reference to an equation id that does not exist stays literal, with `ref.dangling`.
+
+````tern
+$$ x = 1 $$
+
+See @eq-x.
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x = 1</span></div>
+<p>See @eq-x.</p>
+````
+
+````diagnostics
+3:5 warning ref.dangling
+````
+
+## math/attribute-line-id-numbers
+
+spec: syntax-blocks#display-math syntax-blocks#attribute-line elements#numbering
+
+An attribute line before display math attaches to `div.t-eq`; its id numbers the equation like a closer id.
+
+````tern
+{#eq-a}
+$$
+x = 1
+$$
+
+See @eq-a.
+````
+
+````html
+<div class="t-eq" id="eq-a"><span class="t-math" data-display>x = 1</span><span class="t-eqno">(1)</span></div>
+<p>See <a class="t-ref" href="#eq-a">(1)</a>.</p>
+````
+
+## math/class-only-not-numbered
+
+spec: syntax-blocks#display-math elements#numbering
+
+A class on the closer does not number the equation; only an id does. `div.t-eq` has the classes `t-eq`, then the author's classes.
+
+````tern
+$$
+x = 1
+$$ {.wide}
+````
+
+````html
+<div class="t-eq wide"><span class="t-math" data-display>x = 1</span></div>
+````
+
+## math/content-not-tern
+
+spec: syntax-blocks#display-math syntax-blocks#r4
+
+The body is verbatim TeX: emphasis, references, links and code spans are not recognised (so `@eq-a` is no reference and gets no `ref.dangling`).
+
+````tern
+$$
+*a* + @eq-a + [b](c) + `d`
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>*a* + @eq-a + [b](c) + `d`</span></div>
+````
+
+## math/content-escaped
+
+spec: syntax-blocks#display-math syntax-blocks#r4
+
+The TeX is HTML-escaped and otherwise unchanged: `<` and `&` are escaped, and an entity is not passed through.
+
+````tern
+$$
+a < b & c \\ d &amp; e
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>a &lt; b &amp; c \\ d &amp;amp; e</span></div>
+````

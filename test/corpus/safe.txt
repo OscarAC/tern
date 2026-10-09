@@ -1,0 +1,141 @@
+# Safe rendering (raw HTML scoping)
+
+`safe: true` escapes `html` nodes and drops `on*`, `srcdoc`, `formaction` and
+`style` attributes, and URLs other than http(s), mailto and relative ones.
+
+## safe/raw-blocks-escaped
+
+spec: elements#safe syntax-blocks#raw-html syntax-blocks#html-fence
+options: safe
+
+A raw block, a comment and an `=html` fence are shown as escaped source, each in a `<pre>`.
+Under `safe`, a raw block is shown escaped in a plain `<pre>`.
+
+````tern
+<div class="box">
+raw
+</div>
+
+<!-- a comment -->
+
+```=html
+<b>fence</b>
+```
+````
+
+````html
+<pre>&lt;div class="box">
+raw
+&lt;/div></pre>
+<pre>&lt;!-- a comment --></pre>
+<pre>&lt;b>fence&lt;/b></pre>
+````
+
+## safe/inline-tags-escaped
+
+spec: elements#safe syntax-inline#raw-inline-html
+options: safe
+
+Inline tags, comments and custom elements are escaped text in their paragraph.
+
+````tern
+x <b class="y">z</b> <!-- c --> <tide-clock station="leith"></tide-clock> y
+````
+
+````html
+<p>x &lt;b class="y">z&lt;/b> &lt;!-- c --> &lt;tide-clock station="leith">&lt;/tide-clock> y</p>
+````
+
+## safe/on-attributes-dropped
+
+spec: elements#safe syntax-blocks#merging-and-emission
+options: safe
+
+Event-handler attributes are dropped from spans and named elements; the others stay.
+
+````tern
+[x]{onclick="alert(1)" title=ok}
+
+:::box{onmouseover=go .c}
+Body.
+:::
+````
+
+````html
+<p><span title="ok">x</span></p>
+<div class="t-block box c" data-t="box"><p>Body.</p></div>
+````
+
+## safe/srcdoc-formaction-style-dropped
+
+spec: elements#safe syntax-blocks#leaf
+options: safe
+
+`srcdoc`, `formaction` and `style` are dropped; `src` with a relative URL and classes stay.
+
+````tern
+::iframe{srcdoc="<b>x</b>" src=map.html}
+
+[go]{formaction=/x} [s]{style="color:red" .k}
+````
+
+````html
+<iframe class="iframe" data-t="iframe" src="map.html"></iframe>
+<p><span>go</span> <span class="k">s</span></p>
+````
+
+## safe/javascript-urls-dropped
+
+spec: elements#safe syntax-inline#links
+options: safe
+
+A `javascript:` URL is dropped from a link destination and from an attribute, in any case and when spelled with an entity; so is a `data:` image.
+
+````tern
+[a](javascript:alert(1)) [b]{href="javascript:x"} [c]{href="&#106;avascript:x"} [d](JavaScript:x) ![i](data:image/png;base64,AA)
+````
+
+````html
+<p><a>a</a> <span>b</span> <span>c</span> <a>d</a> <img alt="i"></p>
+````
+
+## safe/urls-kept
+
+spec: elements#safe syntax-inline#links syntax-blocks#leaf
+options: safe
+
+http(s), mailto and relative URLs are kept, fragments included.
+
+````tern
+[a](https://x.org) [b](http://x.org) [c](mailto:me@x.org) [d](../rel/p.html) [e](#frag) [f](/abs) [here]{#frag}
+
+::img{src=img/a.png alt=A}
+````
+
+````html
+<p><a href="https://x.org">a</a> <a href="http://x.org">b</a> <a href="mailto:me@x.org">c</a> <a href="../rel/p.html">d</a> <a href="#frag">e</a> <a href="/abs">f</a> <span id="frag">here</span></p>
+<img class="img" data-t="img" src="img/a.png" alt="A">
+````
+
+## safe/grid-style-kept
+
+spec: elements#safe syntax-blocks#cells
+options: safe
+
+The author's `style` is dropped, but the grid's own `--t-cols` declaration stays, so `cols` still lays out cells.
+Under `safe`, tern's own `--t-cols` style is kept when its value holds only numbers, words and `(),.%/+*-`, and dropped otherwise.
+
+````tern
+:::row{cols=2 style="gap:1rem"}
+A.
++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````

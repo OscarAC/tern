@@ -1,0 +1,597 @@
+# Ids
+
+Ids. The registry is filled in two passes:
+first every fixed id in document order (every id an author wrote, plus the
+generated `fn-LABEL` at a footnote definition and `fnref-LABEL` at each
+reference), then the heading slugs in document order, where a taken slug
+silently becomes the first free `-2`, `-3`, … Two fixed ids that collide are
+an `id.duplicate` (W) at both places: the first keeps the id, every later
+element drops its `id` attribute, and references resolve to the first.
+
+Each id gets at most one of `id.invalid` (not a valid HTML id: empty or
+holding whitespace; the id is dropped) and `ref.unreferenceable` (a valid
+HTML id that is not an IDENT, such as digit-first or holding `:` or `.`; the
+id is kept).
+
+Columns of id diagnostics ("the id" in `docs/diagnostics.html#positions`): the start of the attribute item,
+which is the `#` of `#x` or the first letter of `id=x`.
+
+## id/slug-repeat
+
+spec: elements#ids syntax-blocks#slugs
+
+A repeated slug gets `-2`, then `-3`, silently.
+
+````tern
+## Notes
+## Notes
+## Notes
+````
+
+````html
+<h2 id="notes">Notes</h2>
+<h2 id="notes-2">Notes</h2>
+<h2 id="notes-3">Notes</h2>
+````
+
+## id/explicit-then-slug
+
+spec: elements#ids syntax-blocks#slugs
+
+A slug that collides with an explicit id is the one that gets `-2`, with no diagnostic: explicit ids are registered before slugs.
+
+````tern
+A [term]{#intro} first.
+
+## Intro
+````
+
+````html
+<p>A <span id="intro">term</span> first.</p>
+<h2 id="intro-2">Intro</h2>
+````
+
+## id/explicit-after-slug-wins
+
+spec: elements#ids syntax-blocks#slugs elements#references
+
+An explicit id beats an earlier heading's slug: the definition keeps `#kernel`, the heading yields to `kernel-2` silently, and `@kernel` reaches the definition.
+
+````tern
+## Kernel
+
+:::definition{#kernel}
+The null space.
+:::
+
+See @kernel.
+````
+
+````html
+<h2 id="kernel-2">Kernel</h2>
+<section id="kernel" class="t-block definition" data-t="definition"><div class="t-title"><span class="t-label">Definition 1</span></div><p>The null space.</p></section>
+<p>See <a class="t-ref" href="#kernel">Definition 1</a>.</p>
+````
+
+````diagnostics
+````
+
+## id/fixed-ids-before-slugs-chain
+
+spec: elements#ids syntax-blocks#slugs
+
+Fixed ids are registered first, wherever they stand, so the explicit `#a-2` below takes `a-2` before the slugs are made: the second heading skips to `a-3`.
+
+````tern
+## A
+## A
+
+See [x]{#a-2}.
+````
+
+````html
+<h2 id="a">A</h2>
+<h2 id="a-3">A</h2>
+<p>See <span id="a-2">x</span>.</p>
+````
+
+````diagnostics
+````
+
+## id/ref-to-suffixed-slug
+
+spec: elements#ids elements#references
+
+A suffixed slug is a registered id, so `@a-2` reaches the second heading.
+
+````tern
+## A
+## A
+
+See @a-2.
+````
+
+````html
+<h2 id="a">A</h2>
+<h2 id="a-2">A</h2>
+<p>See <a class="t-ref" href="#a-2">A</a>.</p>
+````
+
+## id/duplicate-reports-both
+
+spec: elements#ids syntax-blocks#r7
+options: schema=none
+
+An explicit duplicate is reported with `id.duplicate` at both places, each at the `#` of its `#k`; the later span drops its `id`.
+
+````tern
+:::box{#k}
+One.
+:::
+
+[Two]{#k}
+````
+
+````html
+<div id="k" class="t-block box" data-t="box"><p>One.</p></div>
+<p><span>Two</span></p>
+````
+
+````diagnostics
+1:8 warning id.duplicate
+5:7 warning id.duplicate
+````
+
+## id/duplicate-first-wins-for-refs
+
+spec: elements#ids elements#references
+
+The registry keeps the first holder of a duplicated id, so a reference resolves to it; the lemma keeps its number but loses the id.
+
+````tern
+:::theorem{#t}
+:::
+
+:::lemma{#t}
+:::
+
+See @t.
+````
+
+````html
+<section id="t" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div></section>
+<section class="t-block lemma" data-t="lemma"><div class="t-title"><span class="t-label">Lemma 2</span></div></section>
+<p>See <a class="t-ref" href="#t">Theorem 1</a>.</p>
+````
+
+````json transformed
+{"children":[{},{},
+ {"type":"paragraph","children":[
+  {"type":"text","value":"See "},
+  {"type":"ref","id":"t","children":[{"type":"text","value":"Theorem 1"}],"data":{"tern":{"resolved":true}}},
+  {"type":"text","value":"."}]}]}
+````
+
+````diagnostics
+1:12 warning id.duplicate
+4:10 warning id.duplicate
+````
+
+## id/duplicate-second-loses-id
+
+spec: elements#ids
+
+"Keeps the first": only the first element carries the id in the output, so the HTML stays valid; the later one drops its `id` attribute.
+
+````tern
+[One]{#k} and [Two]{#k}
+````
+
+````html
+<p><span id="k">One</span> and <span>Two</span></p>
+````
+
+````diagnostics
+1:7 warning id.duplicate
+1:21 warning id.duplicate
+````
+
+## id/duplicate-heading-and-container
+
+spec: elements#ids syntax-blocks#heading
+options: schema=none
+
+Heading ids and container ids share one registry; an explicit heading id is a fixed id like any other.
+
+````tern
+## Setup {#setup}
+
+:::box{#setup}
+:::
+````
+
+````html
+<h2 id="setup">Setup</h2>
+<div class="t-block box" data-t="box"></div>
+````
+
+````diagnostics
+1:11 warning id.duplicate
+3:8 warning id.duplicate
+````
+
+## id/duplicate-math-and-code
+
+spec: elements#ids syntax-blocks#display-math syntax-inline#code-span
+
+A `$$` closer id and a code-span id share the registry; the equation keeps the id (and so its number), the code span loses it.
+
+````tern
+$$ x $$ {#e}
+
+A `c`{#e} span.
+````
+
+````html
+<div id="e" class="t-eq"><span class="t-math" data-display>x</span><span class="t-eqno">(1)</span></div>
+<p>A <code>c</code> span.</p>
+````
+
+````diagnostics
+1:10 warning id.duplicate
+3:7 warning id.duplicate
+````
+
+## id/duplicate-link-and-image
+
+spec: elements#ids syntax-inline#links syntax-inline#images
+
+Link and image ids share the registry.
+
+````tern
+[a](u){#l} and ![b](i.png){#l}
+````
+
+````html
+<p><a id="l" href="u">a</a> and <img src="i.png" alt="b"></p>
+````
+
+````diagnostics
+1:8 warning id.duplicate
+1:28 warning id.duplicate
+````
+
+## id/duplicate-titled-fence
+
+spec: elements#ids syntax-blocks#fence
+
+A titled fence's id is registered like any other.
+
+`````tern
+```js[Setup]{#setup}
+x();
+```
+
+See [the setup]{#setup}.
+`````
+
+````html
+<figure id="setup" class="t-block code" data-t="code"><pre><code class="language-js">x();</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> Setup</figcaption></figure>
+<p>See <span>the setup</span>.</p>
+````
+
+````diagnostics
+1:14 warning id.duplicate
+5:17 warning id.duplicate
+````
+
+## id/duplicate-attribute-line
+
+spec: elements#ids syntax-blocks#attribute-line
+
+An id given by an attribute line (here on a paragraph) is in the one registry too, whatever block it lands on.
+
+````tern
+{#p}
+First.
+
+[Second]{#p}
+````
+
+````html
+<p id="p">First.</p>
+<p><span>Second</span></p>
+````
+
+````diagnostics
+1:2 warning id.duplicate
+4:10 warning id.duplicate
+````
+
+## id/footnote-own-namespace
+
+spec: elements#ids syntax-blocks#footnote-definition syntax-inline#footnote-reference
+
+Footnote labels live in their own `fn-` namespace, so label `x` and `#x` do not collide.
+
+````tern
+Text[^x] and [y]{#x}.
+
+[^x]: Note.
+````
+
+````diagnostics
+````
+
+## id/footnote-id-collision
+
+spec: elements#ids syntax-blocks#footnote-definition syntax-inline#footnote-reference
+
+The generated `fn-x` is a fixed id registered at the definition, so an explicit `#fn-x` collides with it. The earlier in document order wins: here the definition keeps `fn-x`, the later span drops its id, and `id.duplicate` is reported at the definition's `[` and at the `#`.
+
+````tern
+Text[^x].
+
+[^x]: Note.
+
+See [this]{#fn-x}.
+````
+
+````html
+<p>Text<sup class="t-fnref"><a id="fnref-x" href="#fn-x">1</a></sup>.</p>
+<p>See <span>this</span>.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-x"><p>Note. <a class="t-fnback" href="#fnref-x">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+3:1 warning id.duplicate
+5:12 warning id.duplicate
+````
+
+## id/footnote-id-collision-explicit-first
+
+spec: elements#ids syntax-blocks#footnote-definition syntax-inline#footnote-reference
+
+When the explicit `#fn-x` comes first in document order it keeps the id, and the footnote definition's `<li>` drops its `id` (every later holder of a fixed id drops it, generated ids included).
+
+````tern
+See [this]{#fn-x}.
+
+Text[^x].
+
+[^x]: Note.
+````
+
+````html
+<p>See <span id="fn-x">this</span>.</p>
+<p>Text<sup class="t-fnref"><a id="fnref-x" href="#fn-x">1</a></sup>.</p>
+<section class="t-footnotes"><ol>
+<li><p>Note. <a class="t-fnback" href="#fnref-x">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+1:12 warning id.duplicate
+5:1 warning id.duplicate
+````
+
+## id/id-key-valid
+
+spec: elements#ids syntax-blocks#merging-and-emission
+
+An IDENT given through `id=` is an ordinary id.
+
+````tern
+A [term]{id=k} here.
+````
+
+````html
+<p>A <span id="k">term</span> here.</p>
+````
+
+## id/invalid-space
+
+spec: elements#ids
+
+A value through `id=` that holds whitespace is not a valid HTML id: `id.invalid` at the `i` of `id=`, and the id is dropped (the span keeps its other attributes, here none).
+
+````tern
+[t]{id="a b"}
+````
+
+````html
+<p><span>t</span></p>
+````
+
+````diagnostics
+1:5 warning id.invalid
+````
+
+## id/invalid-empty
+
+spec: elements#ids
+
+An empty id is not a valid HTML id either: `id.invalid`, and the id is dropped.
+
+````tern
+[t]{id="" .c}
+````
+
+````html
+<p><span class="c">t</span></p>
+````
+
+````diagnostics
+1:5 warning id.invalid
+````
+
+## id/unreferenceable-colon
+
+spec: elements#ids syntax-blocks#character-classes
+
+`x:y` is a valid HTML id but not an IDENT (IDENT has no `:`), so `@` cannot reach it: `ref.unreferenceable` only, and the id is kept (each id gets `id.invalid` or `ref.unreferenceable`, never both).
+
+````tern
+[t]{id=x:y}
+````
+
+````html
+<p><span id="x:y">t</span></p>
+````
+
+````diagnostics
+1:5 warning ref.unreferenceable
+````
+
+## id/unreferenceable-dot
+
+spec: elements#ids syntax-blocks#character-classes
+
+A `.` makes a valid HTML id that is not an IDENT, as `:` does: `ref.unreferenceable`, and the id is kept.
+
+````tern
+[t]{id=v1.2}
+````
+
+````html
+<p><span id="v1.2">t</span></p>
+````
+
+````diagnostics
+1:5 warning ref.unreferenceable
+````
+
+## id/unreferenceable-digit-first
+
+spec: elements#ids syntax-inline#reference
+
+A digit-first id cannot be written after `@` (and `#2024` is not an attribute item), so it can only come through `id=`. It is a valid HTML id, so it gets `ref.unreferenceable` alone and is kept.
+
+````tern
+[t]{id=2024}
+````
+
+````html
+<p><span id="2024">t</span></p>
+````
+
+````diagnostics
+1:5 warning ref.unreferenceable
+````
+
+## id/registry
+
+spec: elements#ids
+
+The `ids` transform writes the registry to `root.data.tern.ids`, marking explicit ids and slugs.
+
+````tern
+## Kernel {#kernel}
+## Image
+````
+
+````json transformed
+{"data":{"tern":{"ids":{
+ "kernel":{"kind":"heading","explicit":true,"line":1,"column":12},
+ "image":{"kind":"heading","explicit":false}}}}}
+````
+
+## id/unicode
+
+spec: elements#ids syntax-blocks#character-classes syntax-inline#reference
+
+Ids are Unicode IDENTs: `#satz-ü` registers and `@satz-ü` resolves.
+
+````tern
+:::theorem{#satz-ü}
+:::
+
+Nach @satz-ü.
+````
+
+````json transformed
+{"children":[{},
+ {"type":"paragraph","children":[
+  {"type":"text","value":"Nach "},
+  {"type":"ref","id":"satz-ü","children":[{"type":"text","value":"Theorem 1"}],"data":{"tern":{"resolved":true}}},
+  {"type":"text","value":"."}]}]}
+````
+
+## id/dropped-heading-id-gets-slug
+
+spec: elements#ids syntax-blocks#slugs
+options: schema=none
+
+A heading whose own id is dropped, as a later duplicate or as an invalid id, gets its slug like a heading without one, so every heading keeps an id. The slug yields as usual: `intro` is taken, so the heading is `intro-2`.
+
+````tern
+:::box{#intro}
+:::
+
+## Intro {#intro}
+## Setup {id=""}
+````
+
+````html
+<div id="intro" class="t-block box" data-t="box"></div>
+<h2 id="intro-2">Intro</h2>
+<h2 id="setup">Setup</h2>
+````
+
+````diagnostics
+1:8 warning id.duplicate
+4:11 warning id.duplicate
+5:11 warning id.invalid
+````
+
+## id/slug-ref-is-its-id
+
+spec: syntax-blocks#slugs syntax-inline#reference elements#ids
+
+A reference inside a heading counts as its id in the slug: slugs are made before references are resolved, and do not change when the target is renumbered. The reference itself still renders its text, and so does a reference to the heading.
+
+````tern
+:::theorem{#thm-a}
+:::
+
+## Proof of @thm-a
+
+See @proof-of-thm-a.
+````
+
+````html
+<section id="thm-a" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div></section>
+<h2 id="proof-of-thm-a">Proof of <a class="t-ref" href="#thm-a">Theorem 1</a></h2>
+<p>See <a class="t-ref" href="#proof-of-thm-a">Proof of Theorem 1</a>.</p>
+````
+
+## id/tern-own-ids
+
+spec: elements#ids syntax-blocks#heading
+
+The ids tern gives its own elements (`tern-style`, `tern-color-scheme`, `tern-source`, `tern-diagnostics`) are in the registry before the note's: a heading slug yields silently (`tern-style-2`), an id an author wrote is `id.duplicate` at that id and is dropped, and a reference does not reach tern's element.
+
+````tern
+### tern.style
+
+[x]{#tern-source}
+
+## Notes {#tern-diagnostics}
+
+See @tern-style.
+````
+
+````html
+<h3 id="tern-style-2">tern.style</h3>
+<p><span>x</span></p>
+<h2 id="notes">Notes</h2>
+<p>See @tern-style.</p>
+````
+
+````diagnostics
+3:5 warning id.duplicate "belongs to tern itself"
+5:11 warning id.duplicate
+7:5 warning ref.dangling
+````

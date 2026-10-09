@@ -1,0 +1,150 @@
+# Paragraphs
+
+What starts, continues and ends a paragraph, and how its lines are joined.
+The per-row interrupt cases are in block.txt.
+
+## para/spec-example
+
+spec: syntax-blocks#paragraph
+
+The paragraph example: consecutive lines that start nothing else are one paragraph, joined by a soft break.
+
+````tern
+Let $T: V \to W$ be linear.
+Its kernel is a subspace.
+````
+
+````html
+<p>Let <span class="t-math">T: V \to W</span> be linear.
+Its kernel is a subspace.</p>
+````
+
+## para/blank-lines-separate
+
+spec: syntax-blocks#paragraph syntax-blocks#line-algorithm
+
+Any number of blank lines ends a paragraph and produces nothing.
+
+````tern
+One
+
+
+
+Two
+````
+
+````html
+<p>One</p>
+<p>Two</p>
+````
+
+## para/lines-stripped
+
+spec: syntax-blocks#paragraph syntax-blocks#r2
+options: escaped
+
+Each line's leading and trailing whitespace is stripped before the lines are joined with `\n`.
+
+````tern
+  first
+\t\tsecond\t
+````
+
+````html
+<p>first
+second</p>
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","value":"first\nsecond"}]}]}
+````
+
+## para/offset-table-positions
+
+spec: syntax-blocks#paragraph syntax-blocks#columns
+
+The offset table maps joined text back to the source, so an inline diagnostic on an indented continuation line lands on its real column and offset.
+
+````tern
+First line
+    then press:kbd[S] here
+````
+
+````html
+<p>First line
+then press:kbd[S] here</p>
+````
+
+````json diagnostics
+[{"code":"inline.glued","severity":"info","position":{"start":{"line":2,"column":15,"offset":25}}}]
+````
+
+## para/ordered-non-1-does-not-interrupt
+
+spec: syntax-blocks#paragraph syntax-blocks#lists syntax-blocks#line-algorithm
+
+Only an ordered item numbered 1 interrupts a paragraph, so a wrapped line starting `2019.` stays prose.
+
+````tern
+The archive covers everything up to
+2019. was a year of change.
+````
+
+````html
+<p>The archive covers everything up to
+2019. was a year of change.</p>
+````
+
+## para/ordered-01-interrupts
+
+spec: syntax-blocks#paragraph syntax-blocks#lists syntax-blocks#line-algorithm
+
+The interrupt rule looks at the value, not the spelling (as in CommonMark): `01.` is an ordered item numbered 1, so it interrupts the paragraph, and the list gets no `start`.
+
+````tern
+Some prose
+01. first
+````
+
+````html
+<p>Some prose</p>
+<ol><li>first</li></ol>
+````
+
+## para/empty-items-do-not-interrupt
+
+spec: syntax-blocks#paragraph syntax-blocks#lists syntax-blocks#line-algorithm
+
+An empty bullet or an empty `1.` does not interrupt a paragraph; both lines continue it.
+
+````tern
+Some prose
+-
+1.
+````
+
+````html
+<p>Some prose
+-
+1.</p>
+````
+
+## para/non-block-starts-continue
+
+spec: syntax-blocks#paragraph syntax-blocks#line-algorithm syntax-inline#ambiguity
+
+Lines that look like block starts but are not (no space after the marker) continue the paragraph.
+
+````tern
+Some prose
+#hashtag
+>5 people
+-dash
+````
+
+````html
+<p>Some prose
+#hashtag
+&gt;5 people
+-dash</p>
+````

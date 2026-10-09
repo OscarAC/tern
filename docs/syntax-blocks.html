@@ -1,0 +1,3097 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Syntax: blocks · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
+
+:::meta
+description: Every block-level construct of Tern: paragraphs, headings, fences, raw HTML, math, quotes, lists, tables, containers, cells, leaves, footnotes, attribute lines.
+:::
+
+::site-nav
+
+# Syntax: blocks {#top}
+
+::toc
+
+This page is the complete reference for how Tern reads a note line by line: the eight rules every construct follows, the lexical conventions, the attribute grammar, the line algorithm, and every block construct. Inline constructs (emphasis, links, math spans, references) are on [Syntax: inline](syntax-inline.html#top). What a name becomes, and the HTML Tern promises to produce, are on [Elements and output](elements.html#top).
+
+This page and the engine's conformance tests are the reference for block syntax; every example on it runs on the engine.
+
+**Reading the examples.** Each live example shows its source, the rendered result, the generated HTML and its diagnostics, all computed by the engine in your browser. Examples render with no schema, which is what a plain note gets. Where an example needs vocabulary (theorem labels, listings, `::toc`), it says so and uses the [demo schema](schema.html#demo-schema).
+
+## Blocks at a glance {#at-a-glance}
+
+Every block is recognised from its first line. This table lists each one with its documented spelling.
+
+| Construct | Spelling | Section |
+|---|---|---|
+| Paragraph | lines that start nothing else | [Paragraph](#paragraph) |
+| Heading | `## Text {#id}` | [Heading](#heading) |
+| Thematic break | `---` | [Thematic break](#thematic-break) |
+| Fenced code | ```` ```lang[Title]{attrs} ```` … ```` ``` ```` | [Fenced code](#fence) |
+| Raw HTML block | a line starting with a block-level tag | [Raw HTML blocks](#raw-html) |
+| Raw HTML fence | ```` ```=html ```` … ```` ``` ```` | [The `=html` fence](#html-fence) |
+| Display math | `$$` … `$$ {#eq}` | [Display math](#display-math) |
+| Blockquote | `> text` | [Blockquote](#blockquote) |
+| List | `- item`, `1. item`, `- [x] task` | [Lists](#lists) |
+| Table | `| a | b |` over `|---|---|` | [Tables](#tables) |
+| Container | `:::name[Title]{attrs}` … `:::` | [Containers](#container) |
+| Closer | `:::` or `:::/name` | [Closers](#closer) |
+| Cell separator | `+++ {attrs}` | [Cells](#cells) |
+| Leaf | `::name[content]{attrs}` | [Leaves](#leaf) |
+| Footnote definition | `[^label]: text` | [Footnote definitions](#footnote-definition) |
+| Attribute line | `{#id .class}` alone on a line | [Attribute lines](#attribute-line) |
+| Raw-body container | `:::macros`, `:::meta`, `:::name{raw}` | [Raw-body containers](#raw-body) |
+
+## The eight rules {#rules}
+
+Every construct on this page is an instance of eight rules. Learn these and the rest follows.
+
+### R1: Blocks own their lines {#r1}
+
+- A block is recognised from its **first line**. The table start is the only construct that may read one line ahead.
+- Its end condition is fixed when it opens, and is tested on the current line only.
+- No block reads another block's state.
+- List items and footnote definitions do not read ahead across blank lines either: the blank lines are held until the next non-blank line arrives, and that line decides whether they belong to the item.
+
+So there are no setext headings: a line of `=` under a paragraph cannot turn the paragraph above into a heading, because that would change a block after the fact.
+
+```tern {.live}
+Title
+=====
+
+---
+```
+
+The first three lines are one paragraph, and `---` is a rule.
+
+### R2: Indentation is insignificant {#r2}
+
+Indentation means nothing, except in two places:
+
+- it decides membership in [list items](#lists) and [footnote definitions](#footnote-definition);
+- it is removed from the content lines of a [fence](#fence) and the TeX lines of [display math](#display-math), up to the indentation of their opening line.
+
+There are no indented code blocks, and container bodies may be indented freely.
+
+```tern {.live}
+:::aside
+    This is not code: indentation is ignored.
+
+        # Still a heading
+:::
+```
+
+### R3: Trailing whitespace means nothing {#r3}
+
+Every line is right-trimmed before Tern looks at it, so editors may trim freely. Two trailing spaces are not a line break; a hard break is a single `\` at the end of the line.
+
+```tern {.live}
+First line\
+second line, after a hard break.
+```
+
+Verbatim bodies are the exception: their lines are kept as written (see [Lines and right-trimming](#lines)).
+
+### R4: Two alphabets {#r4}
+
+Tern and TeX each have their own marks:
+
+| Alphabet | Marks |
+|---|---|
+| Tern | `:` `[ ]` `{ }` `@` `#` `|` `>` `*` `~~` `==` `` ` `` `$` |
+| TeX | `\` `{ }` `^` `_` `&` |
+
+- Math (`$…$`, `` $`…` ``, `$$`, `:::macros`) is opaque to Tern: nothing inside it is Tern syntax.
+- Outside math, `\` followed by a letter is a literal backslash, so `\alpha` and `C:\Users` are text.
+
+```tern {.live}
+Inside math $\alpha^2$ is TeX; outside, \alpha and C:\Users are text.
+```
+
+### R5: One attribute grammar {#r5}
+
+Attributes are always written `{#id .class key=value}`, always in braces, and there is no unbraced form. The same group works in five positions (see [Attributes](#attributes)).
+
+```tern {.live}
+## Kernel {#kernel .wide}
+
+:::aside{.note-box}
+A [highlighted]{.hl} word and `code`{.lang-js}.
+:::
+```
+
+### R6: Elements are names {#r6}
+
+`:::name`, `::name` and `:name[…]` become the element their name denotes, through a level-aware allowlist, the schema, or the custom-element rule. Any other name becomes a `div` or `span` with the name as its class. The full mapping is on [Elements and output](elements.html#names).
+
+```tern {.live}
+:::aside
+An `aside` element.
+:::
+
+:::idea
+An unknown name: a `div` with the class `idea`.
+:::
+
+::video{src=tide.mp4 controls}
+```
+
+### R7: Nothing is lost silently {#r7}
+
+Every malformed construct stays visible at its own position and gets a diagnostic with a code, a severity, a message, a position and a hint that quotes the fix.
+
+| Severity | Meaning |
+|---|---|
+| error | content lost or meaning changed |
+| warning | probably not what you meant |
+| info | a hint |
+
+```tern {.live expect="block.opener-junk"}
+:::aside[Proof] #pf .big
+The attributes were written without braces.
+:::
+```
+
+The block still opens, and the junk is shown in an error paragraph. Every code is on the [Diagnostics](diagnostics.html#severity) page.
+
+### R8: One documented spelling per construct {#r8}
+
+Each construct has one spelling, and this documentation uses it. A few unambiguous Markdown alternates are accepted, but never used here as the primary form:
+
+| Construct | Spelling | Also accepted |
+|---|---|---|
+| Thematic break | `---` | `***`, `___`, `- - -`, `* * *` |
+| Fenced code | ```` ``` ```` | `~~~` |
+
+```tern {.live}
+***
+
+~~~js
+const tilde = true;
+~~~
+```
+
+## Lexical conventions {#lexical}
+
+These conventions apply before any construct is recognised.
+
+### Where the note starts {#note-start}
+
+A note is an HTML file. The `tern.js` script tag splits it in two:
+
+- **The head** is everything before the tag: the lines before it, and anything before the tag on its own line (in the canonical first line, the doctype, `<html>`, `<meta charset>` and `<title>`). It is ordinary HTML that the browser parses before any script runs, and Tern preserves it (see [Metadata](elements.html#metadata)).
+- **The note** is everything after the line that holds the tag. It is what this page describes.
+
+```html
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Linear maps</title><script src="tern.js"></script>
+
+# Linear maps
+
+The note starts on the line after the `tern.js` tag.
+```
+
+- Diagnostic positions count lines from the first line of the note: the head's lines do not count. The browser console adds the file line, and the command line and the editor report file lines.
+- Which tag counts as "the `tern.js` line" is defined precisely under [Detection](tools.html#detection). How the file is put together is on [Publishing](publishing.html#the-file).
+
+### Normalisation {#normalisation}
+
+Before anything else, the whole source is normalised:
+
+| In the source | Becomes |
+|---|---|
+| `\r\n` (CRLF) | `\n` |
+| `\r` alone (CR) | `\n` |
+| a byte-order mark (U+FEFF) at the very start | nothing |
+| NUL (U+0000) | U+FFFD, the replacement character |
+
+- Normalisation covers every line, verbatim bodies included, so a NUL inside a fence is replaced too.
+- `\r\r\n` is a CR followed by a CRLF: two line breaks.
+- Positions (line, column, offset) refer to the normalised text, so a CRLF counts as one character.
+
+### Lines and right-trimming {#lines}
+
+Each line is right-trimmed (its trailing spaces and tabs removed) before it is classified. The exceptions are the lines fed to a **verbatim body**, which are kept byte for byte:
+
+- [fence](#fence) content;
+- [raw HTML blocks](#raw-html);
+- [display math](#display-math);
+- the bodies of [`:::macros`, `:::meta` and `{raw}` containers](#raw-body).
+
+A verbatim body's own closer (a closing fence, a `$$` closer, a raw-body closer) is still tested on the right-trimmed line, and it may be indented.
+
+````tern {.live}
+```
+  Leading spaces inside a fence are kept.
+    So is deeper indentation.
+      ```
+````
+
+The closing fence above is indented six spaces and still closes the fence. The last line of a note needs no line break: the end of the note closes whatever is open.
+
+A whitespace-only line is blank once trimmed, so it ends a paragraph like an empty line.
+
+### Columns and tabs {#columns}
+
+- A tab advances to the next multiple of 4 columns.
+- Columns matter only for list-item and footnote membership, and for dedenting fence and display-math content.
+- Everywhere else, leading whitespace is ignored when a line is classified.
+
+Here `1.   a` puts the item's content at column 5. The next line, two spaces and a tab, reaches only column 4 (the next multiple of 4), so it is outside the item.
+
+```tern {.live}
+1.   a
+
+  	b
+```
+
+With a three-space gap the content column is 4, and the same two spaces and a tab reach it, so `b` belongs to the item.
+
+```tern {.live}
+1.  a
+
+  	b
+```
+
+:::note
+Tab stops decide membership only. In diagnostic positions a tab is one column, and columns count UTF-16 code units, so a character outside the Basic Multilingual Plane takes two. See [Positions](diagnostics.html#positions).
+:::
+
+### Character classes {#character-classes}
+
+Names, ids, keys and labels are Unicode. The patterns use Unicode property classes: `\p{L}` letters, `\p{M}` combining marks, `\p{N}` digits.
+
+| Class | Pattern | Used for |
+|---|---|---|
+| `IDENT` | `[\p{L}_][\p{L}\p{M}\p{N}_-]*` | ids (`{#id}`), classes (`.wide`), references (`@id`). It contains no `:` and no `.` |
+| `NAME` | `[\p{L}][\p{L}\p{M}\p{N}_-]*` | element names after `:::`, `::` and `:` |
+| `KEY` | `[\p{L}_][\p{L}\p{M}\p{N}_:.-]*` | attribute names (`data-x`, `aria-label`, `xml:lang`) |
+| `LABEL` | `[\p{L}\p{M}\p{N}_-]+` | footnote labels; digits are allowed anywhere |
+| `LANG` | `` [^\s\[\]{}`]+ `` | a fence's language |
+| ASCII-alnum | `[A-Za-z0-9]` | the "glued to a word" tests of `:`, `@`, `~~` and `==` |
+
+What follows from the patterns:
+
+- An id or a class starts with a letter or `_`, never a digit or `-`. `{#2024-plan}` and `{.2col}` do not parse.
+- An id holds no `:` and no `.`. Items are separated by whitespace, so `{#a.b}` does not parse either; write `{#a .b}` for an id and a class.
+- A `NAME` starts with a letter; `_` is not allowed first. `:::_x` opens nothing.
+- A `KEY` may hold `:` and `.` after its first character, so `xml:lang` and `data-x.y` are plain keys.
+- Letters and combining marks from any script are allowed, so ids, slugs and references work in German, Greek, Hindi or Japanese.
+
+```tern {.live}
+{#über .größe}
+## Überschrift
+
+See @über. The slug of this heading keeps its vowel signs:
+
+## हिन्दी
+```
+
+A trailing heading group that does not parse stays in the heading text. Here the `2` cannot start an id:
+
+```tern {.live expect="attr.malformed"}
+## Plan {#2024-plan}
+```
+
+#### The glued tests are ASCII
+
+Some marks only count when they are not glued to a word: `:` before an inline element, `@` before a reference, and the `~~` and `==` runs. "A word" means an ASCII letter or digit. Chinese, Japanese and Thai put no spaces between words, so these must still work:
+
+```tern {.live}
+:ruby[漢:rt[kan]] and これは==重要==です.
+```
+
+The same marks glued to ASCII letters are text:
+
+```tern {.live expect="inline.glued"}
+x:rt[kan] and a==b==c stay text.
+```
+
+### Case {#case}
+
+Each kind of name has its own case rule:
+
+| What | Case | Example |
+|---|---|---|
+| a `NAME` (element names, in openers, closers, the schema, the allowlists, the reserved list) | case-sensitive | `:::Aside` is not `aside` |
+| a class name | case-sensitive | `.Tern` is an ordinary class; `.tern` is reserved |
+| a `KEY` | ASCII case-insensitive, as HTML attribute names are | `{ID=k}` is `{#k}` |
+| a footnote `LABEL` | case-insensitive | `[^ABC]` reaches `[^abc]:` |
+| a raw HTML tag name | case-insensitive | `<DIV>` … `</div>` balance |
+
+```tern {.live}
+:::Aside
+`Aside` is an unknown name, so this is a `div` with the class `Aside`.
+:::
+
+{ID=k CLASS=wide}
+## Keys are lower-cased
+```
+
+Footnote labels fold case, and the ids use the definition's label as written:
+
+```tern {.live}
+A note.[^ABC]
+
+[^abc]: Found despite the case.
+```
+
+## Attributes {#attributes}
+
+One grammar gives ids, classes and attributes to every construct that can carry them. It is always braced and has no unbraced form.
+
+### The grammar {#attribute-grammar}
+
+```
+ATTRS = "{" ws* ITEM ( ws+ ITEM )* ws* "}"
+ITEM  = "#" IDENT | "." IDENT | KEY "=" VALUE | KEY
+VALUE = '"' [^"]* '"'  |  "'" [^']* "'"  |  [^\s"'=<>`{}]+
+```
+
+| Item | Meaning | Example |
+|---|---|---|
+| `#IDENT` | the id | `{#kernel}` |
+| `.IDENT` | a class; several accumulate | `{.wide .lead}` |
+| `KEY=VALUE` | an attribute with a value | `{width=640}`, `{title="Two words"}` |
+| `KEY` | a bare key: a boolean attribute | `{open}`, `{controls}` |
+
+- Items are separated by whitespace (spaces, tabs, or a line break where the group spans lines in inline content).
+- A value is double-quoted, single-quoted, or unquoted. An unquoted value cannot hold whitespace, quotes, `=`, `<`, `>`, a backtick, `{` or `}`.
+- `IDENT` and `KEY` are defined under [Character classes](#character-classes).
+
+```tern {.live}
+A [span]{#s .a .b title="Two words" data-x='single' width=640 hidden}.
+```
+
+A group that breaks the grammar is reported at the first character the grammar rejects:
+
+```tern {.live expect="attr.malformed attr.malformed attr.malformed attr.malformed"}
+[a]{#k!} [b]{a=b=c} [c]{#a.b} [d]{.2col}
+```
+
+The `!`, the second `=`, the `.` and the `2` are each where the grammar stops.
+
+### Finding the group {#finding-the-group}
+
+Before a group is parsed, Tern finds its extent:
+
+- **Candidate.** A candidate runs from `{` to the first `}` that is not inside quotes.
+- **Abort.** An unquoted `{` before that `}` means "not an attribute group". This keeps a run like `{{{{` linear to scan.
+- **Quotes.** Inside quotes nothing is special and there are no escapes, so `pattern="\d+"` is literal. To put `"` in a value, use single quotes, and the other way round.
+- **Empty.** `{}`, or a pair of braces holding only spaces, is not a group.
+- **Inline content.** Code spans and other inline atoms are found before groups are attached, so a backtick inside a glued group pairs as a code span.
+
+A `}` or `{` inside quotes does not end or abort the candidate:
+
+```tern {.live}
+A [span]{title="a } b" data-open='{'} with braces in its values.
+```
+
+Quoted values are literal, and the emitted value escapes what HTML needs:
+
+```tern {.live}
+A [field]{pattern="\d+" title='say "hi"'}.
+```
+
+An aborted candidate and an empty group are silent text:
+
+```tern {.live}
+[x]{.a {b}} and [y]{} stay as written.
+```
+
+After a reference, `{}` is still consumed, as a terminator with no attributes. It is how you end a reference that is glued to the text after it, as in Japanese:
+
+```tern {.live}
+## Kernel {#kernel}
+
+これは@kernel{}です。
+```
+
+:::warning
+A backtick inside a glued group pairs with a later backtick as a code span, because code spans bind tighter than attribute values. Here the "group" is broken and the code span swallows text. Write `&#96;` in a quoted value instead.
+:::
+
+```tern {.live}
+[x]{title="a`b"} and `c`
+```
+
+### Strong and weak groups {#strong-and-weak}
+
+- A group is **strong** if it holds at least one `#id`, `.class` or `key=value`.
+- A group of bare keys only, such as `{open}`, is **weak**.
+
+Weak groups are accepted only where a `{` cannot be mistaken for text: glued after a bracket construct or a reference, and at the end of a structural line. Everywhere else a weak group stays text, silently.
+
+```tern {.live}
+A [span]{hidden} binds a weak group; `code`{hidden} does not.
+
+{open}
+A weak group alone on a line is just text, and this line continues the paragraph.
+```
+
+A single `key=value` makes a group strong, and its bare keys come along:
+
+```tern {.live}
+{lang=fr translate}
+Bonjour.
+```
+
+### Merging and emission {#merging-and-emission}
+
+**Merging.** Within a group, and between groups that apply to the same element:
+
+- Keys are ASCII-lower-cased first, as the browser lower-cases attribute names. `{ID=a CLASS=b}` is `{#a .b}`.
+- The last `#id` wins. `id=` is the same attribute as `#`.
+- Classes accumulate in source order. `class=` merges with `.` items, and a quoted `class="a b"` adds two classes.
+- For any other repeated key, the last value wins.
+
+```tern {.live}
+{#a .b id=c class="d e" k=1 k=2}
+Merged.
+```
+
+**Emission.**
+
+- `id` comes first, then `class`, then the other attributes in source order. A repeated key keeps the place where it first appeared.
+- In values, `"`, `<` and `&` are escaped; a well-formed character reference such as `&amp;` or `&copy;` is kept as written.
+- A bare key becomes an HTML boolean attribute: `controls`, not `controls=""`.
+
+```tern {.live}
+A [span]{b=1 .c a=2 #i b=3 title="&copy; & <x>"}.
+```
+
+### Reserved keys and names {#reserved}
+
+**Reserved keys** are consumed by Tern and never emitted:
+
+| Key | Where it acts | What it does |
+|---|---|---|
+| `tag` | named elements: `:::name`, `::name`, `:name[…]`, when the name is neither reserved nor a core block | overrides the element ([Elements](elements.html#names)) |
+| `raw` | containers | makes the body verbatim ([Raw-body containers](#raw-body)) |
+| `cols` | containers, leaves, inline elements (not core blocks such as `:::macros`) | sets the grid ([Cells](#cells)) |
+| `ref` | references | chooses the reference text ([References](elements.html#references)) |
+| `lines`, `hl`, `start` | fences only | line numbers and highlighted lines ([Fenced code](#fence-lines)) |
+
+**A reserved key where it does not apply** is dropped with a diagnostic at the key, never silently:
+
+- `tag=` on anything but a named element (a span, a link, an image, a code span, a heading, a paragraph through an attribute line) gets [`tag.not-allowed`](diagnostics.html#tag-not-allowed) (warning);
+- `tag=` on a reserved or core name (`:::main{tag=section}`, `:::macros{tag=div}`), `ref=` anywhere but a reference, `raw` anywhere but a container, and `cols=` anywhere but a container, leaf or inline element (or on a core block) get [`attr.malformed`](diagnostics.html#attr-malformed) (warning).
+
+```tern {.live expect="tag.not-allowed tag.not-allowed attr.malformed attr.malformed attr.malformed"}
+A [span]{tag=b}, a [link](https://example.com){ref=title}, an ![image](tide.jpg){cols=2}.
+
+{tag=section raw}
+A paragraph cannot change its element.
+```
+
+`lines`, `hl` and `start` are reserved on fences only; anywhere else they are ordinary attributes:
+
+```tern {.live}
+:::aside{lines start=3 tag=section}
+`tag` is consumed and picks the element; `lines` and `start` are emitted.
+:::
+```
+
+**Reserved names.** Three things would let a note hijack the output contract, so they are dropped with `name.reserved` (warning):
+
+- the key `data-t` (in any case: `DATA-T` is lower-cased to it), reported at the key's first letter;
+- the class `tern`;
+- any class starting with `t-`, reported at the class's `.`.
+
+Class names are case-sensitive, so `.Tern` is an ordinary class.
+
+```tern {.live expect="name.reserved name.reserved name.reserved"}
+{.tern .t-box .Tern data-t=x}
+Only `Tern` survives.
+```
+
+Diagnostics: [`attr.malformed`](diagnostics.html#attr-malformed), [`name.reserved`](diagnostics.html#name-reserved).
+
+### The five positions {#positions}
+
+These are the only places a `{` is special:
+
+| Position | Example | Accepts | Binds to | If the candidate does not parse |
+|---|---|---|---|---|
+| glued after a bracket construct (link, image, span, inline element) or a reference | `[t](u){.btn}`, `[x]{hidden}`, `:kbd[C]{.big}` | any group | that node | stays text, with `attr.malformed` at the first rejected character. `{}` and an aborted candidate are silent text; after a reference, `{}` is consumed |
+| glued after a code span, a math span, a `*`, `**`, `~~` or `==` closer, an autolink or a footnote reference | `` `c`{.x} ``, `$x${#e}`, `**b**{.y}` | strong groups only | that node | stays text; `attr.malformed` only when the candidate starts with `#` or `.` |
+| the end of a structural line: container opener, leaf, fence opener, `$$` closer, `+++` | `:::details[More]{open}`, `$$ {#eq}`, `+++ {.muted}` | any group, glued or after spaces | that block | as each construct says |
+| the end of a heading line | `## Kernel {#kernel .wide}` | a strong group, glued or after spaces | the heading | stays heading text; `attr.malformed` when it starts with `#` or `.` |
+| alone on a line | `{#intro .lead}` | one or more strong groups | the next block | the line is a paragraph; `attr.malformed` when it starts with `{#` or `{.` |
+
+A group bound to a node is part of that node's source position.
+
+#### 1. Glued after a bracket construct or a reference
+
+Any group binds, weak ones included:
+
+```tern {.live}
+## Kernel {#kernel}
+
+A [link](#kernel){.btn}, an ![image](tide.jpg){width=200}, a [span]{hidden}, a key :kbd[C]{.big} and a reference @kernel{ref=title}.
+```
+
+A candidate that runs to its `}` and fails is reported, whatever it starts with:
+
+```tern {.live expect="attr.malformed"}
+A [span]{1, 2} is a malformed group here.
+```
+
+#### 2. Glued after an atom or a closer
+
+Only strong groups bind:
+
+```tern {.live}
+`code`{.x}, $x${#e}, **strong**{.y}, ~~struck~~{.z}, ==marked=={.w} and <https://example.com>{.link}.
+```
+
+A weak group stays text, and a broken one is reported only when it starts with `#` or `.`:
+
+```tern {.live expect="attr.malformed"}
+`a`{open} `b`{k!} `c`{#k!}
+```
+
+#### 3. The end of a structural line
+
+Any group, glued or after spaces, binds to the block the line opens or closes:
+
+````tern {.live}
+:::details[More]{open}
+```js {lines}
+let x = 1;
+```
+$$
+x^2
+$$ {#eq-square}
+:::
+````
+
+What happens to a group that does not parse depends on the construct: a container shows it as opener junk, a leaf line becomes a paragraph, a fence keeps it in `data-meta`, a `$$` closer starts a paragraph after the equation, and a `+++` line is no longer a separator. Each section below says which.
+
+#### 4. The end of a heading line
+
+A strong group binds, glued or after spaces. A weak or unparsable group stays heading text, and is reported only when it starts with `#` or `.`:
+
+```tern {.live expect="attr.malformed"}
+## Spaced {#spaced .wide}
+## Glued{#glued}
+## Weak {open}
+## Broken {#k!}
+```
+
+#### 5. Alone on a line
+
+One or more strong groups alone on a line form an [attribute line](#attribute-line), which binds to the block on the next line:
+
+```tern {.live}
+{#intro .lead}
+This paragraph gets the id and the class.
+```
+
+#### Everywhere else
+
+Everywhere else a `{` is text:
+
+```tern {.live}
+The set {1, 2}, f{x}, $f${x}, and [x] {.c} with a space.
+
+{x}
+```
+
+The last line is a paragraph: `{x}` is a weak group, so it is no attribute line.
+
+## The line algorithm {#line-algorithm}
+
+Tern reads a note one line at a time. It keeps a stack of open containers (quotes, list items, footnote definitions, `:::` containers, cells) and at most one open leaf (a paragraph, a table, a fence, a raw HTML block, display math, a raw body, or a pending attribute line). For each line it takes five steps:
+
+1. **Prefixes.** Match the open containers' prefixes, outermost first. What is left is the *remainder*.
+2. **Verbatim leaf.** If a verbatim leaf is open, feed it the remainder.
+3. **Lazy continuation.** If a prefix failed and a paragraph is open, the line may continue it.
+4. **Classification.** Otherwise, classify the remainder by the sixteen rows below; the first row that matches wins.
+5. **End of the note.** After the last line, close everything still open.
+
+### Prefixes {#prefixes}
+
+Only three containers have a line prefix:
+
+| Container | Its prefix matches when |
+|---|---|
+| blockquote | after optional leading whitespace comes `>`, then an optional space or tab. A tab is consumed whole |
+| list item | the line is indented to the item's content column, or is blank |
+| footnote definition | the line is indented at least 2 columns, or is blank |
+
+- `:::` containers and cells have no prefix: they continue on every line until a closer.
+- The prefix of an inner container is matched after the outer one's, on what the outer one left.
+- After the matched prefixes, what remains is the *remainder*. Every later step looks only at the remainder.
+
+The quote prefix needs only the `>`, so `>b` continues an open quote, although it cannot open one (opening needs a space, a tab or the end of the line after `>`):
+
+```tern {.live}
+> An open quote
+>continues on this line.
+
+>This line opens nothing.
+```
+
+### Verbatim leaves {#verbatim-leaves}
+
+The verbatim leaves are a [fence](#fence), a [raw HTML block](#raw-html), [display math](#display-math) and a [raw-body container](#raw-body). While one is open:
+
+- **If every prefix matched**, the remainder goes to the leaf. The leaf first tests its *terminators* (display math and generic raw HTML only have them), then its own end condition; otherwise the line is content. Nothing in it is classified.
+- **If a prefix failed**, the leaf closes as unclosed, with its diagnostic, together with every container whose prefix failed.
+
+So a `#` line inside a fence inside a quote is code, and a quote line that loses its `>` ends the fence:
+
+````tern {.live expect="block.unclosed-fence"}
+> ```
+> # code, not a heading
+after the quote
+````
+
+### Lazy continuation {#lazy}
+
+A line continues the open paragraph *lazily*, without its prefixes, when all of these hold:
+
+- a prefix failed;
+- the innermost open block is a paragraph;
+- the remainder would be a paragraph line (row 16), or would not start any block.
+
+```tern {.live}
+> A quote,
+lazily continued.
+```
+
+Laziness reaches through every failed prefix, so here `b` continues the paragraph of the item inside the quote:
+
+```tern {.live}
+> - a
+b
+```
+
+The "interrupts a paragraph" restrictions of the last column below apply only when every prefix matched. A line that failed a prefix and starts any block starts it. So `2. two` after a quoted line leaves the quote and starts a list at 2:
+
+```tern {.live}
+> para
+2. two
+```
+
+The same rule keeps list items siblings: the item's prefix fails on the next marker line, and the marker starts a new item even where it could not interrupt a paragraph (an item numbered 2, an empty item).
+
+```tern {.live}
+1. one
+2. two
+
+* one
+*
+* three
+```
+
+Laziness needs an open paragraph. After a heading, a fence or display math, a line that fails the prefix ends the container:
+
+```tern {.live}
+> # A quoted heading
+not lazy
+```
+
+### Classification: the sixteen rows {#rows}
+
+The remainder is classified with its leading whitespace ignored. The first matching row wins.
+
+| # | Construct | The remainder is | Ends | Interrupts a paragraph |
+|---|---|---|---|---|
+| 1 | blank | empty | — | ends it |
+| 2 | closer | `:{3,}` or `:{3,}/NAME`, nothing else | same line | yes |
+| 3 | fence | 3 or more `` ` `` or 3 or more `~`, then the info | its closing fence | yes |
+| 4 | raw HTML block | `<!--`, a raw-text tag, a block-level or custom tag | per kind | yes |
+| 5 | heading | 1 to 6 `#`, then a space, a tab or the end of the line | same line | yes |
+| 6 | thematic break | 3 or more of one of `-` `*` `_`, spaces or tabs allowed, nothing else | same line | yes |
+| 7 | table | a line starting with `|` whose next line is a delimiter row; or a delimiter row at a block start | a blank line or a line not starting with `|` | yes (first form only) |
+| 8 | blockquote | `>` then a space, a tab or the end of the line | a blank line, or a line that is neither `>` nor lazy | yes |
+| 9 | list item | `-`, `*`, `+`, or 1 to 9 digits then `.` or `)`; then a space, a tab or the end of the line | as in CommonMark | bullets, and ordered items numbered 1, when not empty |
+| 10 | container opener | `:{3,}` immediately followed by a NAME | its closer | yes |
+| 11 | cell separator | `+{3,}`, optionally an attribute group, inside a container | same line | yes |
+| 12 | leaf | `::NAME[…]{…}` filling the whole line | same line | yes (a whole-line match only) |
+| 13 | display math | `$$` … | its closer or a terminator | yes |
+| 14 | footnote definition | `[^LABEL]:` then a space or the end of the line | like a list item | yes |
+| 15 | attribute line | one or more strong `{…}` groups | same line | yes |
+| 16 | paragraph | anything else | a blank line or an interrupting line | — |
+
+Row by row:
+
+1. **Blank.** A line that is empty after right-trimming (so a whitespace-only line too). It ends a paragraph, a table and a pending attribute line, and produces nothing itself. See [Paragraph](#paragraph).
+2. **Closer.** Three or more colons alone, or followed by `/` and a name. It closes a container. See [Closers](#closer).
+3. **Fence.** Three or more backticks or tildes. A backtick fence whose info holds a backtick is not a fence. See [Fenced code](#fence).
+4. **Raw HTML block.** A comment, a raw-text element, a one-line tag, or a block-level or custom element. Phrasing tags such as `<b>` are not row 4. See [Raw HTML blocks](#raw-html).
+5. **Heading.** The `#` run must be followed by a space, a tab or the end of the line, so `#hashtag` is text. See [Heading](#heading).
+6. **Thematic break.** Tested before list items, so `- - -` and `* * *` are rules, not lists. See [Thematic break](#thematic-break).
+7. **Table.** The only row that reads the next line. See [Tables](#tables).
+8. **Blockquote.** `>5` and `>=` are text. See [Blockquote](#blockquote).
+9. **List item.** See [Lists](#lists).
+10. **Container opener.** The name must be glued to the colons. See [Containers](#container).
+11. **Cell separator.** At a container's own level only. See [Cells](#cells).
+12. **Leaf.** The whole line must match; otherwise it is a paragraph line. See [Leaves](#leaf).
+13. **Display math.** A line starting with `$$`. See [Display math](#display-math).
+14. **Footnote definition.** See [Footnote definitions](#footnote-definition).
+15. **Attribute line.** Strong groups only; `{x}` and `{1, 2}` are text. See [Attribute lines](#attribute-line).
+16. **Paragraph.** Everything else. See [Paragraph](#paragraph).
+
+After a row 8, 9 or 14 opens a container, the rest of the line is classified again inside it, so `> - item` opens a quote and then a list item in one line.
+
+#### What interrupts a paragraph
+
+A line that would start a block usually ends an open paragraph without a blank line. The exceptions, which continue the paragraph instead:
+
+| Line | Why it continues the paragraph |
+|---|---|
+| `2019. was a year` | an ordered item not numbered 1 does not interrupt |
+| `-` or `1.` alone | an empty item does not interrupt |
+| `|---|---|` | a delimiter row starts a table only at a block start |
+| `::note[x] and more` | a leaf interrupts only when it fills the line |
+| `<b>bold</b> text` | a phrasing tag is not a raw HTML block |
+| `{x}`, `{1, 2}` | a weak or unparsable group is no attribute line |
+
+```tern {.live}
+A paragraph
+- a bullet interrupts it.
+
+A paragraph
+2019. was a year, and
+-
+<b>these</b> lines all continue it.
+```
+
+A closer-shaped or `+++` line interrupts even when it [falls back to text](#fallback), so a stray `:::` still ends the paragraph above it.
+
+### End of the note {#end-of-note}
+
+After the last line, everything still open is closed, innermost first, each block with its own diagnostic:
+
+````tern {.live expect="block.unclosed block.unclosed-fence"}
+:::aside
+```
+code that never closes
+````
+
+The container's diagnostic names the fence as the cause. See [`block.unclosed`](diagnostics.html#block-unclosed) and [`block.unclosed-fence`](diagnostics.html#block-unclosed-fence).
+
+### Lines that fall back to text {#fallback}
+
+Some lines are shaped like a block but cannot be one. Two rules decide what they become:
+
+- **A closer-shaped or `+++` line that becomes text** (a stray closer, a closer mismatch, an orphan cell separator) still interrupts the open paragraph, and starts a paragraph of its own. Lines after it continue that paragraph as usual.
+- **A line that never matched a row** (`::: note`, a demoted `::word` line) is an ordinary paragraph line. It continues a paragraph like any other, and carries its diagnostic wherever it appears, continuation lines included.
+
+```tern {.live expect="cell.orphan block.spaced-name"}
+A paragraph
++++
+starts a new paragraph at the orphan separator.
+
+A paragraph
+::: note
+is continued by the spaced opener, which is still reported.
+```
+
+### Depth {#depth}
+
+Blocks nest at most 64 deep. An opener that would make the stack deeper becomes paragraph text, with [`nesting.limit`](diagnostics.html#nesting-limit) (error).
+
+- Containers, list items, blockquotes and footnote definitions count toward the depth, on one shared stack.
+- The root and the `list` around items do not count, so 64 levels nest.
+
+Here 65 quote markers are written on one line; the 65th becomes text:
+
+```tern {.live expect="nesting.limit"}
+> > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > x
+```
+
+### Cost {#cost}
+
+- Each line is examined once by each open container and once by the classifier.
+- Only the table start reads the next line, and only one line.
+- An attribute candidate stops at the first unquoted `{` or `}`, so a run of braces cannot make the scan quadratic.
+
+The parse is therefore linear in the size of the note.
+
+## Paragraph {#paragraph}
+
+A paragraph is consecutive lines that start nothing else.
+
+:::syntax
+```tern
+Any line that is not another block.
+The next line continues it.
+```
+:::
+
+```tern {.live}
+Let $T: V \to W$ be linear.
+   Its kernel is a subspace.
+```
+
+**Starts.** Row 16: a line that matches no other row.
+
+**Ends** at any of:
+
+- a blank line, or a line holding only spaces and tabs;
+- a line that interrupts it (see [What interrupts a paragraph](#rows));
+- a closer-shaped or `+++` line, even one that falls back to text;
+- the end of its container;
+- the end of the note.
+
+**Content.**
+
+- Each line's leading and trailing whitespace is stripped.
+- The lines are joined with a newline (a soft break) and parsed as [inline content](syntax-inline.html#algorithm).
+- Positions map back to the source exactly, so a diagnostic about inline content points at its real line and column, continuation lines included.
+
+Any number of blank lines separates two paragraphs and produces nothing:
+
+```tern {.live}
+One.
+
+
+
+Two.
+```
+
+A `\` at the end of a line inside a paragraph is a hard break. At the end of the paragraph there is no next line to break to, so it is a literal backslash:
+
+```tern {.live}
+Ends with a break\
+and the last backslash is literal\
+```
+
+More on breaks under [Hard break](syntax-inline.html#hard-break).
+
+**Diagnostics.** A paragraph line shaped like a table delimiter row gets [`table.stray-delimiter`](diagnostics.html#table-stray-delimiter) (warning): see [Tables](#table-diagnostics).
+
+### Keeping a line a paragraph {#line-start-escapes}
+
+To keep a line from starting a block, escape its first mark with `\`. The backslash disappears and the line is paragraph text:
+
+| Would start | Write |
+|---|---|
+| a heading | `\#` |
+| a blockquote | `\>` |
+| a list item | `\-`, `\+`, `\*`, `1\.` |
+| a table | `\|` |
+| a container or a leaf | `\:::`, `\::` |
+| display math | `\$$` |
+| an attribute line | `\{` |
+| a raw HTML block | `\<` |
+| a footnote definition | `\[^x]:` |
+| a cell separator | `\+++` |
+| a thematic break | `\---` |
+| a fence | ```` \``` ```` |
+
+```tern {.live}
+\# Not a heading
+\- not a list item
+2019\. was a year.
+\:::note is not a container
+\{.not-attributes}
+\<div> is not raw HTML
+```
+
+All escapes are listed under [Escapes](syntax-inline.html#escapes).
+
+## Heading {#heading}
+
+A heading is one line starting with one to six `#`.
+
+:::syntax
+```tern
+## Heading text {#id .class key=value}
+```
+:::
+
+```tern {.live}
+# Linear maps
+## Kernel and image {#kernel .wide}
+###### Level six
+```
+
+**Rules.**
+
+- **Starts.** Row 5: one to six `#`, then a space, a tab or the end of the line, then inline text.
+- **Ends** on the same line. Nothing continues a heading, and there are no multi-line or setext headings.
+- The text is [inline content](syntax-inline.html#algorithm), with its leading and trailing spaces trimmed.
+- A closing run of `#` is text: `# C# #` keeps both.
+- A `\` at the end of a heading is literal, since a heading is one line.
+- A heading interrupts a paragraph.
+
+Without the space, or with seven `#`, the line is a paragraph:
+
+```tern {.live}
+#hashtag, #1 priority and C# are not headings.
+
+####### Seven is too many.
+```
+
+A tab after the `#` run counts as a space, and closing runs stay in the text:
+
+```tern {.live}
+#	A heading after a tab
+## Title ##
+#
+```
+
+The last line is an empty heading. It is allowed, and gets the slug `section`.
+
+### Heading attributes {#heading-attributes}
+
+A trailing **strong** group gives the heading its id, classes and attributes. It may be glued to the text or follow spaces.
+
+- A weak group (`{open}`) or an unparsable one (`{1, 2}`) stays heading text, silently.
+- A group that starts with `#` or `.` and does not parse stays heading text, with [`attr.malformed`](diagnostics.html#attr-malformed) (warning) at the first rejected character. It is reported once, even when the group is also glued to a bracket in the text.
+- Only a group at the very end binds. A group followed by more text is text.
+- `\{` makes the group text, with no diagnostic.
+- An [attribute line](#attribute-line) before the heading works too.
+
+```tern {.live}
+## Bound {#bound .wide}
+## Not at the end {#k} more
+## Escaped \{#not-an-id}
+
+{#intro}
+## From an attribute line
+```
+
+A broken group at the end of a heading, glued to a span's bracket, is one problem, reported once:
+
+```tern {.live expect="attr.malformed"}
+## See [this]{#k!}
+```
+
+### Slugs {#slugs}
+
+A heading without an id gets one made from its text, so every heading can be linked to and referenced.
+
+The slug is built from the heading's plain text: the rendered inline content with tags dropped, entities decoded, math as its TeX, footnote references ignored, and each reference as its id. Then:
+
+1. apply Unicode NFKC normalisation, then lower-case (Unicode default case mapping, the same in every locale);
+2. drop everything before the first letter or `_`;
+3. replace each run of characters other than letters, combining marks, digits, `_` and `-` with one `-`;
+4. trim `-` from both ends;
+5. use `section` if nothing is left.
+
+```tern {.live}
+## Überblick
+## 2. Results
+## 日本語
+## ﬁle²
+## _private
+## 2024
+## About [the docs](https://example.com), $x^2$ &amp; `code`
+```
+
+- `2. Results` loses its section number, so the slug stays referenceable.
+- NFKC folds the ligature `ﬁ` to `fi` and `²` to `2`.
+- `2024` has no letter, so its slug is `section`.
+- A link contributes its text, not its URL.
+
+**Collisions.** A slug that is already taken gets the first free `-2`, `-3`, …, silently. Ids an author wrote anywhere in the note are registered before any slug, so a slug yields to them:
+
+```tern {.live}
+## Kernel
+## Kernel
+## Image
+
+:::aside{#image}
+An explicit id wins over the earlier heading's slug.
+:::
+```
+
+**Tern's own ids.** `tern-style`, `tern-color-scheme`, `tern-source` and `tern-diagnostics` belong to elements tern.js adds to the page, and are taken before any other id. A slug yields to them silently. An id an author writes with one of these names gets [`id.duplicate`](diagnostics.html#id-duplicate) (warning), "belongs to tern itself", and is dropped:
+
+```tern {.live expect="id.duplicate"}
+## Tern style
+
+{#tern-source}
+A paragraph that cannot have this id.
+```
+
+A reference inside a heading counts as its target's id in the slug, since numbers do not exist yet when slugs are made:
+
+```tern {.live}
+## About @kernel
+
+:::aside{#kernel}
+The heading's slug is `about-kernel`.
+:::
+```
+
+Slugs share one registry with every other id: see [Ids](elements.html#ids).
+
+**Diagnostics.** [`attr.malformed`](diagnostics.html#attr-malformed) for a broken trailing group.
+
+**Escape.** `\#` at the start of the line.
+
+## Thematic break {#thematic-break}
+
+A thematic break is a line of three or more dashes, rendered as `<hr>`.
+
+:::syntax
+```tern
+---
+```
+:::
+
+```tern {.live}
+Above the rule.
+
+---
+
+Below the rule.
+```
+
+**Rules.**
+
+- The line holds 3 or more of the same character, with optional spaces or tabs between them, and nothing else.
+- `***`, `___`, `- - -` and `* * *` are accepted too, but `---` is the documented spelling.
+- It is tested before list items, so `- - -` and `* * *` are rules, not nested lists.
+- It interrupts a paragraph, and makes no setext heading.
+
+```tern {.live}
+***
+___
+- - -
+- ---
+-----------
+> ---
+```
+
+`- ---` is dashes and spaces only, so it is a rule too; `> ---` is a quote holding a rule.
+
+These are not rules:
+
+```tern {.live}
+-- is two.
+
+-*- mixes characters.
+
+--- has text after it.
+
+***both*** holds letters, so it is emphasis.
+```
+
+**Attributes.** A rule takes no trailing group: with one, the line is a paragraph. Put the attributes on an [attribute line](#attribute-line) before it, or write the leaf `::hr{.thin}`.
+
+```tern {.live}
+--- {.thin}
+
+{.thin}
+---
+
+::hr{.thin}
+```
+
+### Front matter {#front-matter}
+
+Tern has no front matter. A note whose first block is `---`, then `key: value` lines, then `---`, renders as a rule, a paragraph and a rule, and gets [`doc.frontmatter`](diagnostics.html#doc-frontmatter) (info) at the opening `---` line, pointing you to `:::meta`:
+
+```tern {.live expect="doc.frontmatter"}
+
+---
+title: Linear maps
+lang: en
+---
+```
+
+- The first block counts wherever it starts, so the usual blank line after the `tern.js` line does not hide it.
+- The same lines after another block are just a rule, a paragraph and a rule, with no diagnostic.
+- Prose between two rules is not front matter.
+
+Write metadata in a [`:::meta` block](#raw-body) instead (see [Metadata](elements.html#metadata)).
+
+**Escape.** `\---` at the start of the line.
+
+## Fenced code {#fence}
+
+A fence holds code, shown verbatim.
+
+:::syntax
+````tern
+```lang[Title]{#id .class lines hl=2 start=10}
+code
+```
+````
+:::
+
+````tern {.live}
+```python {start=10 lines .wide}
+def take(it, n):
+    return [x for _, x in zip(range(n), it)]
+```
+````
+
+### Opening a fence {#fence-open}
+
+- **Starts.** Row 3: three or more backticks, or three or more tildes, then the info string.
+- Backticks are the documented spelling; tilde fences (`~~~`) are accepted.
+- Leading whitespace before the fence is ignored; it only sets how much is removed from the content (below).
+- A fence interrupts a paragraph.
+- **In a backtick fence, the info may not contain a backtick.** Such a line is not a fence: it is a paragraph, usually holding a code span.
+
+```tern {.live}
+```a`b``` is a code span, not a fence.
+```
+
+### The info string {#fence-info}
+
+After the backticks come three parts, in this order, each optional, with spaces allowed before and between them:
+
+1. **a language**, verbatim, with no escapes (any characters but whitespace, brackets, braces and backticks);
+2. **a title** in brackets: inline content on one line, where brackets nest and code and math spans are skipped;
+3. **an attribute group**, strong or weak.
+
+| Info | Result |
+|---|---|
+| ```` ```js ```` | `<code class="language-js">` |
+| ```` ``` js ```` | the same: spaces may come first |
+| ```` ```c++ ```` | `language-c++`: the language is verbatim |
+| ```` ```{.x} ```` | no language, attributes on `<pre>` |
+| ```` ```js[Title]{#id} ```` | a [listing](#listings) |
+
+Anything else is junk. It gets [`fence.info-junk`](diagnostics.html#fence-info-junk) (warning) at its first character, the fence still opens, and the junk alone is kept, verbatim, in `data-meta` (on the `<figure>` for a titled fence, otherwise on `<pre>`; an [`=html` fence](#html-fence) has neither, so there it is dropped):
+
+````tern {.live expect="fence.info-junk"}
+```js extra
+let x = 1;
+```
+````
+
+The parts must come in order, and once junk starts everything after it is junk, a valid group included:
+
+````tern {.live expect="fence.info-junk fence.info-junk"}
+```js extra {.x}
+a group after junk is junk
+```
+
+```js {.x} [Title]
+a title after the group is junk
+```
+````
+
+A `[` that never closes, or a group that does not parse, is junk too (not `attr.malformed`):
+
+````tern {.live expect="fence.info-junk fence.info-junk"}
+```js [Unclosed
+x
+```
+
+```js {#k!}
+x
+```
+````
+
+In a tilde fence the info may hold backticks, so its title can hold a code span:
+
+````tern {.live}
+~~~js[The `]` inside code does not end the title]
+x
+~~~
+````
+
+### Closing the fence {#fence-close}
+
+- The fence ends at a line that, right-trimmed, holds **at least as many** of the **same character**, and nothing else.
+- The closing line's indentation is ignored, however deep.
+- A longer run closes the fence; a shorter one is content. So a four-backtick fence can show a three-backtick one.
+- A backtick line with info after it is content, not a closer.
+- A tilde fence closes only with tildes.
+
+`````tern {.live}
+````
+```js
+inner fence, shown as code
+```
+````
+
+~~~
+``` backticks do not close a tilde fence
+~~~
+`````
+
+### Content and dedent {#fence-content}
+
+- The content is verbatim and HTML-escaped. There are no escapes, and nothing inside is Tern: `:::`, `+++`, `$$`, `#` and blank lines are code. This is intended, since notes document Tern inside fences.
+- Each content line loses up to the opener's indentation, and keeps the rest. A shallower line loses only what it has.
+- A tab only partly removed by the dedent leaves its remaining columns as spaces.
+
+````tern {.live}
+:::aside
+  ```
+    four spaces become two
+  two become none
+ one becomes none
+  ```
+:::
+
+```
+:::note
+# not a heading
++++
+
+<div>
+```
+````
+
+### Line numbers and highlights {#fence-lines}
+
+Three reserved keys control line display. They are consumed (never emitted as attributes):
+
+| Key | Effect |
+|---|---|
+| `lines` | wraps every line in `span.t-line` and adds `data-lines`, which shows the numbers |
+| `hl=4,6-7` | adds the class `t-hl` to those lines, and `data-hl` |
+| `start=10` | adds `data-start`; numbering begins at 10 |
+
+- `hl` counts the displayed line numbers, so with `start=10` the first line is 10.
+- `hl` or `start` without `lines` still wraps every line in `span.t-line`; only `lines` adds `data-lines`.
+
+````tern {.live}
+```js {lines start=10 hl=11}
+first();
+second(); // line 11, highlighted
+third();
+```
+````
+
+### Titled fences: listings {#listings}
+
+A fence with a title becomes a listing: a `figure.t-block.code` with `data-t="code"`, the `<pre>` inside, and the title in a `<figcaption>`.
+
+- Author attributes (the id, classes, other keys) go on the `<figure>`; the reserved keys go on `<pre>`.
+- The label and the counter come from the schema entry `code`, when a schema declares one. With the [demo schema](schema.html#demo-schema) the label is "Listing".
+- A titled fence is numbered in document order and can be referenced: `@lst-fib` renders "Listing 1".
+
+````tern {.live schema=demo}
+```js[A lazy Fibonacci generator]{#lst-fib lines hl=4}
+function* fib() {
+  let [a, b] = [0, 1];
+  for (;;) {
+    yield a;
+    [a, b] = [b, a + b];
+  }
+}
+```
+
+See @lst-fib.
+````
+
+Without a schema entry for `code`, a titled fence is still the listing figure, with no label and no number:
+
+````tern {.live}
+```js[A plain title]{#lst}
+x
+```
+````
+
+An untitled fence puts author attributes on `<pre>`, and takes no number. An [attribute line](#attribute-line) before a fence goes on `<pre>`, or on the `<figure>` of a titled one:
+
+````tern {.live}
+{#setup .wide}
+```sh
+npm install
+```
+````
+
+### Unclosed fences {#fence-unclosed}
+
+A fence with no closing line runs to the end of the innermost quote, list item or footnote definition that holds it, or to the end of the note. It gets [`block.unclosed-fence`](diagnostics.html#block-unclosed-fence) (error) at the opener.
+
+It runs through `:::` closers, because a fence may legitimately contain them. A container left open that way reports [`block.unclosed`](diagnostics.html#block-unclosed), with the hint "the fence opened on line N is unclosed":
+
+````tern {.live expect="block.unclosed block.unclosed-fence"}
+:::aside
+```
+code
+:::
+````
+
+A closing fence below a list item's content column is outside the item. The item's fence is unclosed, and the closing line opens a new fence:
+
+````tern {.live expect="block.unclosed-fence block.unclosed-fence"}
+- ```
+  code
+```
+````
+
+Blank lines that end a list item belong to nothing, so a fence left open in the item ends before them.
+
+**Diagnostics.** [`block.unclosed-fence`](diagnostics.html#block-unclosed-fence), [`fence.info-junk`](diagnostics.html#fence-info-junk).
+
+**Escape.** ```` \``` ```` at the start of the line:
+
+```tern {.live}
+\```
+This is a paragraph.
+```
+
+## Raw HTML blocks {#raw-html}
+
+A line that starts with certain HTML tags starts a raw HTML block, which is passed to the page as written.
+
+:::syntax
+```tern
+<details>
+<summary>Raw HTML, emitted byte for byte</summary>
+</details>
+```
+:::
+
+```tern {.live}
+<details>
+<summary>Raw HTML</summary>
+Shown as written.
+</details>
+
+After the block, Tern again.
+```
+
+**Rules.**
+
+- **Starts.** Row 4: the remainder begins with `<` and matches one of four kinds, tested in order. Leading whitespace is ignored, and kept in the output.
+- **The kind is fixed on the first line**, and with it the end condition, which belongs to this block alone.
+- **Tag names are case-insensitive** everywhere: on the first line, in end tags, and in depth counting.
+- **An end tag on the opening line counts**, for every kind.
+- **Content** is never parsed as Tern: no headings, no references, no ids. It is emitted verbatim (except an unclosed comment or raw-text block, below).
+- A raw HTML block interrupts a paragraph.
+
+### The four kinds {#raw-html-kinds}
+
+| Kind | First line | Ends on | Also ended, with `html.unclosed` (error), by |
+|---|---|---|---|
+| comment | `<!--` | the first line, from the opener on, containing `-->` | the parent's end, the end of the note; then shown as an error block |
+| raw text | `<script`, `<style`, `<pre` or `<textarea`, then whitespace, `>` or the end of the line | the first line, from the opener on, containing the matching end tag (`</script>` …, spaces or tabs allowed before the `>`) | the parent's end, the end of the note; then shown as an error block |
+| one-line | an end tag, a void tag, a self-closed tag, or a tag whose end HTML lets you omit (list below) | the same line | — |
+| generic | `<NAME`, where NAME is block-level or a custom element, then whitespace, `>` or the end of the line | the line where the openings and closings of NAME balance | a `:::` opener or closer line, the parent's end, the end of the note |
+
+The **parent's end** is the end of the innermost quote, list item or footnote definition that holds the block.
+
+#### Comments
+
+A comment runs to the first line containing `-->`. That whole line belongs to the block, text after the `-->` included. Headings, `:::` lines and blank lines inside are part of the comment:
+
+```tern {.live}
+<!--
+# not a heading
+:::
+
+-->
+<!-- one line --> and the rest of its line.
+After.
+```
+
+`<!-->` and `<!--->` are complete comments on their own line (as in CommonMark 0.31).
+
+#### Raw text: script, style, pre, textarea
+
+These elements hold text the browser does not parse as HTML, so the block runs to the matching end tag, whatever is in between: blank lines, `:::` lines, Tern-looking lines.
+
+```tern {.live}
+<pre>
+  Indentation kept.
+
+# and this is not a heading
+</pre>
+<STYLE>
+.x { color: teal }
+</style>
+```
+
+- The end tag may have spaces or tabs before its `>`: `</pre >` ends a `<pre>` block, as it does in HTML.
+
+```tern {.live}
+<pre>
+The end tag below has a space before its >.
+</pre >
+# A heading after the block
+```
+
+- The name needs a boundary: `<pre-wrap>` is a custom element (a generic block), not a `<pre>`.
+- `<script … />` is still the raw-text kind; the browser ignores the `/` too. Without a `</script>` it runs to the end.
+- A closed block of these kinds is emitted byte for byte: `<` and `&` in a script are not escaped.
+
+#### One-line tags
+
+A one-line block is just its line. It covers:
+
+- an end tag `</NAME>` whose NAME is block-level or a custom element. It also gets [`html.stray-closer`](diagnostics.html#html-stray-closer) (info), with a hint to write a `:::NAME{…}` container instead (for `</table>`, the hint points to a pipe table or a whole raw `<table>` block). Any other end tag does not start a block: `</select>` continues a paragraph;
+- a void block tag: `<hr …>`, `<link …>`;
+- a self-closed tag: `<section/>`;
+- an element whose end tag HTML lets you omit: `p`, `li`, `dd`, `dt`, `tr`, `td`, `th`, `thead`, `tbody`, `tfoot`.
+
+```tern {.live}
+<hr class="fancy">
+<p>
+A Tern paragraph, between two raw lines: *parsed*.
+<section/>
+```
+
+So wrapping Tern text in `<p>` … `</p>` lines gives a raw `<p>`, a Tern paragraph, and a stray `</p>`:
+
+```tern {.live expect="html.stray-closer"}
+<p>
+Tern **text**
+</p>
+```
+
+#### Generic blocks {#raw-html-generic}
+
+Every other block-level or custom element starts a generic block, which ends on the line where the count of openings minus closings of its name, counted from the opener, returns to 0. That may be the opener line itself.
+
+- An **opening** is `<NAME` followed by whitespace, `/`, `>` or the end of the line, and not self-closed.
+- A **closing** is `</NAME` followed by optional whitespace and `>`.
+- The boundary matters: `<details-panel>` is not an opening of `details`, and `<divider>` is not an opening of `div`.
+- Names compare case-insensitively: `</DIV>` and `</div >` both count.
+
+```tern {.live}
+<div>
+<div>
+nested divs are counted
+</div>
+<div/>
+<divider></divider>
+</DIV >
+After.
+```
+
+A tag whose attributes wrap is still one block, since `<NAME` may end the line:
+
+```tern {.live}
+<div
+  class="wrap">
+content
+</div>
+After.
+```
+
+The count may return to 0 on the opener line, and every tag on that line counts:
+
+```tern {.live}
+<div>one line</div>
+<div>closes one</div><div>opens another
+</div>
+After.
+```
+
+A raw heading tag is a generic block: it gets no id, unlike a Tern heading.
+
+```tern {.live}
+<h2>Raw heading</h2>
+```
+
+**Block-level names** are `address article aside audio blockquote canvas details dialog div dl fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup hr iframe link math menu nav noscript object ol picture search section summary svg table template ul video`, together with the raw-text and one-line names above.
+
+**A custom element** is a valid custom-element name: lower-case, starting with a letter `a`–`z`, containing `-`, and not one of the names HTML reserves (such as `font-face` and `annotation-xml`).
+
+```tern {.live}
+<tide-clock station="leith">
+Counted on its own name.
+</tide-clock>
+```
+
+:::note
+Depth counting is textual. A `<div` or `</div>` inside a quoted attribute value, a comment or a script string inside the block still counts. It is accepted by design, like the other [residual cases](syntax-inline.html#residuals).
+:::
+
+### What does not start a block {#raw-html-not-block}
+
+- **Phrasing tags** (`<b>`, `<span>`, `<img>`, `<a>`, `<kbd>`, form controls such as `<input>` and `<select>`) begin a paragraph and pass through inline (see [Raw inline HTML](syntax-inline.html#raw-inline-html)). They do not interrupt a paragraph.
+- `<3 this` and `< 5 items` are paragraphs.
+- A name that is neither block-level nor a valid custom element: `<divider>`, `<My-Widget>` (not lower-case), `<font-face>` (reserved by HTML).
+- The document tags (`<body>`, `<head>`) are not block-level.
+
+```tern {.live}
+<b>Bold</b> starts a paragraph.
+<3 this and < 5 items.
+<divider>not a block</divider>
+```
+
+`iframe`, `video` and `audio` are block-level at the start of a line, and phrasing inside one:
+
+```tern {.live}
+<video src="tide.mp4" controls></video>
+Text with <video src="tide.mp4"></video> inline.
+```
+
+### Ending early: terminators and the parent's end {#raw-html-ending}
+
+**A `:::` opener or closer line cuts a generic block.** A forgotten `</div>` would otherwise swallow the rest of the note. The generic block ends before the `:::` line, gets [`html.unclosed`](diagnostics.html#html-unclosed) (error), and the `:::` line is processed normally, so it still closes its container:
+
+```tern {.live expect="html.unclosed"}
+:::aside
+<div>
+the close tag is missing
+:::
+After the aside.
+```
+
+The unclosed generic block is still emitted as raw HTML, so the browser shows its text. Other lines (blank lines, headings, `$$`, `+++`) do not end a generic block.
+
+**Comments and raw text are not cut by `:::` lines**, because they may legitimately contain them. They end only at their end condition, the parent's end, or the end of the note.
+
+**An unclosed comment or raw-text block is not emitted as HTML.** In the browser it would turn the rest of the page into a comment, a script or a stylesheet. It gets `html.unclosed` (error) at its first line and is shown as `<pre class="t-error">` holding its escaped source, from the opener to the last line it held:
+
+```tern {.live expect="html.unclosed"}
+<!--
+never closed
+
+# This heading is swallowed
+```
+
+A container left open by such a block reports [`block.unclosed`](diagnostics.html#block-unclosed), with a hint naming the block, as for a fence:
+
+```tern {.live expect="html.unclosed block.unclosed"}
+:::aside
+<script>
+const s = 1;
+:::
+```
+
+Inside a quote or a list item, the block ends with its parent, and the error block holds the lines without their prefixes:
+
+```tern {.live expect="html.unclosed"}
+> <!--
+> a comment in a quote
+after
+```
+
+### The wrapper diagnostic {#raw-html-wrapper}
+
+Writing Markdown inside a `<div>` is a habit from other formats. In Tern the `<div>` block is raw HTML to its end, so the Markdown is shown as written. To make that visible, a generic block (only) gets [`html.wrapper`](diagnostics.html#html-wrapper) (warning) on the first line inside it, after the opener line, that does not begin with `<` (after leading whitespace) and either:
+
+- follows a blank line inside the block (a whitespace-only line counts as blank); or
+- holds Tern syntax: any of `*`, `` ` ``, `$`, `[` or `:::`, or begins with a heading marker (`#` and a space), a list-item marker, `>` or `|`.
+
+It is reported once per block, at the line's first non-space character.
+
+```tern {.live expect="html.wrapper"}
+<div class="box">
+Some **bold** text
+</div>
+```
+
+To put Tern inside an element, write a container: `:::div{.box}` … `:::`.
+
+A plain line with none of those marks and no blank line before it is silent, and so is a tag line after a blank:
+
+```tern {.live}
+<form id="guess">
+  <label>Guess <input name="n"></label>
+
+  <button>Check</button>
+</form>
+```
+
+Comment and raw-text blocks never get `html.wrapper`.
+
+### Attributes and escape {#raw-html-attributes}
+
+An [attribute line](#attribute-line) before a raw HTML block does not attach: it stays text, with [`attributes.raw`](diagnostics.html#attributes-raw) (warning). Put the attributes in the tag.
+
+```tern {.live expect="attributes.raw"}
+{.box}
+<div>x</div>
+```
+
+**Diagnostics.** [`html.unclosed`](diagnostics.html#html-unclosed), [`html.stray-closer`](diagnostics.html#html-stray-closer), [`html.wrapper`](diagnostics.html#html-wrapper), [`attributes.raw`](diagnostics.html#attributes-raw).
+
+**Escape.** `\<` at the start of the line makes it a paragraph, with no diagnostic:
+
+```tern {.live}
+\<div> is text.
+```
+
+## The `=html` fence {#html-fence}
+
+A fence whose info is `=html` emits its body verbatim, with no `<pre>`.
+
+:::syntax
+````tern
+```=html
+raw HTML, any shape
+```
+````
+:::
+
+Use it for HTML that starts with phrasing content, has unbalanced or omitted tags, or that you want to mark as raw explicitly:
+
+`````tern {.live}
+```=html
+<span>Phrasing first,</span>
+
+<p>an omitted end tag
+```
+After the fence, *Tern* again.
+`````
+
+**Rules.**
+
+- It starts and ends exactly as a [fence](#fence-close) does, and is a verbatim leaf.
+- Unbalanced HTML in it ends with the fence: the next paragraph is Tern.
+- Only lower-case `=html` is raw.
+- A title or attributes on it get [`fence.info-junk`](diagnostics.html#fence-info-junk) (warning) and are dropped: the fence has no `<pre>` to keep them on, and the message says so.
+- An [attribute line](#attribute-line) before it stays text, with [`attributes.raw`](diagnostics.html#attributes-raw) (warning), as before a raw block.
+- Unclosed, it runs to the end like any fence, with [`block.unclosed-fence`](diagnostics.html#block-unclosed-fence). It is not a comment or raw-text block, so its body is still emitted verbatim.
+
+````tern {.live expect="fence.info-junk attributes.raw"}
+```=html {.x}
+<b>the group is junk</b>
+```
+
+{.x}
+```=html
+<b>the attribute line is text</b>
+```
+````
+
+**Other formats.** Any other info word starting with `=` makes an ordinary code fence, with class `language-FORMAT` (without the `=`). That includes `=HTML`:
+
+````tern {.live}
+```=latex
+\section{Shown as code}
+```
+
+```=HTML
+<b>escaped code, not raw</b>
+```
+````
+
+## Display math {#display-math}
+
+Display math is a block of TeX between `$$` lines.
+
+:::syntax
+```tern
+$$
+TeX
+$$ {#eq-id}
+
+$$ TeX on one line $$ {#eq-id}
+```
+:::
+
+```tern {.live}
+$$
+\dim V = \dim \ker T + \dim \operatorname{im} T.
+$$ {#eq-rn}
+
+$$ e^{i\pi} + 1 = 0 $$
+
+By @eq-rn, the dimensions add up.
+```
+
+The runtime typesets the TeX with KaTeX in the browser (see [KaTeX](publishing.html#katex)).
+
+### The opener {#math-opener}
+
+The opener is a line beginning with `$$`. The rest of the line decides the form:
+
+| Form | The rest of the line | Result |
+|---|---|---|
+| (a) one line | contains an unescaped `$$` followed only by spaces and an optional attribute group | a complete equation on this line |
+| (b) not math | contains an unescaped `$$` followed by other text | a paragraph; each `$$` gets [`math.inline-display`](diagnostics.html#math-inline-display) (info) |
+| (c) multi-line | anything else | the equation continues on the next lines |
+
+In form (c), a non-empty rest, with its leading whitespace stripped, is the first TeX line.
+
+```tern {.live}
+$$x^2$$
+
+$$ x $$ {#e .big}
+
+$$ \sum_i x_i
++ y $$
+```
+
+```tern {.live expect="math.inline-display math.inline-display"}
+$$ x $$ is not display math when text follows.
+```
+
+On the opener and closer lines `\$` is skipped as a pair, so in `5\$$$` the closing `$$` is the last two dollars and the TeX keeps `\$`.
+
+**Attributes on the opener are an error.** A rest that is exactly a strong group starting with `#` or `.` gets [`math.opener-tail`](diagnostics.html#math-opener-tail) (error), "attributes go after the closing `$$`". It stays in the TeX, where KaTeX shows it as an error, and the equation gets no id:
+
+```tern {.live expect="math.opener-tail"}
+$$ {#eq-wrong}
+x^2
+$$
+```
+
+A group with only `key=value` items (`{n=1}`) is not an opener tail: it is ordinary TeX, with no diagnostic.
+
+### The closer {#math-closer}
+
+The closer is the first later line containing an unescaped `$$`. It is tested on the right-trimmed line and may be indented.
+
+- Text before the `$$`, without the line's leading whitespace, is the last TeX line.
+- After it there may be nothing, or one attribute group, strong or weak, glued or after spaces.
+- Anything else after it gets [`math.closer-tail`](diagnostics.html#math-closer-tail) (warning) at the junk, and is emitted as a paragraph after the equation, which the next lines may continue. A group followed by text is all junk: the equation gets no id.
+
+```tern {.live}
+$$
+a
+  + b $$ {#eq-ab}
+
+$$
+x
+$${hidden}
+```
+
+```tern {.live expect="math.closer-tail"}
+$$
+x
+$$ {#eq-x} and more
+next line
+```
+
+### Terminators {#math-terminators}
+
+TeX forbids blank lines in display math, so a forgotten closer must not swallow the rest of the note. These lines **terminate** display math. They are tested before the closer:
+
+- a blank line;
+- a heading line;
+- a fence line;
+- a `:::` opener or closer line;
+- a `+++` line, inside a container or not;
+- the end of the parent (quote, list item, footnote);
+- the end of the note.
+
+The block closes as [`math.unclosed`](diagnostics.html#math-unclosed) (error) at the opener, ending where the terminating line starts. The message names that line, and the line is then processed normally. The equation is shown as `<div class="t-eq t-error">` holding its escaped source, opening `$$` included.
+
+```tern {.live expect="math.unclosed math.unclosed"}
+$$
+x
+
+$$
+
+## The heading survives
+```
+
+Above, the blank line ends the first equation, so the intended closer opens a second one, which the next blank line ends too. An unclosed `$$` can swallow at most one paragraph, and never a heading.
+
+Because terminators come first, `## $$` is a heading line, which ends the block instead of closing it:
+
+```tern {.live expect="math.unclosed math.inline-display"}
+$$
+x
+## $$
+```
+
+A `:::` line terminates the equation and still closes its container:
+
+```tern {.live expect="math.unclosed"}
+:::aside
+$$
+x
+:::
+After the aside.
+```
+
+Lines shaped like other blocks are not terminators; they are TeX:
+
+```tern {.live}
+$$
+- item
+> quote
+| a |
+<div>
+{.x}
+$$
+```
+
+Inside a quote or list item, the error block holds the lines without their prefixes.
+
+### Numbering and output {#math-numbering}
+
+- An equation is numbered only if it has an id, in document order, on the counter `equation`. `@eq-rn` renders `(1)`.
+- The output is `div.t-eq` (classes: `t-eq`, then the author's), holding `span.t-math[data-display]`, then `span.t-eqno` when numbered.
+- An id may come from the closer or from an [attribute line](#attribute-line) before the opener. A class does not number the equation.
+
+```tern {.live}
+$$
+x
+$$ {#a}
+
+$$
+y
+$$ {.wide}
+
+{#b}
+$$
+z
+$$
+
+@a and @b.
+```
+
+### Content {#math-content}
+
+- The TeX is verbatim: nothing inside is Tern, so `@eq-a`, `*em*` and `[l](u)` are TeX. It is HTML-escaped and otherwise unchanged.
+- Inside an indented body, TeX lines lose up to the opener's indentation, as fence content does.
+- Macros defined in a [`:::macros` block](#raw-body) apply to every formula.
+
+```tern {.live}
+$$
+@eq-a *em* a < b & c
+$$
+```
+
+**Diagnostics.** [`math.unclosed`](diagnostics.html#math-unclosed), [`math.opener-tail`](diagnostics.html#math-opener-tail), [`math.closer-tail`](diagnostics.html#math-closer-tail), [`math.inline-display`](diagnostics.html#math-inline-display). At runtime, TeX that KaTeX cannot parse gets [`math.error`](diagnostics.html#math-error).
+
+**Escape.** `\$$` at the start of the line is text: the escaped `$` is not a dollar, and the next `$` is followed by a space, so nothing opens.
+
+```tern {.live}
+\$$ is two dollar signs.
+```
+
+For a display style inside a line, write `$\displaystyle …$` (see [Inline math](syntax-inline.html#inline-math)).
+
+## Blockquote {#blockquote}
+
+A blockquote is lines starting with `>`.
+
+:::syntax
+```tern
+> Quoted text,
+> any blocks inside.
+```
+:::
+
+```tern {.live}
+> A quote,
+lazily continued.
+>
+> - a list inside
+>
+> > a nested quote
+```
+
+**Rules.**
+
+- **Starts.** Row 8: `>` followed by a space, a tab, or the end of the line. Leading whitespace may come before the `>`.
+- **The prefix.** On every line, one space or tab after `>` is stripped (a tab is consumed whole, unlike CommonMark), and the rest is parsed as blocks, so `> :::note` and `> - item` nest.
+- **Continues** while lines start with `>`, plus [lazy paragraph lines](#lazy). A continuing line needs only the `>`: `>b` continues an open quote, although it cannot open one.
+- **Ends** at a blank line, or at a line that has no `>` and is not lazy. A bare `>` line continues the quote: it is a blank line inside it, which ends a quoted paragraph but not the quote.
+- A blockquote interrupts a paragraph.
+- An [attribute line](#attribute-line) before it puts its attributes on `<blockquote>`.
+
+`>5 people`, `>= 3` and `>>` (no space after the first `>`) are paragraphs:
+
+```tern {.live}
+>5 people, >= 3 of them.
+
+>> not a nested quote
+```
+
+A blank line ends the quote, so two quotes separated by one stay two:
+
+```tern {.live}
+> one
+
+> two
+```
+
+A line that would interrupt a paragraph is not lazy, so it ends the quote:
+
+```tern {.live}
+> quoted
+---
+```
+
+Only one space is stripped after `>`. Here `>   b` leaves `b` at the item's content column, so it belongs to the item:
+
+```tern {.live}
+> - a
+>
+>   b
+```
+
+A closer inside a quote sees only the containers opened inside that quote, so `> :::` inside `:::aside` is a stray closer, not the aside's closer:
+
+```tern {.live expect="block.stray-closer"}
+:::aside
+> :::
+:::
+```
+
+**Escape.** `\>` at the start of the line.
+
+## Lists {#lists}
+
+Lists follow the CommonMark rules, restated here.
+
+:::syntax
+```tern
+- a bullet item
+1. an ordered item
+- [ ] a task item
+```
+:::
+
+```tern {.live}
+- [x] Motions
+- [ ] Operators
+  1. inner vs around
+  2. counts
+```
+
+### Markers {#list-markers}
+
+- A bullet is `-`, `*` or `+`.
+- An ordered marker is 1 to 9 digits followed by `.` or `)`.
+- A space, a tab or the end of the line must follow the marker.
+
+```tern {.live}
+1) closing parenthesis
+
+-no space is not an item
+
+1234567890. ten digits is too many
+```
+
+### The content column {#content-column}
+
+An item's content starts at its **content column**: the indentation before the marker, plus the marker's width, plus the spaces after it.
+
+- If more than four spaces follow the marker, the content column is the indentation plus the marker width plus one; the extra spaces are leading whitespace of the content.
+- An item whose marker ends the line starts with a blank line. Its content column is the indentation plus the marker width plus one, and it may start with at most one blank line.
+
+| Line | Content column |
+|---|---|
+| `- a` | 2 |
+| `10. a` | 4 |
+| `-   a` | 4 |
+| `-      a` (six spaces) | 2 |
+| `  - a` | 4 |
+| `-` alone | 2 |
+
+```tern {.live}
+10. a
+
+    four spaces: inside the item
+
+   three spaces: outside
+```
+
+```tern {.live}
+-
+  An item may start empty.
+
+-
+
+  But at most one blank line opens it.
+```
+
+### Which lines belong {#list-belonging}
+
+A line belongs to the item when:
+
+- it is indented to the content column, which is then stripped; or
+- it is blank, and the next non-blank line is indented that far (the blank lines are held until that line arrives); or
+- it is a lazy paragraph continuation.
+
+Blank lines held when the item ends belong to nothing, so a fence or raw block left open in the item ends before them.
+
+```tern {.live}
+- An item
+lazily continued.
+
+  A second paragraph, indented to the content column.
+- A new item.
+```
+
+Indentation beyond the content column is ignored, as everywhere: there is no indented code.
+
+```tern {.live}
+- a
+      # six spaces in: still a heading
+```
+
+### One list or two {#list-one-or-two}
+
+Items with the same bullet character, or the same ordered delimiter, form one list. A different marker starts a new list:
+
+```tern {.live}
+- a
+- b
+* c
+1. d
+1) e
+```
+
+An [attribute line](#attribute-line) between items also starts a new list, which takes its attributes:
+
+```tern {.live}
+- one
+{.second}
+- two
+```
+
+### Loose and tight lists {#loose-lists}
+
+A list is **loose** if a blank line separates two of its items, or sits directly inside one of them (not inside a nested block). The items' paragraphs then get `<p>`. Otherwise the list is **tight**, and item text is not wrapped.
+
+```tern {.live}
+- tight
+- tight
+
+- loose, because of the blank line above
+```
+
+A blank line inside a nested item makes only the nested list loose, and a blank line after the last item leaves the list tight:
+
+```tern {.live}
+- a
+  - b
+
+    c
+- d
+
+After the list.
+```
+
+### Start numbers {#list-start}
+
+An ordered list starting at n ≠ 1 gets `start="n"`. Leading zeros are digits: `007.` is 7, and `01.` is 1. Numbers need not increase.
+
+```tern {.live}
+3. three
+3. four
+
+Leading zeros are digits:
+
+007. bond
+```
+
+### Task items {#task-items}
+
+An item that starts with `[ ]`, `[x]` or `[X]` followed by a space or the end of the line is a task item: `li.t-task` holding a disabled checkbox. The source is the state.
+
+- `- [ ]` alone on a line is a task item, as on GitHub.
+- Ordered items can be task items too.
+- `[x]Done` (no space) and `[-]` are not checkboxes.
+- In a loose list the checkbox goes inside the item's first paragraph.
+
+```tern {.live}
+- [x] done
+- [X] also done
+- [ ]
+- [x]Done is text
+1. [ ] ordered task
+```
+
+```tern {.live}
+- [x] loose
+
+- [ ] list
+```
+
+### Nesting {#list-nesting}
+
+Any block may nest inside an item at its content column: paragraphs, lists, fences, quotes, tables, display math, `:::` containers.
+
+````tern {.live}
+- An item holding blocks:
+  ```js
+  code();
+  ```
+  | a | b |
+  |---|---|
+  | 1 | 2 |
+
+  :::aside
+  A container.
+  :::
+````
+
+A `:::` closer inside an item must be indented to the item's content column. A closer at a lower column ends the item, and the hint says so:
+
+```tern {.live expect="block.unclosed block.stray-closer"}
+- an item
+  :::aside
+  inside
+:::
+```
+
+### Interrupting a paragraph {#list-interrupt}
+
+Only a non-empty bullet item, or a non-empty ordered item numbered 1 (`01.` included), interrupts a paragraph. So a wrapped line starting with a year stays prose:
+
+```tern {.live}
+The war ended in
+1945. That is a wrapped line, not a list.
+A line starting
+- with a bullet interrupts, though.
+```
+
+After a blank line, the same line is a list, as in CommonMark. Write `2019\.` to keep it prose:
+
+```tern {.live}
+2019. was a year.
+
+2019\. was a year.
+```
+
+**Escapes.** `\-`, `\+`, `\*` and `1\.` at the start of the line.
+
+## Tables {#tables}
+
+A table is rows of cells between pipes, with a delimiter row under the header.
+
+:::syntax
+```tern
+| Header | Right |
+|---|--:|
+| cell | 1 |
+```
+:::
+
+```tern {.live}
+{.wide}
+| Phase | Weeks | Note |
+|---|--:|---|
+| P2 | 2 | golden DOM \| diff |
+| P3 | 3 | smoke green;\
+  no task over 50 ms |
+```
+
+### The delimiter row {#delimiter-row}
+
+The delimiter row starts with `|`. Its cells are `:?-+:?` (one or more dashes, with an optional colon at either end) separated by `|`, with spaces allowed around them and an optional trailing `|`.
+
+| Delimiter cell | Alignment |
+|---|---|
+| `---` | none |
+| `:--` | left |
+| `--:` | right |
+| `:-:` | center |
+
+### Starting a table {#table-start}
+
+There are two forms:
+
+- **(a) With a header.** A line starting with `|` whose next line, in the same container, is a delimiter row. The first line is the header. This is the one line of lookahead in the grammar, and this form interrupts a paragraph. A first line ending in a continuation `\` cannot start it.
+- **(b) Without a header.** A delimiter row at a block start (not inside a paragraph). It starts a headerless table, and its colons set the alignment. A delimiter row is never a header: two delimiter rows at a block start are this form, and the second is misplaced.
+
+```tern {.live}
+Text above
+| a | b |
+|---|---|
+| 1 | 2 |
+```
+
+```tern {.live}
+## Headerless
+
+|--:|:-:|
+| 1 | 2 |
+```
+
+A `|` line without a delimiter row under it is a paragraph, and so is a Markdown table without leading pipes:
+
+```tern {.live expect="table.stray-delimiter"}
+| just a line starting with a pipe
+
+a | b
+--|--
+1 | 2
+```
+
+### Rows and continuation {#table-rows}
+
+- Every following line that starts with `|` is a row. Indentation is ignored.
+- The table ends at a blank line, a line not starting with `|`, the end or closer of its container, or the end of the note.
+- A row whose last non-space character is a single unescaped `\`, outside atoms (code, math, autolinks, raw inline HTML), **continues**: the next line, whatever it starts with and without its indentation, is joined to it after a hard break. This can repeat.
+- The joined lines form one *logical row*, so a cell can span lines and the continuation can finish the row with more cells. A wrapped row is always explicit, never guessed.
+- The join happens only when the next line is in the same container and is not a closer or a `+++` line. Otherwise the row gets [`table.row-unterminated`](diagnostics.html#table-row-unterminated) (warning), and the `\` is literal.
+
+```tern {.live}
+| Step | Detail | Status |
+|---|---|---|
+| one | starts here \
+- this is cell text, not a list \
+and ends here | done |
+```
+
+```tern {.live expect="table.row-unterminated"}
+| a |
+|---|
+| ends with a backslash \
+
+The blank line ends the table.
+```
+
+`\\` at the end of a row is an escaped backslash, so the row does not continue.
+
+### Cells {#table-cells}
+
+- The logical row is split at every `|` that is not escaped and lies outside atoms: code spans, math, verbatim math, autolinks and inline raw HTML.
+- The leading `|` opens the row. A trailing `|` closes the last cell and adds no empty one.
+- Cells are trimmed and parsed as [inline content](syntax-inline.html#algorithm).
+
+```tern {.live}
+| Code | Math | Escaped |
+|---|---|---|
+| `a|b` | $|x|$ | a \| b |
+| <https://example.com/a|b> | $a | b$ | Price ($) |
+```
+
+`$)` cannot open math, so `| Price ($) | Amount ($) |` has two cells.
+
+Emphasis and named inline elements are not atoms: the row is split first, so a `*` cannot pair across a pipe, and a `|` inside `:kbd[…]` must be escaped:
+
+```tern {.live}
+| a | b |
+|---|---|
+| *x | y* |
+| :kbd[a\|b] | 2 |
+```
+
+:::warning
+A lone backtick pairs with a later backtick in the same row, and the code span swallows the pipes between them. Escape it, or put it in a code span with a longer run.
+:::
+
+### Columns and alignment {#table-columns}
+
+- The header row fixes the column count (the delimiter row does, in form (b)).
+- A delimiter row wider or narrower than the header still makes a table, with no diagnostic: extra delimiter cells are ignored, and a column with no delimiter cell has no alignment.
+- Missing cells are emitted empty.
+- Extra cells are **kept**, and get [`table.extra-cell`](diagnostics.html#table-extra-cell) (warning) once per row, at the `|` before the first extra cell.
+- Colons in the delimiter row put `style="text-align:…"` on every `th` and `td` of the column, empty cells included.
+- A header-only table has no `<tbody>`.
+
+```tern {.live expect="table.extra-cell"}
+| a | b | c |
+|:--|--:|
+| 1 |
+| 1 | 2 | 3 | 4 |
+```
+
+### Attributes and caption {#table-attributes}
+
+- Attributes come from an [attribute line](#attribute-line) before the table. A `{…}` line after a table ends the table, and goes to the block after it, if any: never to the table.
+- A caption and a number come from wrapping the table in `:::table[Caption]{#id}`, which merges with it into `<table><caption>`. See [Table captions](elements.html#table-caption).
+
+```tern {.live schema=demo}
+{.wide}
+| a | b |
+|---|---|
+| 1 | 2 |
+
+:::table[Phases]{#tbl-phases}
+| Phase | Exit |
+|---|---|
+| P0 | every rule has a case |
+:::
+
+See @tbl-phases.
+```
+
+The second table above uses the [demo schema](schema.html#demo-schema), which declares the `table` counter and its label.
+
+### Table diagnostics {#table-diagnostics}
+
+- [`table.stray-delimiter`](diagnostics.html#table-stray-delimiter) (warning): a paragraph line shaped like a delimiter row, with or without a leading pipe. When the line above ends with `\`, the hint is "the header row cannot continue onto the next line"; otherwise it is "table rows start with `|`".
+- [`table.row-unterminated`](diagnostics.html#table-row-unterminated) (warning): a row ends with `\` and what follows cannot join it.
+- [`table.misplaced-separator`](diagnostics.html#table-misplaced-separator) (warning): a delimiter row inside the body. It renders as a text row.
+- [`table.extra-cell`](diagnostics.html#table-extra-cell) (warning): a row with more cells than the header.
+
+```tern {.live expect="table.stray-delimiter table.misplaced-separator"}
+| a | b |\
+|---|---|
+
+| a |
+|---|
+| 1 |
+|---|
+```
+
+**Escape.** `\|` at the start of the line keeps it a paragraph; inside a row, `\|` is a literal pipe.
+
+## Containers {#container}
+
+A container is a named block that holds other blocks, from an opener line to a closer line.
+
+:::syntax
+```tern
+:::name[Title]{#id .class key=value}
+Any blocks.
+:::
+```
+:::
+
+With no schema entry for its name, a container is a `div` carrying the name as a class:
+
+```tern {.live}
+:::idea[Key idea]{#k}
+Containers hold *any* blocks.
+:::
+```
+
+With the [demo schema](schema.html#demo-schema), which declares `theorem` as a numbered `section`, the same spelling gets an element, a label and a number:
+
+```tern {.live schema=demo}
+:::theorem[Rank–nullity]{#thm-rn .big}
+If $V$ is finite-dimensional then …
+:::
+
+See @thm-rn.
+```
+
+What a name becomes (the allowlist, the schema, custom elements, `tag=`) is on [Elements and output](elements.html#names); the title slot and labels are under [Title slots](elements.html#title-slots).
+
+### The opener {#container-opener}
+
+```
+opener = ":"{3,} NAME ws* ( "[" title "]" )? ws* ATTRS? ws* EOL
+```
+
+- **Starts.** Row 10: three or more colons immediately followed by a NAME.
+- **The NAME** is glued to the colons, and case-sensitive: `:::Aside` is not `aside`, but an unknown name, `div.Aside`.
+- **The title** and **the group** are optional, in that order, with spaces allowed between the parts.
+- **The colon count** (3 or more) is cosmetic. It is recorded for the outline and the `block.closer-count` hint.
+- **Interrupts a paragraph:** yes. A line starting `:::word` always opens a block; prose never starts that way.
+- An [attribute line](#attribute-line) before the opener merges into it.
+
+```tern {.live}
+::::aside [Spaced parts]   {.x}
+Four colons open it, four close it.
+::::
+
+Prose
+:::aside
+interrupted by an opener.
+:::
+```
+
+### The title {#container-title}
+
+The title is inline content on one line:
+
+- brackets nest, so balanced inner brackets do not end it;
+- `\]` escapes a closing bracket;
+- code and math spans are atoms, so `[See $f[x]$]` works.
+
+```tern {.live}
+:::aside[See $f[x]$, [nested], `]` and \]]
+Body.
+:::
+```
+
+An empty title `[]` emits no title element, as if there were no brackets. A labelled name still gets its label:
+
+```tern {.live schema=demo}
+:::note[]
+The demo schema labels `note` "Note".
+:::
+```
+
+### The body {#container-body}
+
+- The body is parsed as blocks until a [closer](#closer) reaches the container.
+- It may be indented freely: leading whitespace is ignored when a line is classified, for openers and closers too.
+- `:::macros`, `:::meta`, and any container with `{raw}`, have a verbatim body instead (see [Raw-body containers](#raw-body)).
+
+```tern {.live}
+  :::aside
+      Indentation means nothing here.
+    :::
+```
+
+### Reserved names {#container-reserved}
+
+Some names are reserved (see [Reserved names](elements.html#reserved)):
+
+- **`script`, `style` and `html`** get a verbatim body, which is shown as `<pre class="t-error">` and never run; their id and classes go on that `<pre>`. They get [`name.reserved`](diagnostics.html#name-reserved) (warning), with a hint naming the HTML spelling: `<script>` … `</script>`, or a ```` ```=html ```` fence.
+- **`end`**: `:::end` acts as a bare closer, with `name.reserved`.
+- **Other reserved names** (`main`, `body`, `tern`, any `t-*` name …) fall back to a `div` without the name as a class, with `name.reserved`. They keep `data-t`.
+- `tag=` cannot rescue a reserved or core name: on `:::main` or `:::script` it gets [`attr.malformed`](diagnostics.html#attr-malformed) (warning) and is dropped.
+
+Names are case-sensitive, so `:::Script` is not reserved: it is an ordinary `div.Script` whose body is Tern.
+
+```tern {.live expect="name.reserved name.reserved"}
+:::script{.shown}
+alert("never run");
+:::
+
+:::main
+Not a `main` element.
+:::
+```
+
+### Failure modes {#container-failures}
+
+The opener never silently loses text. Junk on an opener line is shown as escaped text, never parsed as inline content.
+
+| Line | Result | Diagnostic |
+|---|---|---|
+| `:::theorem[T] #rn .big` | the block opens; the junk becomes `<p class="t-error">#rn .big</p>`, the body's first child | `block.opener-junk` (error) at the junk; hint: attributes go in braces |
+| `:::note Danger` | the same | `block.opener-junk`; hint: a title goes in brackets |
+| `:::note[T] Danger` (text after a title or a group) | the same | `block.opener-junk`; hint: remove it, or put it in the title or the body |
+| `:::note[Danger` (no `]`) | opens `note`; the junk runs from the `[` | `block.opener-junk` at the `[` |
+| `:::note{#a!}` (a group that does not parse) | opens `note`; the junk runs from the `{` | `block.opener-junk` at the `{` |
+| `::: note` (space after the colons) | paragraph text | `block.spaced-name` (warning); hint: `:::note` |
+| `:::{.x}`, `:::123`, `:::_x`, `:::!`, `:::/`, `:::/box extra`: `:::` followed by anything but a NAME, `/NAME` or the end of the line | paragraph text | `block.bad-opener` (warning) |
+| `:::end` | acts as a bare closer | `name.reserved` (warning) |
+| a 65th nested opener | paragraph text | `nesting.limit` (error) |
+
+```tern {.live expect="block.opener-junk"}
+:::aside[T] #rn .big
+The block opened; the junk is above.
+:::
+```
+
+```tern {.live expect="block.opener-junk"}
+:::aside Danger
+A title without brackets is junk.
+:::
+```
+
+```tern {.live expect="block.opener-junk block.opener-junk"}
+:::aside[Unclosed
+x
+:::
+
+:::aside{#a!}
+y
+:::
+```
+
+Only what follows the opener's grammar is junk; the title and group before it are kept. When the opener already has a title, the hint no longer suggests brackets: it says to remove the text, or to move it into the title or the body. Junk that starts with `#` or `.` still gets the "attributes go in braces" hint.
+
+```tern {.live expect="block.opener-junk"}
+:::aside[Kept]{.kept} *not* <b>parsed</b>
+x
+:::
+```
+
+A spaced or nameless opener opens nothing. The line is a paragraph line, the next line continues it, and the closer meant for it is then stray:
+
+```tern {.live expect="block.spaced-name block.stray-closer"}
+::: aside
+Body.
+:::
+```
+
+```tern {.live expect="block.bad-opener block.bad-opener block.bad-opener"}
+:::{.x}
+
+:::123
+
+:::/box extra
+```
+
+**Diagnostics.** [`block.opener-junk`](diagnostics.html#block-opener-junk), [`block.spaced-name`](diagnostics.html#block-spaced-name), [`block.bad-opener`](diagnostics.html#block-bad-opener), [`block.unclosed`](diagnostics.html#block-unclosed), [`name.reserved`](diagnostics.html#name-reserved), [`nesting.limit`](diagnostics.html#nesting-limit).
+
+**Escape.** `\:::` at the start of the line.
+
+## Closers {#closer}
+
+A closer ends a container.
+
+:::syntax
+```tern
+:::
+:::/name
+```
+:::
+
+**Bare `:::`** (three or more colons, nothing else) closes the innermost open container.
+
+- If its colon count differs from the opener's, it gets [`block.closer-count`](diagnostics.html#block-closer-count) (info): colon counts do not choose the block, and the hint names the closer to write instead. It still closes the innermost container.
+- With nothing open, it gets [`block.stray-closer`](diagnostics.html#block-stray-closer) (warning), and the line is paragraph text.
+
+```tern {.live expect="block.closer-count"}
+::::outer
+:::inner
+x
+::::
+::::
+```
+
+The `::::` on line 4 closes `inner`, not `outer`; the info suggests `:::/outer`.
+
+**`:::/NAME`** closes the nearest open container with exactly that name. Its colon count is not checked.
+
+- Every container opened inside it and still open is closed too, and gets [`block.unclosed`](diagnostics.html#block-unclosed) (error) at its own opener.
+- If no container with that name is open, it gets [`block.closer-mismatch`](diagnostics.html#block-closer-mismatch) (error), naming what is open, and the line is paragraph text. The containers stay open for the next closer.
+- Names are case-sensitive: `:::Box` … `:::/box` is a mismatch.
+
+```tern {.live expect="block.unclosed"}
+:::section
+:::aside
+The aside is never closed.
+:::/section
+```
+
+```tern {.live expect="block.closer-mismatch"}
+:::aside
+x
+:::/other
+:::
+```
+
+Named closers are how you make long or nested structures robust: with `:::/section` at the end, a forgotten inner closer is reported at the inner block, not at the section.
+
+**Scope.** Inside a quote, list item or footnote definition, a closer sees only the containers opened inside that block. With none open there, it is a stray closer (see [Blockquote](#blockquote)).
+
+**End of the parent or of the note.** Every container still open gets `block.unclosed` (error) at its opener: "`:::aside` opened on line 1 is still open at line 2", with the hint "add `:::` or `:::/aside`". If the container is inside a list item and the next line is a closer at a lower column, the hint adds "indent the closer to the item's content column" (see [Lists](#list-nesting)).
+
+```tern {.live expect="block.unclosed"}
+:::aside
+The closer is missing.
+```
+
+**`:::end`** is read as a bare closer, with [`name.reserved`](diagnostics.html#name-reserved) (warning): write `:::` or `:::/name`.
+
+```tern {.live expect="name.reserved"}
+:::aside
+x
+:::end
+```
+
+A closer interrupts a paragraph, and a closer-shaped line that falls back to text (stray, or a mismatch) still does, then starts a paragraph of its own (see [Lines that fall back to text](#fallback)).
+
+**Escape.** `\:::` at the start of the line.
+
+## Cells {#cells}
+
+A `+++` line splits a container's body into cells, laid out as a grid.
+
+:::syntax
+```tern
+:::row{cols="2 1"}
+First cell.
++++ {.muted}
+Second cell.
+:::
+```
+:::
+
+```tern {.live}
+:::row{cols="2 1"}
+Left, twice as wide.
++++ {.muted}
+Right.
+:::
+```
+
+**The line.** `+` three or more times, alone or followed by one attribute group (strong or weak, glued or after spaces), at the innermost open container's own level.
+
+- It closes every block open inside that container (a paragraph, a list, a quote) and starts a new cell, which gets the line's attributes.
+- **The first cell.** A `+++` that is the first non-blank line of the body opens the first cell, so it can carry attributes, and no empty cell is made.
+- **The last cell.** A trailing `+++` makes an empty last cell.
+- Each segment becomes `div.t-cell`. The container's title stays its first child, before the cells.
+
+```tern {.live}
+:::row
++++ {.first}
+A leading separator opens the first cell.
++++{hidden}
+- a list
+> and a quote, both closed by the next separator
++++
+:::
+```
+
+**The grid.**
+
+- Once the body has cells, and `cols` is not set, `cols` is the number of cells.
+- The container gets the class `t-cols` whenever `cols` is set or the body has cells.
+- `cols=N` (a positive integer) gives `repeat(N,minmax(0,1fr))`.
+- A list gives one entry per column: a bare number W (decimals allowed, as `1.5`) becomes `minmax(0,Wfr)`; any other entry is used verbatim.
+- The result is put first in `style`, as `--t-cols:…`, joined to an author `style` with `;`.
+- Without `+++`, each direct child of a `cols` element is a grid item.
+- `cols=0` or a negative number gets [`attr.malformed`](diagnostics.html#attr-malformed) (warning) and is ignored.
+
+```tern {.live}
+:::row{cols="1 1.5 12rem" style="gap:1rem"}
+A
++++
+B
++++
+C
+:::
+
+:::row{cols=2}
+Without separators,
+
+each child is a grid item.
+:::
+```
+
+```tern {.live expect="attr.malformed"}
+:::row{cols=0}
+A
++++
+B
+:::
+```
+
+**Orphans.** A `+++` line that is not at a container's own level is paragraph text, with [`cell.orphan`](diagnostics.html#cell-orphan) (warning):
+
+- outside any container;
+- inside a list item or a quote (the line matched its prefix), even inside a container.
+
+An orphan still interrupts the open paragraph, and starts a paragraph of its own.
+
+```tern {.live expect="cell.orphan cell.orphan"}
++++
+
+:::aside
+> quoted
+> +++
+:::
+```
+
+A separator belongs to the innermost open container; the outer one gets no cells. An [attribute line](#attribute-line) right before `+++` does not attach to the new cell: the separator takes its own group, and the line is an orphan.
+
+`+++ text` and `++` are ordinary text, with no diagnostic:
+
+```tern {.live}
+:::aside
++++ text is not a separator, and neither is
+++
+:::
+```
+
+**Diagnostics.** [`cell.orphan`](diagnostics.html#cell-orphan), [`attr.malformed`](diagnostics.html#attr-malformed) for `cols`.
+
+**Escape.** `\+++` at the start of the line.
+
+## Leaves {#leaf}
+
+A leaf is a named element on one line, with optional inline content.
+
+:::syntax
+```tern
+::name[inline content]{#id .class key=value}
+```
+:::
+
+```tern {.live}
+::video{src=media/tide.mp4 controls width=640}
+::tide-clock{station=leith units=m}
+::fig[Caption *x*]{#f}
+```
+
+With the [demo schema](schema.html#demo-schema), `::toc` is a `nav` filled with the note's level-2 and level-3 headings:
+
+```tern {.live schema=demo}
+::toc
+
+## One
+### One point one
+## Two
+```
+
+**Grammar.** The whole line must match:
+
+```
+leaf = "::" NAME ws* ( "[" content "]" )? ws* ATTRS? ws* EOL
+```
+
+- **The element.** The leaf allowlist reaches the embedded and void elements too (`video`, `audio`, `img`, `iframe`, `hr` …), so media and web components need no raw HTML. See [Allowlists](elements.html#allowlists).
+- **NAME** is case-sensitive: `::HR` is not `<hr>` but `div.HR`.
+- **Content** is inline, on one line, with the title rules of [containers](#container-title): brackets nest, `\]` escapes, code and math spans are atoms.
+- Content and group are optional, with spaces allowed between the parts.
+- **Interrupts a paragraph** only when the whole line matches.
+
+```tern {.live}
+::audio  [Your browser cannot play this.]  {src=tide.ogg controls}
+::p[A paragraph element]{.lead}
+::note[a [b] `]` $f]$ \] :kbd[k]]
+```
+
+### Not a leaf {#leaf-not}
+
+Any other tail makes the line a paragraph line:
+
+- a line starting `::NAME` that does not fill the line gets [`leaf.demoted`](diagnostics.html#leaf-demoted) (info), and continues a paragraph like any text line;
+- `::` alone is a paragraph, with no diagnostic;
+- `:: toc` (a space after `::`) is a paragraph with [`block.spaced-name`](diagnostics.html#block-spaced-name) (warning);
+- a trailing group that does not parse makes the line a paragraph with [`attr.malformed`](diagnostics.html#attr-malformed) (warning) only, not `leaf.demoted`. It is reported once, also when the group is glued to the content's `]`.
+
+```tern {.live expect="leaf.demoted leaf.demoted"}
+::before and ::after are pseudo-elements.
+
+::note[cut off before its bracket
+```
+
+```tern {.live expect="block.spaced-name attr.malformed attr.malformed"}
+::
+
+:: toc
+
+::note{#k%}
+
+::note[content]{#k!}
+```
+
+A whole-line leaf interrupts a paragraph; a demoted one continues it:
+
+```tern {.live expect="leaf.demoted"}
+A paragraph
+::note[a whole-line leaf interrupts it]
+
+A paragraph
+::note[x] and more text continues it.
+```
+
+### Labels {#leaf-labels}
+
+A leaf whose schema entry has a `label` or a `counter` shows its label, as a container's title does. The label is real text, `<span class="t-label">`, the leaf's first child, followed by a space when content follows:
+
+- a leaf `fig` declared with the label "Figure" and a counter, written `::fig[A caption]{#f}`, renders `<div id="f" class="fig" data-t="fig"><span class="t-label">Figure 1</span> A caption</div>`, and `@f` renders "Figure 1";
+- a void element (an `img`, an `hr`) gets no label, since it holds no content;
+- a labelled `toc` leaf puts its label before its list.
+
+Named inline elements follow the same rule. The demo schema declares no labelled leaf, and without a schema a leaf has no label; how labels are declared is under [Labels](elements.html#labels).
+
+### Void elements with content {#leaf-void}
+
+A void element (`hr`, `img`) holds no content. Content on a void leaf gets [`leaf.void-content`](diagnostics.html#leaf-void-content) (warning), and is emitted after the element, in a paragraph:
+
+```tern {.live expect="leaf.void-content"}
+::hr[x]
+```
+
+**Attributes.** An [attribute line](#attribute-line) before a leaf merges into it.
+
+**Diagnostics.** [`leaf.demoted`](diagnostics.html#leaf-demoted), [`leaf.void-content`](diagnostics.html#leaf-void-content), [`block.spaced-name`](diagnostics.html#block-spaced-name), [`attr.malformed`](diagnostics.html#attr-malformed), [`name.reserved`](diagnostics.html#name-reserved).
+
+**Escape.** `\::` at the start of the line.
+
+## Footnote definitions {#footnote-definition}
+
+A footnote definition gives the text of a footnote, which may hold blocks. References to it are inline: see [Footnote references](syntax-inline.html#footnote-reference).
+
+:::syntax
+```tern
+Text with a note.[^label]
+
+[^label]: The note,
+  continued on lines indented two columns.
+```
+:::
+
+```tern {.live}
+Linear maps.[^subspace]
+
+[^subspace]: Closed under addition and scaling: if $Tu = Tv = 0$
+  then $T(u + \lambda v) = 0$.
+```
+
+Definitions are collected, in the order of their first reference, into `<section class="t-footnotes">` at the end of the note.
+
+**Start.** Row 14: `[^LABEL]:` followed by a space or the end of the line, anywhere a block may start, except inside a definition (there a `[^x]:` line is text). It interrupts a paragraph.
+
+**Labels.**
+
+- A `LABEL` is letters, combining marks, digits, `_` and `-`: digits are allowed anywhere, spaces are not.
+- Labels match case-insensitively, so `[^a]:` and `[^A]:` are the same label.
+- The ids use the definition's label as written: `fn-LABEL` on the `<li>`.
+
+```tern {.live expect="footnote.undefined footnote.undefined"}
+Text[^a]
+
+[^a]:no space after the colon, so this is a paragraph.
+
+[^a b]: a label with a space is not a label.
+```
+
+**Content.**
+
+- It is block-level: the rest of the first line, then lines indented 2 or more columns (stripped by 2).
+- A blank line followed by an indented line continues it, and so do lazy paragraph lines.
+- It ends like a list item: at an unindented line that is not lazy.
+- `[^label]:` may end its line; the content then starts on the indented line below. An empty definition gives an empty item, with its back link.
+
+```tern {.live}
+Text.[^a][^b]
+
+[^a]:
+  Content on the next line.
+
+  A second paragraph,
+lazily continued.
+[^b]: Ends at the next unindented block.
+
+Back in the text.
+```
+
+After a blank line, a line indented only 1 column is outside the definition:
+
+```tern {.live}
+Text.[^a]
+
+[^a]: Note.
+
+ One space: back in the text.
+```
+
+A tab reaches column 4, which is enough:
+
+```tern {.live}
+Text.[^a]
+
+[^a]: Note.
+
+	A tab: still inside the definition.
+```
+
+Definitions hold any blocks, and may start inside containers and quotes; they are still collected at the end:
+
+````tern {.live}
+:::aside
+Text.[^a]
+
+[^a]: A list:
+  - one
+  - two
+:::
+````
+
+**Back link.** One per definition, to the first reference, at the end of the last paragraph. When the last block is not a paragraph, it is in a `<p>` of its own. An unused definition has none.
+
+**Numbering.** Definitions are numbered by first reference, not by where they are defined.
+
+```tern {.live}
+B[^b] then A[^a].
+
+[^a]: Alpha.
+[^b]: Beta.
+```
+
+**Diagnostics.**
+
+- [`footnote.unused`](diagnostics.html#footnote-unused) (info): no reference. The definition is still emitted, after the referenced ones, with no back link.
+- [`footnote.duplicate`](diagnostics.html#footnote-duplicate) (warning): the first definition wins; each later one is dropped and gets the diagnostic.
+- [`footnote.nested`](diagnostics.html#footnote-nested) (warning): a reference inside a definition stays literal.
+
+```tern {.live expect="footnote.unused footnote.duplicate footnote.nested"}
+Text[^a]
+
+[^a]: First, citing [^b].
+[^A]: Second, dropped.
+[^b]: Only cited from inside a definition.
+```
+
+**Attributes.** A footnote definition takes none: an [attribute line](#attribute-line) before one is an orphan.
+
+**Escape.** `\[^x]:` at the start of the line. It draws no LaTeX hint.
+
+```tern {.live}
+\[^x]: is text.
+```
+
+## Attribute lines {#attribute-line}
+
+An attribute line gives attributes to the block that follows it.
+
+:::syntax
+```tern
+{#id .class key=value}
+The block it applies to.
+```
+:::
+
+```tern {.live}
+{.byline}
+Lecture 7 · O. Carrera
+```
+
+**The line.** One or more **strong** groups, which merge, with spaces allowed around and between them. Row 15; it interrupts a paragraph.
+
+```tern {.live}
+A paragraph
+{#second .lead} {lang=fr}
+Une autre.
+```
+
+**What it attaches to.** The block that starts on the next line, in the same container:
+
+| Next block | The attributes go on |
+|---|---|
+| a paragraph, heading, list, table, blockquote or thematic break | its element |
+| a fence | `<pre>`, or the `<figure>` of a titled fence |
+| display math | `div.t-eq`; an id numbers the equation |
+| a container or a leaf | the element, merged: the line's classes come before the opener's; for the id and other keys, the opener's own attributes win |
+| an image-only paragraph | the implicit figure; an `#id` here makes the figure even when the image has none |
+
+```tern {.live}
+{#line-id .from-line k=line}
+:::aside{#own-id .own k=opener}
+The opener's id and key win; classes accumulate.
+:::
+
+{.thin}
+---
+```
+
+```tern {.live schema=demo}
+{#fig-osprey .wide}
+![An osprey](osprey.jpg)
+```
+
+The image above becomes a numbered figure: see [Figures](elements.html#figures).
+
+**The parser attaches it,** so the attributes are already on the parse AST, tables included, and its ids enter the [id registry](elements.html#ids).
+
+**Merging.** Consecutive attribute lines merge, by the [merging rules](#merging-and-emission).
+
+```tern {.live}
+{.a}
+{#b .c}
+Two lines, one paragraph.
+```
+
+### Orphans {#attribute-orphans}
+
+If a blank line, a closer, a `+++` line or the end of the note comes next, nothing follows to take the attributes. The line is emitted as paragraph text, with [`attributes.orphan`](diagnostics.html#attributes-orphan) (warning). Consecutive orphan lines form one paragraph, with one diagnostic.
+
+```tern {.live expect="attributes.orphan attributes.orphan"}
+{.a}
+{.b}
+
+Para.
+
+:::aside
+{.c}
+:::
+```
+
+An attribute line before a footnote definition is an orphan too: a definition takes no attributes.
+
+### Before raw HTML {#attribute-raw}
+
+Before a raw HTML block or an `=html` fence, the line is emitted as text, with [`attributes.raw`](diagnostics.html#attributes-raw) (warning): put the attributes in the tag. A line starting with a phrasing tag is a paragraph, so an attribute line before it attaches normally.
+
+```tern {.live expect="attributes.raw"}
+{.box}
+<div>raw</div>
+
+{.lead}
+<b>Phrasing</b> starts a paragraph, which takes the class.
+```
+
+### Weak and unparsable groups {#attribute-weak}
+
+`{x}` and `{1, 2}` are ordinary paragraph lines, with no diagnostic. A line whose groups are followed by anything but another strong group is a paragraph line too. Either way, a line starting `{#` or `{.` gets [`attr.malformed`](diagnostics.html#attr-malformed) (warning), as a heading's group does, at the first character that breaks the line.
+
+```tern {.live expect="attr.malformed attr.malformed"}
+{x}
+{1, 2}
+
+{#k!}
+next line
+
+{.a} {open}
+```
+
+**Between list items**, an attribute line ends the list, and the next item starts a new list with the attributes (see [Lists](#list-one-or-two)).
+
+**Escape.** `\{` at the start of the line.
+
+## Raw-body containers {#raw-body}
+
+Three kinds of container have a **verbatim body**: one text node, kept byte for byte, in which nothing is Tern. (The reserved `:::script`, `:::style` and `:::html` have one too, shown as an error block: see [Reserved names](#container-reserved).)
+
+:::syntax
+```tern
+:::macros
+\gdef\R{\mathbb{R}}
+:::
+
+:::meta
+title: The note's title
+:::
+
+:::name{raw}
+Text for a behaviour to read.
+:::
+```
+:::
+
+**Ending.** A raw body ends only at a bare closer (`:::`, any colon count) or at `:::/` plus its own name (`:::/macros`, `:::/mermaid`), indented or not, with trailing whitespace ignored. Any other closer line inside it is content, and so is an opener line, a blank line, a heading, `:::end`: nothing else is structural inside it.
+
+```tern {.live}
+:::macros
+\gdef\R{\mathbb{R}}
+
+# not a heading
+:::aside
+:::/aside
+:::
+After the block, $\R$ is defined.
+```
+
+Above, `:::aside` and `:::/aside` are content of the macros block, and the bare `:::` closes it.
+
+- Without its closer, a raw body runs to the end of the note, swallowing what follows, and the opener gets [`block.unclosed`](diagnostics.html#block-unclosed) (error).
+- Inside a quote or list item, it receives each line after the prefixes are stripped, and closes as unclosed when a prefix fails.
+- An opener inside a raw body does not nest, so the first closer ends the raw body and the next one is stray.
+
+```tern {.live expect="block.stray-closer"}
+:::mermaid{raw}
+:::inner
+x
+:::
+:::
+```
+
+### `:::macros` {#macros}
+
+- The body is TeX macro definitions, such as `\gdef\R{\mathbb{R}}`.
+- All macros blocks are evaluated before any math, in document order, into one KaTeX macro table that every formula shares.
+- It is emitted as `<div class="t-macros" hidden>`, holding the escaped TeX. Its id, classes and other keys go on that `div`.
+- It may sit inside other containers.
+- A body KaTeX cannot parse gets [`math.error`](diagnostics.html#math-error) at runtime.
+
+```tern {.live}
+:::macros{#defs .shared}
+\gdef\R{\mathbb{R}}
+:::
+```
+
+### `:::meta` {#meta}
+
+- The body is `key: value` lines: the note's metadata (title, language, author …).
+- Its body is verbatim wherever it appears, but it is honoured only at the top level. Elsewhere it gets [`meta.nested`](diagnostics.html#meta-nested) (warning) and is ignored.
+- Nothing is emitted in the body. So an id, a class or a key on `:::meta` (on its opener, or from an attribute line) applies to nothing: each gets [`attr.malformed`](diagnostics.html#attr-malformed) (warning) and is dropped, and the id is not registered.
+
+```tern {.live}
+:::meta
+title: Linear maps
+lang: en
+:::
+
+The metadata block renders nothing here.
+```
+
+```tern {.live expect="attr.malformed attr.malformed"}
+:::meta{#info .wide}
+title: Linear maps
+:::
+```
+
+The keys, the head and conflicts are on [Metadata](elements.html#metadata).
+
+### `{raw}` on any container {#raw-attribute}
+
+`{raw}` on a container makes its body one verbatim text node, emitted escaped inside the element, for a behaviour (a diagram renderer, a chart) to read. The `raw` key itself is never emitted; the title slot, the id, classes and other keys are kept.
+
+```tern {.live}
+:::mermaid[Flow]{raw #flow .diagram}
+graph TD
+  A --> B & C
+  *not emphasis*
+
+  <b>not a tag</b>
+:::
+```
+
+Indentation in the body is kept as written, even inside an indented container. A schema entry can make a name's body raw without `{raw}`: see [Fields](schema.html#fields).
+
+**Diagnostics.** [`block.unclosed`](diagnostics.html#block-unclosed), [`block.stray-closer`](diagnostics.html#block-stray-closer), [`meta.nested`](diagnostics.html#meta-nested), [`attr.malformed`](diagnostics.html#attr-malformed) (attributes on `:::meta`), [`math.error`](diagnostics.html#math-error).

@@ -1,0 +1,845 @@
+# Footnotes
+
+Footnote definitions and references. Output follows the
+README's footnote convention: the reference is `sup.t-fnref`, and the definitions are
+collected after all content into `section.t-footnotes`, numbered by first reference,
+with one `t-fnback` link (to the first reference) appended inside the definition's last
+paragraph, or in a `<p>` of its own when the last block is not a paragraph; an unused
+definition has none. Labels match case-insensitively; ids use the definition's
+spelling.
+
+## footnote/reference-basic
+
+spec: syntax-inline#footnote-reference syntax-blocks#footnote-definition
+
+The footnote-reference example: `[^LABEL]` becomes a numbered superscript link, and the definition is collected at the end.
+
+````tern
+Both are subspaces.[^subspace]
+
+[^subspace]: Closed under addition.
+````
+
+````html
+<p>Both are subspaces.<sup class="t-fnref"><a id="fnref-subspace" href="#fn-subspace">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-subspace"><p>Closed under addition. <a class="t-fnback" href="#fnref-subspace">↩</a></p></li>
+</ol></section>
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "paragraph", "children": [
+    {"type": "text", "value": "Both are subspaces."},
+    {"type": "footnoteReference", "identifier": "subspace"}
+  ]},
+  {"type": "footnoteDefinition", "identifier": "subspace", "children": [
+    {"type": "paragraph", "children": [{"type": "text", "value": "Closed under addition."}]}
+  ]}
+]}
+````
+
+## footnote/def-continuation
+
+spec: syntax-blocks#footnote-definition
+
+The footnote-definition example: a line indented 2 columns continues the definition's paragraph, stripped by 2.
+
+````tern
+See the kernel.[^subspace]
+
+[^subspace]: Closed under addition and scaling: if $Tu = Tv = 0$
+  then $T(u + \lambda v) = 0$.
+````
+
+````html
+<p>See the kernel.<sup class="t-fnref"><a id="fnref-subspace" href="#fn-subspace">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-subspace"><p>Closed under addition and scaling: if <span class="t-math">Tu = Tv = 0</span>
+then <span class="t-math">T(u + \lambda v) = 0</span>. <a class="t-fnback" href="#fnref-subspace">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-blank-then-indented
+
+spec: syntax-blocks#footnote-definition syntax-blocks#line-algorithm
+
+A blank line followed by an indented line continues the definition with a second paragraph; the back link goes in the last one.
+
+````tern
+Text.[^a]
+
+[^a]: First paragraph.
+
+  Second paragraph.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>First paragraph.</p><p>Second paragraph. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-lazy-line
+
+spec: syntax-blocks#footnote-definition syntax-blocks#line-algorithm
+
+An unindented line that cannot interrupt a paragraph continues the definition's paragraph lazily.
+
+````tern
+Text.[^a]
+
+[^a]: A note that
+wraps lazily.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>A note that
+wraps lazily. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-ends-at-unindented-line
+
+spec: syntax-blocks#footnote-definition
+
+After a blank line, an unindented line ends the definition and stays in the main flow, before the collected footnotes.
+
+````tern
+Text.[^a]
+
+[^a]: The note.
+
+Back in the text.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<p>Back in the text.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>The note. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-ends-at-heading
+
+spec: syntax-blocks#footnote-definition syntax-blocks#line-algorithm
+
+An unindented line that interrupts a paragraph is not lazy, so it ends the definition with no blank line.
+
+````tern
+Text.[^a]
+
+[^a]: The note.
+## Next
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<h2 id="next">Next</h2>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>The note. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-one-column-indent-ends
+
+spec: syntax-blocks#footnote-definition syntax-blocks#r2
+
+Membership needs 2 columns: after a blank line, a line indented by 1 is outside the definition.
+
+````tern
+Text.[^a]
+
+[^a]: The note.
+
+ Not part of the note.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<p>Not part of the note.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>The note. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-tab-indent
+
+spec: syntax-blocks#footnote-definition syntax-blocks#columns
+options: escaped
+
+A tab advances to column 4, which is at least 2, so a tab-indented line after a blank line stays in the definition.
+
+````tern
+Text.[^a]
+
+[^a]: The note.
+
+\tStill the note.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>The note.</p><p>Still the note. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-empty-first-line
+
+spec: syntax-blocks#footnote-definition
+
+`[^LABEL]:` may end the line; the content then starts on the indented line below.
+
+````tern
+Text.[^a]
+
+[^a]:
+  The note starts on the next line.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>The note starts on the next line. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-needs-space
+
+spec: syntax-blocks#footnote-definition syntax-inline#footnote-reference
+
+Without a space after the colon the line is not a definition: it is a paragraph whose `[^a]` is an undefined reference.
+
+````tern
+[^a]:no space
+````
+
+````html
+<p>[^a]:no space</p>
+````
+
+````diagnostics
+1:1 warning footnote.undefined
+````
+
+## footnote/def-bad-label-is-text
+
+spec: syntax-blocks#footnote-definition syntax-blocks#character-classes
+
+A label with a space, or an empty one, is not a LABEL, so these lines are plain paragraphs.
+
+````tern
+[^a b]: Spaces are not allowed in a label.
+
+[^]: Nor is an empty label.
+````
+
+````html
+<p>[^a b]: Spaces are not allowed in a label.</p>
+<p>[^]: Nor is an empty label.</p>
+````
+
+## footnote/escaped-def-is-text
+
+spec: syntax-blocks#footnote-definition syntax-inline#escapes
+
+`\[^x]:` is the line-start escape for a footnote definition: the line is a paragraph, holds no reference, and draws no LaTeX hint.
+
+````tern
+\[^x]: not a definition.
+````
+
+````html
+<p>[^x]: not a definition.</p>
+````
+
+## footnote/def-interrupts-paragraph
+
+spec: syntax-blocks#footnote-definition syntax-blocks#line-algorithm
+
+A definition interrupts a paragraph, so it needs no blank line before it.
+
+````tern
+Text.[^a]
+[^a]: Right under the paragraph.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Right under the paragraph. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/order-by-first-reference
+
+spec: syntax-blocks#footnote-definition syntax-inline#footnote-reference elements#numbering
+
+Footnotes are numbered and listed by first reference, not by where they are defined; consecutive definitions interrupt each other.
+
+````tern
+[^a]: Note A.
+[^b]: Note B.
+
+Cites b[^b] then a[^a].
+````
+
+````html
+<p>Cites b<sup class="t-fnref"><a id="fnref-b" href="#fn-b">1</a></sup> then a<sup class="t-fnref"><a id="fnref-a" href="#fn-a">2</a></sup>.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-b"><p>Note B. <a class="t-fnback" href="#fnref-b">↩</a></p></li>
+<li id="fn-a"><p>Note A. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/repeated-reference
+
+spec: syntax-inline#footnote-reference
+
+A repeated reference shows the same number and gets the id `fnref-LABEL-2`; the definition has one back link, to the first reference.
+
+````tern
+First use[^x], second use[^x].
+
+[^x]: Shared note.
+````
+
+````html
+<p>First use<sup class="t-fnref"><a id="fnref-x" href="#fn-x">1</a></sup>, second use<sup class="t-fnref"><a id="fnref-x-2" href="#fn-x">1</a></sup>.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-x"><p>Shared note. <a class="t-fnback" href="#fnref-x">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/labels-with-digits
+
+spec: syntax-inline#footnote-reference syntax-blocks#character-classes elements#ids
+
+LABEL allows digits anywhere, `_` and `-`; the label is used as written in both ids.
+
+````tern
+One[^1], two[^2b], three[^x_3-c].
+
+[^1]: Digits only.
+[^2b]: Digit first.
+[^x_3-c]: Letters, digits, underscore and hyphen.
+````
+
+````html
+<p>One<sup class="t-fnref"><a id="fnref-1" href="#fn-1">1</a></sup>, two<sup class="t-fnref"><a id="fnref-2b" href="#fn-2b">2</a></sup>, three<sup class="t-fnref"><a id="fnref-x_3-c" href="#fn-x_3-c">3</a></sup>.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-1"><p>Digits only. <a class="t-fnback" href="#fnref-1">↩</a></p></li>
+<li id="fn-2b"><p>Digit first. <a class="t-fnback" href="#fnref-2b">↩</a></p></li>
+<li id="fn-x_3-c"><p>Letters, digits, underscore and hyphen. <a class="t-fnback" href="#fnref-x_3-c">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/empty-and-spaced-are-text
+
+spec: syntax-inline#footnote-reference
+
+`[^]` and `[^ x]` are not references; they are text, with no diagnostic.
+
+````tern
+Empty [^] and spaced [^ x] stay text.
+````
+
+````html
+<p>Empty [^] and spaced [^ x] stay text.</p>
+````
+
+## footnote/undefined
+
+spec: syntax-inline#footnote-reference diagnostics#footnote-undefined
+
+A reference with no definition stays literal and is warned about at its `[`.
+
+````tern
+See the note[^missing].
+````
+
+````html
+<p>See the note[^missing].</p>
+````
+
+````diagnostics
+1:13 warning footnote.undefined
+````
+
+## footnote/unused
+
+spec: syntax-blocks#footnote-definition diagnostics#footnote-unused
+
+A definition with no reference is reported and still emitted, after the referenced ones, with no back link.
+
+````tern
+Text.[^used]
+
+[^unused]: Not referenced.
+[^used]: Referenced.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-used" href="#fn-used">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-used"><p>Referenced. <a class="t-fnback" href="#fnref-used">↩</a></p></li>
+<li id="fn-unused"><p>Not referenced.</p></li>
+</ol></section>
+````
+
+````diagnostics
+3:1 info footnote.unused
+````
+
+## footnote/duplicate
+
+spec: syntax-blocks#footnote-definition elements#ids
+
+A second definition of the same label is warned about at that definition, and the first one wins. The losing definition is dropped: its content is not emitted, it generates no `fn-` id, and `footnote.duplicate` is reported on the second definition only, with no `id.duplicate`.
+
+````tern
+Text.[^a]
+
+[^a]: First definition.
+[^a]: Second definition.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>First definition. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+4:1 warning footnote.duplicate
+````
+
+## footnote/nested
+
+spec: syntax-blocks#footnote-definition
+
+A reference inside a definition stays literal and is warned about; the same label referenced from the text still works.
+
+````tern
+Text.[^a] More.[^b]
+
+[^a]: See also[^b].
+[^b]: The other.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup> More.<sup class="t-fnref"><a id="fnref-b" href="#fn-b">2</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>See also[^b]. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+<li id="fn-b"><p>The other. <a class="t-fnback" href="#fnref-b">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+3:15 warning footnote.nested
+````
+
+## footnote/nested-only-reference-unused
+
+spec: syntax-blocks#footnote-definition
+
+A literal nested reference is not a reference, so a definition cited only from inside another definition is unused: it is listed after the referenced one, with no back link.
+
+````tern
+Text.[^a]
+
+[^a]: See[^b].
+[^b]: Only cited from inside a note.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>See[^b]. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+<li id="fn-b"><p>Only cited from inside a note.</p></li>
+</ol></section>
+````
+
+````diagnostics
+3:10 warning footnote.nested
+4:1 info footnote.unused
+````
+
+## footnote/def-with-list
+
+spec: syntax-blocks#footnote-definition syntax-blocks#lists
+
+Definition content is block-level: a list nests at the definition's 2-column indent.
+
+````tern
+Text.[^a]
+
+[^a]: Steps:
+
+  - one
+  - two
+
+  Done.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Steps:</p><ul><li>one</li><li>two</li></ul><p>Done. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-with-code
+
+spec: syntax-blocks#footnote-definition syntax-blocks#fence
+
+A fence nests in a definition; its content loses the definition's 2-column indent. When the definition's last block is not a paragraph, the back link goes in a `<p>` of its own.
+
+````tern
+Text.[^a]
+
+[^a]: Run this:
+
+  ```sh
+  make test
+  ```
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Run this:</p><pre data-t="code"><code class="language-sh">make test</code></pre><p><a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "paragraph"},
+  {"type": "footnoteDefinition", "identifier": "a", "children": [
+    {"type": "paragraph", "children": [{"type": "text", "value": "Run this:"}]},
+    {"type": "code", "lang": "sh", "value": "make test"}
+  ]}
+]}
+````
+
+## footnote/def-in-container
+
+spec: syntax-blocks#footnote-definition syntax-blocks#container
+
+A definition may start inside a `:::` container; it is collected at the end of the note, and the closer ends it.
+
+````tern
+:::box
+Text.[^a]
+
+[^a]: Defined inside a box.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p></div>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Defined inside a box. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-in-blockquote
+
+spec: syntax-blocks#footnote-definition syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+Inside a quote the definition's 2-column indent is measured after the `> ` prefix.
+
+````tern
+> Quoted.[^q]
+>
+> [^q]: Defined in the quote,
+>   continued.
+````
+
+````html
+<blockquote><p>Quoted.<sup class="t-fnref"><a id="fnref-q" href="#fn-q">1</a></sup></p></blockquote>
+<section class="t-footnotes"><ol>
+<li id="fn-q"><p>Defined in the quote,
+continued. <a class="t-fnback" href="#fnref-q">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/ref-in-table-cell
+
+spec: syntax-inline#footnote-reference syntax-blocks#tables
+
+Cells are inline content, so a reference works in a table cell.
+
+````tern
+| Term | Note |
+|---|---|
+| kernel | a subspace[^k] |
+
+[^k]: Of the domain.
+````
+
+````html
+<table>
+<thead><tr><th>Term</th><th>Note</th></tr></thead>
+<tbody><tr><td>kernel</td><td>a subspace<sup class="t-fnref"><a id="fnref-k" href="#fn-k">1</a></sup></td></tr></tbody>
+</table>
+<section class="t-footnotes"><ol>
+<li id="fn-k"><p>Of the domain. <a class="t-fnback" href="#fnref-k">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/ref-at-line-start
+
+spec: syntax-inline#footnote-reference syntax-blocks#footnote-definition
+
+`[^a]` at the start of a line without `:` after it is a reference, not a definition.
+
+````tern
+[^a] begins this line.
+
+[^a]: The definition.
+````
+
+````html
+<p><sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup> begins this line.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>The definition. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/after-exclamation
+
+spec: syntax-inline#footnote-reference syntax-inline#algorithm syntax-inline#links
+
+The tokenizer's rule 9 is `![` not followed by `^`, so at `!` no image opens, `!` is text, and rule 8 then reads `[^a]` as a footnote reference, as in GFM. The definition is used.
+
+````tern
+Wow![^a]
+
+[^a]: Exclamation.
+````
+
+````html
+<p>Wow!<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Exclamation. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+````
+
+## footnote/image-then-footnote
+
+spec: syntax-inline#footnote-reference syntax-inline#algorithm syntax-inline#images
+
+`![^a](x.png)` cannot be an image: `![` followed by `^` is not an image opener. It is `!`, a footnote reference, and the text `(x.png)`.
+
+````tern
+See ![^a](x.png).
+
+[^a]: Not an image.
+````
+
+````html
+<p>See !<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup>(x.png).</p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Not an image. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/label-case-insensitive
+
+spec: syntax-inline#footnote-reference syntax-blocks#footnote-definition elements#ids
+
+Footnote labels match case-insensitively, so `[^A]` reaches `[^a]:`; the generated ids use the definition's label as written.
+
+````tern
+Text.[^A]
+
+[^a]: Lower-case definition.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Lower-case definition. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+````
+
+## footnote/label-case-ids-from-definition
+
+spec: syntax-inline#footnote-reference elements#ids
+
+References spelled in different cases are one footnote: one number, and every id (`fn-`, `fnref-`, `fnref-…-2`) is built from the definition's spelling, not the reference's.
+
+````tern
+Once[^KERNEL], twice[^kernel].
+
+[^Kernel]: Mixed case.
+````
+
+````html
+<p>Once<sup class="t-fnref"><a id="fnref-Kernel" href="#fn-Kernel">1</a></sup>, twice<sup class="t-fnref"><a id="fnref-Kernel-2" href="#fn-Kernel">1</a></sup>.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-Kernel"><p>Mixed case. <a class="t-fnback" href="#fnref-Kernel">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/label-case-fold
+
+spec: syntax-inline#footnote-reference syntax-blocks#character-classes
+
+Labels match when `label.toLowerCase().toUpperCase()` are equal (micromark's approximation of Unicode case folding): `ß` upper-cases to `SS`, so `[^ß]` reaches `[^ss]:`. Plain lower-casing would not match them.
+
+````tern
+Straße[^ß]
+
+[^ss]: Folded.
+````
+
+````html
+<p>Straße<sup class="t-fnref"><a id="fnref-ss" href="#fn-ss">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-ss"><p>Folded. <a class="t-fnback" href="#fnref-ss">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/duplicate-differs-in-case
+
+spec: syntax-blocks#footnote-definition syntax-inline#footnote-reference
+
+Labels that differ only in case are the same label, so `[^A]:` after `[^a]:` is a duplicate: `footnote.duplicate` on the second, which is dropped.
+
+````tern
+Text.[^a]
+
+[^a]: First definition.
+[^A]: Second definition.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>First definition. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+4:1 warning footnote.duplicate
+````
+
+## footnote/label-and-id-namespaces
+
+spec: syntax-inline#footnote-reference elements#ids syntax-inline#reference
+
+Footnote ids live in their own `fn-`/`fnref-` spelling, so a footnote `x` and an element `#x` do not collide: no diagnostic, and `@x` reaches the heading.
+
+````tern
+## Kernel {#x}
+
+See @x and the note.[^x]
+
+[^x]: A note.
+````
+
+````html
+<h2 id="x">Kernel</h2>
+<p>See <a class="t-ref" href="#x">Kernel</a> and the note.<sup class="t-fnref"><a id="fnref-x" href="#fn-x">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-x"><p>A note. <a class="t-fnback" href="#fnref-x">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/def-inside-def-is-text
+
+spec: syntax-blocks#footnote-definition syntax-inline#footnote-reference
+
+A definition cannot contain a definition: the indented `[^b]:` line inside `[^a]` is paragraph text. Its `[^b]` is then a nested reference to an undefined label, which gets only `footnote.nested`.
+
+````tern
+Text.[^a]
+
+[^a]: Outer.
+
+  [^b]: Inner.
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Outer.</p><p>[^b]: Inner. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+````diagnostics
+5:3 warning footnote.nested
+````
+
+## footnote/def-empty
+
+spec: syntax-blocks#footnote-definition
+
+An empty definition gives an empty item with its back link; with no paragraph to hold it, the back link is in a `<p>` of its own.
+
+````tern
+Text.[^a]
+
+[^a]:
+````
+
+````html
+<p>Text.<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p><a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/ref-glued-group
+
+spec: syntax-inline#footnote-reference syntax-blocks#positions
+
+A strong group glued to a footnote reference binds to the `<sup>`, after its `t-fnref` class.
+
+````tern
+Text.[^a]{.x}
+
+[^a]: The note.
+````
+
+````html
+<p>Text.<sup class="t-fnref x"><a id="fnref-a" href="#fn-a">1</a></sup></p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>The note. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## footnote/attribute-line-before-definition-orphan
+
+spec: syntax-blocks#footnote-definition syntax-blocks#attribute-line
+
+A footnote definition takes no attributes: an attribute line before one binds to nothing and stays text.
+
+````tern
+{.x}
+[^a]: note
+
+Ref[^a]
+````
+
+````json ast
+{"children": [{"type": "attributes", "value": "{.x}"}, {"type": "footnoteDefinition"}, {"type": "paragraph"}]}
+````
+
+````diagnostics
+1:1 warning attributes.orphan
+````

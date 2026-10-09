@@ -1,0 +1,144 @@
+/* SPDX-License-Identifier: MIT */
+/* docs.css: the documentation's styles (docs/README.md), with docs.js.
+   Colours come from tern.css's --t-* variables, so light and dark follow it;
+   the few of its own are below, each checked for WCAG AA contrast on the
+   backgrounds it sits on (4.8:1 or more). Styles for the page's own markup
+   leave an example's result alone (:not(.docs-live-out *)): the result shows
+   the note as it renders without this add-on. */
+
+:root {
+  --t-width: 42rem;
+  --docs-nav: 15rem;
+  --docs-note: #0b62c4; --docs-tip: #17692e; --docs-warning: #8a5300; --docs-important: #6b3fb8;
+  --tk-mark: #9a3412; --tk-name: #6f42c1; --tk-attr: #0b6e6e; --tk-math: #0550ae; --tk-code: #116329;
+  --tk-ref: #0b62c4; --tk-key: #953800; --tk-value: #0a3069;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --docs-note: #6cb0ff; --docs-tip: #56d364; --docs-warning: #e3b341; --docs-important: #c4a5f5;
+    --tk-mark: #ffa657; --tk-name: #d2a8ff; --tk-attr: #7ee0d0; --tk-math: #a5d6ff; --tk-code: #7ee787;
+    --tk-ref: #6cb0ff; --tk-key: #ffa657; --tk-value: #a5d6ff;
+  }
+}
+
+/* ---- the site navigation: a bar with a Menu button on narrow screens, a
+   sidebar on wide ones. The current page is bold, marked with a bar and
+   aria-current, not by colour alone. */
+.tern .site-nav:not(.docs-live-out *) { font-family: var(--t-sans); font-size: .9rem; line-height: 1.4; margin-block: -1.5rem 2rem; }
+.docs-nav-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .25rem; border-block-end: 1px solid var(--t-line); }
+.tern .docs-nav-home { font-weight: 700; font-size: 1.15rem; color: var(--t-fg); text-decoration: none; }
+.docs-nav-toggle {
+  font: inherit; color: var(--t-fg); background: var(--t-soft); border: 1px solid var(--t-line); border-radius: 6px;
+  padding: .35rem .8rem; cursor: pointer;
+}
+.docs-nav-toggle:focus-visible, .docs-live summary:focus-visible { outline: 2px solid var(--t-link); outline-offset: 2px; }
+.tern .docs-nav-list, .tern .docs-nav-list ul { list-style: none; margin: 0; padding: 0; }
+.tern .docs-nav-list { display: none; padding-block: .5rem; }
+.tern .docs-nav-open .docs-nav-list { display: block; }
+.docs-nav-list a { display: block; padding: .3rem .75rem; border-inline-start: 3px solid transparent; color: var(--t-fg); text-decoration: none; }
+.docs-nav-list a:hover { color: var(--t-link); text-decoration: underline; }
+.tern .site-nav [aria-current="page"] { font-weight: 700; border-inline-start-color: var(--t-link); }
+.tern .docs-nav-list ul a { padding-inline-start: 1.5rem; }
+/* The heading after the navigation starts the page. */
+.tern > .site-nav + :is(h1, h2) { margin-block-start: .5rem; }
+.docs-nav-heading { display: block; padding: .8rem .75rem .3rem; color: var(--t-muted); font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+
+@media (min-width: 64rem) {
+  body:has(> main.tern > .site-nav) { padding-inline-start: calc(var(--docs-nav) + 2rem); }
+  .tern .site-nav:not(.docs-live-out *) {
+    position: fixed; inset-block: 0; inset-inline-start: 0; inline-size: var(--docs-nav); box-sizing: border-box;
+    margin: 0; padding: 1.5rem 1rem 2rem; overflow-y: auto; border-inline-end: 1px solid var(--t-line); background: var(--t-bg);
+  }
+  .docs-nav-bar { border: 0; padding-inline: .75rem; }
+  .docs-nav-toggle { display: none; }
+  .tern .docs-nav-list { display: block; }
+  .tern > .site-nav + :is(h1, h2) { margin-block-start: 0; }
+}
+
+/* ---- the page's contents */
+.tern nav.toc:not(.docs-live-out *) { font-family: var(--t-sans); font-size: .9rem; line-height: 1.45; border: 1px solid var(--t-line); border-radius: 6px; padding: .75rem 1rem; margin-block-end: 2rem; }
+.tern nav.toc:not(.docs-live-out *)::before { content: "Contents"; display: block; font-weight: 600; margin-block-end: .3rem; }
+.tern nav.toc:not(.docs-live-out *) ol { list-style: none; margin: 0; padding-inline-start: 0; }
+.tern nav.toc:not(.docs-live-out *) ol ol { padding-inline-start: 1.1rem; }
+.tern nav.toc:not(.docs-live-out *) li { margin: .1rem 0; }
+
+/* ---- callouts: a text label (Note, Tip, Warning, Important) in the title,
+   a coloured rule and tint behind it. */
+.tern .t-block:is(.note, .tip, .warning, .important):not(.docs-live-out *) {
+  --docs-c: var(--docs-note);
+  border-inline-start: 4px solid var(--docs-c); border-start-end-radius: 6px; border-end-end-radius: 6px;
+  background: color-mix(in srgb, var(--docs-c) 8%, var(--t-bg)); padding: .7rem 1rem;
+}
+.tern .t-block.tip:not(.docs-live-out *) { --docs-c: var(--docs-tip); }
+.tern .t-block.warning:not(.docs-live-out *) { --docs-c: var(--docs-warning); }
+.tern .t-block.important:not(.docs-live-out *) { --docs-c: var(--docs-important); }
+.tern .t-block:is(.note, .tip, .warning, .important):not(.docs-live-out *) > .t-title { font-family: var(--t-sans); font-size: .95em; }
+.tern .t-block:is(.note, .tip, .warning, .important):not(.docs-live-out *) > .t-title > .t-label { color: var(--docs-c); }
+
+/* ---- the syntax box: a construct's spelling */
+.tern .t-block.syntax:not(.docs-live-out *) { border: 1px solid var(--t-line); border-radius: 6px; padding: .7rem 1rem; }
+.tern .t-block.syntax:not(.docs-live-out *) > .t-title { font-family: var(--t-sans); font-size: .95em; }
+.tern .t-block.syntax:not(.docs-live-out *) > .t-title > .t-label { color: var(--t-muted); text-transform: uppercase; letter-spacing: .06em; font-size: .8em; margin-inline-end: .3em; }
+.tern .t-block.syntax:not(.docs-live-out *) pre { margin-block-end: .5rem; }
+.tern .t-block.syntax:not(.docs-live-out *) > :last-child { margin-block-end: 0; }
+
+/* ---- keys */
+.tern kbd:not(.docs-live-out *) { background: var(--t-soft); font-size: .8em; white-space: nowrap; }
+
+/* ---- live examples: source, result, diagnostics (when any), HTML */
+.docs-live { border: 1px solid var(--t-line); border-radius: 8px; margin-block: 0 1.25rem; overflow: hidden; }
+.docs-live-part { padding: .55rem 1rem .8rem; min-inline-size: 0; }
+.docs-live-part + .docs-live-part, .docs-live-problem { border-block-start: 1px solid var(--t-line); }
+.docs-live-label { font: 600 .7rem/1.4 var(--t-sans); letter-spacing: .07em; text-transform: uppercase; color: var(--t-muted); margin-block-end: .35rem; }
+.docs-live-source { background: var(--t-soft); }
+.tern .docs-live-source :is(pre, figure) { margin: 0; padding: 0; background: none; border-radius: 0; }
+.docs-live-out { overflow-x: auto; }
+.docs-live-out > :first-child { margin-block-start: 0; }
+.docs-live-out > :last-child { margin-block-end: 0; }
+.docs-live-out > h1:first-child { font-size: 1.6rem; }
+/* An example's math before docs.js typesets it (or when KaTeX is missing):
+   tern.css's .t-math look, under the class that hides it from the runtime. */
+.docs-math { direction: ltr; unicode-bidi: isolate; }
+.docs-math[data-display] { display: block; }
+.t-eq > .docs-math { flex: 1; text-align: center; min-inline-size: 0; }
+.docs-macros[hidden] { display: none !important; }
+.docs-live-diagnostics { background: var(--t-soft); }
+.tern .docs-diags { list-style: none; margin: 0; padding: 0; font-size: .9em; line-height: 1.45; }
+.docs-diags code { font-size: .85em; }
+.docs-diag + .docs-diag { margin-block-start: .4rem; }
+.docs-sev { font: 600 .72em/1 var(--t-sans); text-transform: uppercase; letter-spacing: .04em; padding: .15em .4em; border: 1px solid currentColor; border-radius: 3px; vertical-align: .1em; }
+.docs-diag-error .docs-sev { color: var(--t-error); }
+.docs-diag-warning .docs-sev { color: var(--t-warn); }
+.docs-diag-info .docs-sev { color: var(--docs-note); }
+.docs-pos { font-family: var(--t-mono); font-size: .85em; color: var(--t-muted); }
+.docs-hint { display: block; color: var(--t-muted); padding-inline-start: 1.25rem; }
+.tern .docs-live-markup { margin: 0; }
+.docs-live-markup > summary { margin: 0; cursor: pointer; inline-size: max-content; }
+.docs-live-markup:not([open]) { padding-block-end: .55rem; }
+.tern .docs-live-html { margin: .4rem 0 0; font-size: .8em; background: none; padding: 0; }
+.docs-live-problem { margin: 0; padding: .6rem 1rem; font: .9rem/1.4 var(--t-sans); color: var(--t-error); background: var(--t-error-bg); }
+.tern .docs-live-script { font-size: .8em; }
+.docs-live-note { font-family: var(--t-sans); color: var(--t-muted); }
+
+/* ---- highlighting (docs.js): Tern in fences, HTML in examples */
+.tk-mark { color: var(--tk-mark); }
+.tk-name { color: var(--tk-name); }
+.tk-attr { color: var(--tk-attr); }
+.tk-math { color: var(--tk-math); }
+.tk-code { color: var(--tk-code); }
+.tk-ref { color: var(--tk-ref); }
+.tk-em { font-style: italic; }
+.tk-html, .tk-esc, .tk-tag, .tk-comment { color: var(--t-muted); }
+.tk-comment { font-style: italic; }
+.tk-tag .tk-name { color: var(--tk-name); }
+.tk-key { color: var(--tk-key); }
+.tk-value { color: var(--tk-value); }
+
+/* ---- print: no navigation; an example prints its source and result. */
+@media print {
+  body:has(> main.tern > .site-nav) { padding-inline-start: 0; }
+  .tern .site-nav, .docs-live-markup, .docs-nav-toggle { display: none !important; }
+  .docs-live { break-inside: avoid; }
+  .docs-live-result { display: block !important; }
+  .docs-live-out { overflow: visible; }
+}

@@ -1,0 +1,497 @@
+# Cells
+
+Cells: `+++` separators inside a container, the first-cell rule, `cols` and `--t-cols`, and `+++` outside any container. `row` and `grid` have no schema entry.
+
+## cell/attrs
+
+spec: syntax-blocks#cells elements#output-contract
+
+The cells example: each segment is a `div.t-cell`, the separator's group goes on the cell it starts, and `cols` becomes `--t-cols` (it is consumed, never emitted).
+
+````tern
+:::row{cols="2 1"}
+Left, twice as wide.
++++ {.muted}
+Right.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:minmax(0,2fr) minmax(0,1fr)" data-t="row">
+<div class="t-cell"><p>Left, twice as wide.</p></div>
+<div class="t-cell muted"><p>Right.</p></div>
+</div>
+````
+
+## cell/leading-separator
+
+spec: syntax-blocks#cells
+
+A `+++` on the first line of the body opens the first cell, so it can carry attributes and no empty cell is made. Without `cols`, the grid gets one column per cell.
+
+````tern
+:::row
++++ {.a}
+One.
++++
+Two.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell a"><p>One.</p></div>
+<div class="t-cell"><p>Two.</p></div>
+</div>
+````
+
+## cell/leading-separator-after-blank
+
+spec: syntax-blocks#cells
+
+The first-cell rule looks at the first non-blank line of the body.
+
+````tern
+:::row
+
++++ {.a}
+One.
++++
+Two.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell a"><p>One.</p></div>
+<div class="t-cell"><p>Two.</p></div>
+</div>
+````
+
+## cell/orphan
+
+spec: syntax-blocks#cells
+
+Outside any container, `+++` is paragraph text with `cell.orphan`.
+
+````tern
++++
+````
+
+````html
+<p>+++</p>
+````
+
+````diagnostics
+1:1 warning cell.orphan
+````
+
+## cell/orphan-with-attrs
+
+spec: syntax-blocks#cells
+
+An orphan separator with a group is text as written, group included.
+
+````tern
++++ {.muted}
+````
+
+````html
+<p>+++ {.muted}</p>
+````
+
+````diagnostics
+1:1 warning cell.orphan
+````
+
+## cell/orphan-in-list-item
+
+spec: syntax-blocks#cells
+
+A list item is not a container for cells: `+++` inside a top-level item is an orphan. Inside a quote, list item or footnote, "the line" is the column where the remainder starts, after the prefixes: 3 here.
+
+````tern
+- +++
+````
+
+````html
+<ul>
+<li>+++</li>
+</ul>
+````
+
+````diagnostics
+1:3 warning cell.orphan
+````
+
+## cell/orphan-interrupts-paragraph
+
+spec: syntax-blocks#cells syntax-blocks#line-algorithm
+
+A `+++` line that falls back to text still interrupts the open paragraph, and forms a paragraph of its own.
+
+````tern
+Text.
++++
+````
+
+````html
+<p>Text.</p>
+<p>+++</p>
+````
+
+````diagnostics
+2:1 warning cell.orphan
+````
+
+## cell/orphan-in-quote-inside-container
+
+spec: syntax-blocks#cells syntax-blocks#blockquote
+
+`+++` is a cell separator only at the container's own level. Inside a quote in the container it is text with `cell.orphan` at the remainder's column; it interrupts the quoted paragraph, and the container gets no cells.
+
+````tern
+:::row
+> a
+> +++
+
+b
+:::
+````
+
+````html
+<div class="t-block row" data-t="row">
+<blockquote><p>a</p><p>+++</p></blockquote>
+<p>b</p>
+</div>
+````
+
+````diagnostics
+3:3 warning cell.orphan
+````
+
+## cell/text-after-plus
+
+spec: syntax-blocks#cells
+
+`+++ text` is not a separator: it is ordinary paragraph text, with no diagnostic, and the container gets no cells.
+
+````tern
+:::row
++++ text
+:::
+````
+
+````html
+<div class="t-block row" data-t="row">
+<p>+++ text</p>
+</div>
+````
+
+## cell/two-plus-is-text
+
+spec: syntax-blocks#cells
+
+A separator needs three or more `+`; `++` is text.
+
+````tern
+:::row
+++
+:::
+````
+
+````html
+<div class="t-block row" data-t="row">
+<p>++</p>
+</div>
+````
+
+## cell/long-separator
+
+spec: syntax-blocks#cells
+
+Any run of three or more `+` is a separator.
+
+````tern
+:::row
+A.
++++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````
+
+## cell/glued-attrs
+
+spec: syntax-blocks#cells syntax-blocks#positions
+
+At the end of a structural line the group may be glued.
+
+````tern
+:::row
+A.
++++{.x}
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell x"><p>B.</p></div>
+</div>
+````
+
+## cell/weak-attrs
+
+spec: syntax-blocks#cells syntax-blocks#positions syntax-blocks#strong-and-weak
+
+A separator accepts any group, weak ones included; a bare key becomes a boolean attribute.
+
+````tern
+:::row
+A.
++++ {hidden}
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell" hidden><p>B.</p></div>
+</div>
+````
+
+## cell/closes-open-blocks
+
+spec: syntax-blocks#cells
+
+A separator closes every block open inside the container (here a list and a quote; it is not a lazy line) before starting the next cell.
+
+````tern
+:::row
+- a
+- b
++++
+> quoted
++++
+Text.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(3,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><ul><li>a</li><li>b</li></ul></div>
+<div class="t-cell"><blockquote><p>quoted</p></blockquote></div>
+<div class="t-cell"><p>Text.</p></div>
+</div>
+````
+
+## cell/innermost-container
+
+spec: syntax-blocks#cells
+
+A separator belongs to the innermost open container; the outer one gets no cells.
+
+````tern
+:::outer
+:::inner
+A.
++++
+B.
+:::
+C.
+:::
+````
+
+````html
+<div class="t-block outer" data-t="outer">
+<div class="t-block inner t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="inner">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+<p>C.</p>
+</div>
+````
+
+## cell/trailing-separator-empty-cell
+
+spec: syntax-blocks#cells
+
+Every segment is a cell; only a leading `+++` avoids an empty one, so a trailing `+++` makes an empty last cell.
+
+````tern
+:::row
+A.
++++
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"></div>
+</div>
+````
+
+## cell/cols-explicit-count
+
+spec: syntax-blocks#cells
+
+An explicit integer `cols` is kept even when the cell count differs.
+
+````tern
+:::row{cols=3}
+A.
++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(3,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````
+
+## cell/cols-list-verbatim-entry
+
+spec: syntax-blocks#cells
+
+In a `cols` list a bare number W becomes `minmax(0,Wfr)` and any other entry is used verbatim.
+
+````tern
+:::row{cols="1 12rem"}
+Main.
++++
+Side.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:minmax(0,1fr) 12rem" data-t="row">
+<div class="t-cell"><p>Main.</p></div>
+<div class="t-cell"><p>Side.</p></div>
+</div>
+````
+
+## cell/cols-without-separators
+
+spec: syntax-blocks#cells elements#output-contract
+
+Without `+++`, each direct child of a `cols` element is a grid item: `t-cols` is set whenever `cols` is set or the body has cells.
+
+````tern
+:::grid{cols=2}
+One.
+
+Two.
+:::
+````
+
+````html
+<div class="t-block grid t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="grid">
+<p>One.</p>
+<p>Two.</p>
+</div>
+````
+
+## cell/cols-prepended-to-style
+
+spec: syntax-blocks#cells
+
+`--t-cols` is prepended to an author `style`, joined by a bare `;`.
+
+````tern
+:::row{cols=2 style="gap:1rem"}
+A.
++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr));gap:1rem" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````
+
+## cell/cols-decimal
+
+spec: syntax-blocks#cells
+
+A bare number in a `cols` list may be a decimal.
+
+````tern
+:::row{cols="1.5 1"}
+A.
++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:minmax(0,1.5fr) minmax(0,1fr)" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````
+
+````diagnostics
+````
+
+## cell/cols-zero-ignored
+
+spec: syntax-blocks#cells syntax-blocks#merging-and-emission
+
+`cols=0` (or a negative value) gets `attr.malformed` at the first rejected character, the value's first, and is ignored: the grid falls back to one column per cell.
+
+````tern
+:::row{cols=0}
+A.
++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````
+
+````diagnostics
+1:13 warning attr.malformed
+````
+
+## cell/title-before-cells
+
+spec: syntax-blocks#cells elements#title-slots
+
+The title slot stays the container's first child; the cells follow it.
+
+````tern
+:::row[Compare]
+A.
++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-title">Compare</div>
+<div class="t-cell"><p>A.</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````

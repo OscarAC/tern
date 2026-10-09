@@ -1,0 +1,425 @@
+# Autolinks
+
+Cases for autolinks (angle and bare forms) and the `http(s)://` row of the ambiguity rules.
+
+## autolink/angle-url
+
+spec: syntax-inline#autolinks
+
+CommonMark's angle autolink; `&` is escaped in both the `href` and the text.
+
+````tern
+<https://a.b/c?d=1&e=2>
+````
+
+````html
+<p><a href="https://a.b/c?d=1&amp;e=2">https://a.b/c?d=1&amp;e=2</a></p>
+````
+
+## autolink/angle-email
+
+spec: syntax-inline#autolinks
+
+An angle e-mail autolink gets `mailto:`.
+
+````tern
+<me@x.org>
+````
+
+````html
+<p><a href="mailto:me@x.org">me@x.org</a></p>
+````
+
+## autolink/angle-schemes
+
+spec: syntax-inline#autolinks
+
+Any scheme works in the angle form, `mailto:` included.
+
+````tern
+<ftp://x.org/f> and <mailto:me@x.org>
+````
+
+````html
+<p><a href="ftp://x.org/f">ftp://x.org/f</a> and <a href="mailto:me@x.org">mailto:me@x.org</a></p>
+````
+
+## autolink/angle-space-text
+
+spec: syntax-inline#autolinks syntax-inline#algorithm
+
+A space ends any chance of an angle autolink, and `<` is not in the bare form's start set: all text.
+
+````tern
+<https://a b>
+````
+
+````html
+<p>&lt;https://a b&gt;</p>
+````
+
+## autolink/angle-atom
+
+spec: syntax-inline#autolinks syntax-inline#algorithm
+
+An angle autolink is an atom: the stars inside are not emphasis.
+
+````tern
+<https://x.org/*a*>
+````
+
+````html
+<p><a href="https://x.org/*a*">https://x.org/*a*</a></p>
+````
+
+## autolink/angle-glued-group
+
+spec: syntax-inline#autolinks syntax-blocks#positions
+
+A strong group glued after an autolink attaches to it.
+
+````tern
+<https://x.org>{.ext}
+````
+
+````html
+<p><a href="https://x.org" class="ext">https://x.org</a></p>
+````
+
+## autolink/bare-spelling
+
+spec: syntax-inline#autolinks
+
+The bare form: the final `.` is trimmed.
+
+````tern
+See https://x.com/_a_/docs.
+````
+
+````html
+<p>See <a href="https://x.com/_a_/docs">https://x.com/_a_/docs</a>.</p>
+````
+
+## autolink/bare-after-paren-and-bracket
+
+spec: syntax-inline#autolinks
+
+A bare URL may start after `(` or `[`; the unbalanced `)` is trimmed and the `]` stops it.
+
+````tern
+(https://a.b) and [https://a.b]
+````
+
+````html
+<p>(<a href="https://a.b">https://a.b</a>) and [<a href="https://a.b">https://a.b</a>]</p>
+````
+
+## autolink/bare-after-quotes
+
+spec: syntax-inline#autolinks
+
+A bare URL may start after `"` or `'`; `"` stops it and a trailing `'` is trimmed.
+
+````tern
+"https://a.b" and 'https://a.b'
+````
+
+````html
+<p>"<a href="https://a.b">https://a.b</a>" and '<a href="https://a.b">https://a.b</a>'</p>
+````
+
+## autolink/bare-in-emphasis
+
+spec: syntax-inline#autolinks syntax-inline#emphasis
+
+A bare URL may start after `*`, and a trailing `*` is trimmed, so the emphasis closes around it.
+
+````tern
+*https://a.b*
+````
+
+````html
+<p><em><a href="https://a.b">https://a.b</a></em></p>
+````
+
+## autolink/bare-after-letter-text
+
+spec: syntax-inline#autolinks syntax-inline#ambiguity
+
+After a letter, a digit or any character outside the start set, `https://` is text.
+
+````tern
+xhttps://a.b, 1https://a.b and a/https://a.b
+````
+
+````html
+<p>xhttps://a.b, 1https://a.b and a/https://a.b</p>
+````
+
+## autolink/bare-stops-at-angle
+
+spec: syntax-inline#autolinks
+
+`<` and `>` stop a bare URL.
+
+````tern
+https://a.b/c<d
+
+https://a.b/c>d
+````
+
+````html
+<p><a href="https://a.b/c">https://a.b/c</a>&lt;d</p>
+<p><a href="https://a.b/c">https://a.b/c</a>&gt;d</p>
+````
+
+## autolink/bare-stops-at-brackets-braces
+
+spec: syntax-inline#autolinks syntax-blocks#positions
+
+`[` and `{` stop a bare URL; the weak `{f}` glued after it stays text.
+
+````tern
+https://a.b/c[d] https://a.b/e{f}
+````
+
+````html
+<p><a href="https://a.b/c">https://a.b/c</a>[d] <a href="https://a.b/e">https://a.b/e</a>{f}</p>
+````
+
+## autolink/bare-stops-pipe-quote-backtick
+
+spec: syntax-inline#autolinks
+
+`|`, `"` and a backtick stop a bare URL.
+
+````tern
+x https://a.b/c|d https://a.b/e"f" https://a.b/g`h`
+````
+
+````html
+<p>x <a href="https://a.b/c">https://a.b/c</a>|d <a href="https://a.b/e">https://a.b/e</a>"f" <a href="https://a.b/g">https://a.b/g</a><code>h</code></p>
+````
+
+## autolink/bare-trim-more
+
+spec: syntax-inline#autolinks
+
+Trailing `:`, `;` and `?` are trimmed too.
+
+````tern
+Try https://x.org/a: or https://x.org/b; maybe https://x.org/c?
+````
+
+````html
+<p>Try <a href="https://x.org/a">https://x.org/a</a>: or <a href="https://x.org/b">https://x.org/b</a>; maybe <a href="https://x.org/c">https://x.org/c</a>?</p>
+````
+
+## autolink/bare-trim-repeats
+
+spec: syntax-inline#autolinks
+
+Trimming repeats until stable (as in GFM): `).` loses the `.` and then the unbalanced `)`, and `**` loses both stars.
+
+````tern
+(see https://x.org).
+
+**https://x.org**
+````
+
+````html
+<p>(see <a href="https://x.org">https://x.org</a>).</p>
+<p><strong><a href="https://x.org">https://x.org</a></strong></p>
+````
+
+## autolink/bare-wikipedia-parens
+
+spec: syntax-inline#autolinks
+
+Balanced parentheses stay in the URL; only an unbalanced final `)` is trimmed.
+
+````tern
+https://en.wikipedia.org/wiki/Foo_(bar)
+
+(https://en.wikipedia.org/wiki/Foo_(bar))
+````
+
+````html
+<p><a href="https://en.wikipedia.org/wiki/Foo_(bar)">https://en.wikipedia.org/wiki/Foo_(bar)</a></p>
+<p>(<a href="https://en.wikipedia.org/wiki/Foo_(bar)">https://en.wikipedia.org/wiki/Foo_(bar)</a>)</p>
+````
+
+## autolink/bare-atom-no-emphasis
+
+spec: syntax-inline#autolinks syntax-inline#algorithm
+
+A bare URL is an atom: `*` and `~~` inside it are not delimiters.
+
+````tern
+https://x.org/a*b*c and https://x.org/~~d~~e
+````
+
+````html
+<p><a href="https://x.org/a*b*c">https://x.org/a*b*c</a> and <a href="https://x.org/~~d~~e">https://x.org/~~d~~e</a></p>
+````
+
+## autolink/bare-atom-no-element
+
+spec: syntax-inline#autolinks syntax-inline#algorithm syntax-inline#inline-element
+
+The URL consumes `:kbd` and stops at `[`, so no element opens and `[x]` is text.
+
+````tern
+https://x.org/:kbd[x]
+````
+
+````html
+<p><a href="https://x.org/:kbd">https://x.org/:kbd</a>[x]</p>
+````
+
+## autolink/bare-glued-group
+
+spec: syntax-inline#autolinks syntax-blocks#positions
+
+`{` stops a bare URL, and a strong group glued there attaches to the link.
+
+````tern
+https://x.org{.ext}
+````
+
+````html
+<p><a href="https://x.org" class="ext">https://x.org</a></p>
+````
+
+## autolink/bare-table-cell
+
+spec: syntax-inline#autolinks syntax-blocks#tables
+
+A bare URL never consumes `|`, so the row keeps its cells.
+
+````tern
+| URL | Note |
+|---|---|
+|https://a.b|note|
+````
+
+````html
+<table><thead><tr><th>URL</th><th>Note</th></tr></thead><tbody><tr><td><a href="https://a.b">https://a.b</a></td><td>note</td></tr></tbody></table>
+````
+
+## autolink/bare-literal-escape
+
+spec: syntax-inline#autolinks syntax-inline#ambiguity syntax-inline#escape
+
+`https\://` is the literal spelling.
+
+````tern
+https\://x.org
+````
+
+````html
+<p>https://x.org</p>
+````
+
+## autolink/bare-in-code-and-math
+
+spec: syntax-inline#autolinks syntax-inline#ambiguity
+
+Inside code or math a URL is not a link.
+
+````tern
+`https://x.org` and $https://x.org$
+````
+
+````html
+<p><code>https://x.org</code> and <span class="t-math">https://x.org</span></p>
+````
+
+## autolink/bare-ampersand
+
+spec: syntax-inline#autolinks syntax-inline#soft-break
+
+`&` in a bare URL is escaped in both the `href` and the text.
+
+````tern
+https://a.b/?x=1&y=2
+````
+
+````html
+<p><a href="https://a.b/?x=1&amp;y=2">https://a.b/?x=1&amp;y=2</a></p>
+````
+
+## autolink/bare-trims-mark-closer
+
+spec: syntax-inline#autolinks syntax-inline#strike-highlight
+
+`~` and `=` are in the bare-URL trim set, so the URL gives back a closing `==` or `~~` and a highlighted or struck-through URL is a link inside `<mark>` or `<del>`.
+
+````tern
+==https://x.org==
+
+~~https://x.org~~
+````
+
+````html
+<p><mark><a href="https://x.org">https://x.org</a></mark></p>
+<p><del><a href="https://x.org">https://x.org</a></del></p>
+````
+
+## autolink/bare-trims-backslash
+
+spec: syntax-inline#autolinks syntax-inline#escape
+
+`\` is in the bare-URL trim set, so a URL at the end of a line does not swallow a hard break's `\`.
+
+````tern
+See https://x.org\
+next line
+````
+
+````html
+<p>See <a href="https://x.org">https://x.org</a><br>
+next line</p>
+````
+
+## autolink/bare-after-raw-tag
+
+spec: syntax-inline#autolinks syntax-inline#raw-inline-html
+
+`>` is in the bare-URL start set, so a URL right after an inline raw tag links; `<` stops it before the end tag.
+
+````tern
+<b>https://x.org</b>
+````
+
+````html
+<p><b><a href="https://x.org">https://x.org</a></b></p>
+````
+
+## autolink/bare-scheme-case-insensitive
+
+spec: syntax-inline#autolinks
+
+The scheme is matched case-insensitively; the URL is used as written.
+
+````tern
+HTTPS://x.org and Http://y.org
+````
+
+````html
+<p><a href="HTTPS://x.org">HTTPS://x.org</a> and <a href="Http://y.org">Http://y.org</a></p>
+````
+
+## autolink/bare-scheme-alone-text
+
+spec: syntax-inline#autolinks syntax-inline#ambiguity
+
+A scheme with nothing after it is not a link: `http://` alone, or followed only by characters that trimming removes, is text.
+
+````tern
+Type http:// or https://. first.
+````
+
+````html
+<p>Type http:// or https://. first.</p>
+````

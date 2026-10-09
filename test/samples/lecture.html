@@ -1,0 +1,87 @@
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+
+:::meta
+title: Linear maps: kernel, image and rank
+lang: en
+author: O. Carrera
+date: 2026-10-07
+:::
+
+# Linear maps: kernel, image and rank
+
+{.byline}
+Lecture 7 · O. Carrera · 7 October 2026
+
+::toc{depth=2}
+
+:::macros
+\gdef\R{\mathbb{R}}
+\gdef\im{\operatorname{im}}
+\gdef\norm#1{\lVert #1 \rVert}
+:::
+
+## Definitions {#defs}
+
+:::definition[Kernel and image]{#def-kernel}
+For a linear map $T: V \to W$ the **kernel** is $\ker T = \{\, v \in V : Tv = 0 \,\}$ and the
+**image** is $\im T = \{\, Tv : v \in V \,\}$. Both are subspaces.[^subspace]
+:::
+
+[^subspace]: Closed under addition and scaling: if $Tu = Tv = 0$ then
+  $T(u + \lambda v) = 0$ for every scalar $\lambda$.
+
+:::definition[Rank and nullity]{#def-rank}
+$\operatorname{rank} T = \dim \im T$ and $\operatorname{null} T = \dim \ker T$.
+:::
+
+Notation is cheap. The sum $\sum_{i=1}^{n} x_i^*$ adds the optimum $x_i^*$ of every
+coordinate; evaluating it on the department cluster costs $5 per term, or $10 at peak
+hours. The $0$th coordinate is the bias, the norm $\norm{x}$ is never $\$$-valued, the
+interval $`]0,1[` is open, and `$HOME` is a shell variable, not maths.
+
+## Two theorems {#theorems}
+
+:::theorem[Rank–nullity]{#thm-rank-nullity}
+If $V$ is finite-dimensional then
+$$
+\dim V = \dim \ker T + \dim \im T.
+$$ {#eq-rank-nullity}
+:::
+
+:::proof
+Pick a basis $k_1, \dots, k_m$ of $\ker T$ and extend it to a basis
+$k_1, \dots, k_m, v_1, \dots, v_r$ of $V$. The vectors $Tv_1, \dots, Tv_r$ span $\im T$, and
+they are independent: if
+$$
+\sum_{j=1}^{r} a_j\, Tv_j = 0
+$$
+then $\sum_j a_j v_j \in \ker T$, so every $a_j = 0$. Counting gives @eq-rank-nullity.
+:::
+
+:::lemma[Injectivity test]{#lem-inj}
+$T$ is injective exactly when $\ker T = \{0\}$.
+:::
+
+:::theorem[Dimension and bijectivity]{#thm-bij}
+Let $\dim V = \dim W < \infty$. Then $T$ is injective if and only if it is surjective.
+:::
+
+:::proof
+By @lem-inj, the @lem-inj{ref=title}, $T$ is injective iff $\dim \ker T = 0$. By
+@thm-rank-nullity that holds iff $\dim \im T = \dim V = \dim W$, iff $T$ is surjective.
+Equation @eq-rank-nullity does all the work; compare @eq-bound, which only bounds the rank:
+$$
+\operatorname{rank} T \le \min(\dim V, \dim W).
+$$ {#eq-bound}
+:::/proof
+
+:::figure[The kernel (plane) and image (line) of a rank-one map $\R^3 \to \R^3$.]{#fig-kernel}
+![A plane through the origin, and a line through it, in 3-space](fig/kernel-image.svg){width=60%}
+:::
+
+As @fig-kernel shows, @thm-rank-nullity says the two pictures add up to three dimensions.
+
+:::recall[When is a square matrix invertible?]
+When its determinant is nonzero; equivalently, by @thm-bij, when its kernel is trivial.
+:::
+

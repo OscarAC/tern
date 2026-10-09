@@ -1,0 +1,598 @@
+# Numbering and references
+
+Numbering and references: counters shared by name, document
+order, equations numbered only with an id, labels, the default reference
+text, the `ref=` selector and validated fragment links. The fixture schema puts
+theorem, lemma, proposition and corollary on the counter `theorem` with
+`ref: '{label} {n}'`; definition, example and exercise have their own
+counters and no `ref` template.
+
+Also: a labelled target that is neither counted nor titled reads as
+its label; a `ref=` value outside `label|number|title|full` gets
+`attr.malformed` and the default text; a part the target lacks gives the
+default text silently; a fragment link to a missing id gets `ref.dangling` at
+its `[` and stays a link. Whether `within: 'h2'` renders "4" or "1.4" is a
+schema option the corpus leaves open, so no case here depends on it.
+
+## numbering/shared-counter
+
+spec: elements#numbering
+
+Names that share a counter share one sequence; each keeps its own label.
+
+````tern
+:::theorem
+A.
+:::
+
+:::lemma
+B.
+:::
+
+:::theorem
+C.
+:::
+````
+
+````html
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div><p>A.</p></section>
+<section class="t-block lemma" data-t="lemma"><div class="t-title"><span class="t-label">Lemma 2</span></div><p>B.</p></section>
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 3</span></div><p>C.</p></section>
+````
+
+## numbering/own-counters
+
+spec: elements#numbering
+
+Different counters count independently.
+
+````tern
+:::definition
+A.
+:::
+
+:::theorem
+B.
+:::
+
+:::definition
+C.
+:::
+
+:::example
+D.
+:::
+````
+
+````html
+<section class="t-block definition" data-t="definition"><div class="t-title"><span class="t-label">Definition 1</span></div><p>A.</p></section>
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div><p>B.</p></section>
+<section class="t-block definition" data-t="definition"><div class="t-title"><span class="t-label">Definition 2</span></div><p>C.</p></section>
+<section class="t-block example" data-t="example"><div class="t-title"><span class="t-label">Example 1</span></div><p>D.</p></section>
+````
+
+## numbering/document-order-nested
+
+spec: elements#numbering
+
+Numbers follow document order: an outer block is numbered at its opener, before the blocks nested in it.
+
+````tern
+:::theorem
+:::lemma
+Inner.
+:::
+Outer.
+:::
+
+:::corollary
+After.
+:::
+````
+
+````html
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div><section class="t-block lemma" data-t="lemma"><div class="t-title"><span class="t-label">Lemma 2</span></div><p>Inner.</p></section><p>Outer.</p></section>
+<section class="t-block corollary" data-t="corollary"><div class="t-title"><span class="t-label">Corollary 3</span></div><p>After.</p></section>
+````
+
+## numbering/forward-reference
+
+spec: elements#numbering elements#references
+
+A reference before its target gets the target's document-order number.
+
+````tern
+By @thm-b, done.
+
+:::theorem{#thm-a}
+:::
+
+:::theorem{#thm-b}
+:::
+````
+
+````html
+<p>By <a class="t-ref" href="#thm-b">Theorem 2</a>, done.</p>
+<section id="thm-a" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div></section>
+<section id="thm-b" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 2</span></div></section>
+````
+
+## numbering/labelled-not-counted
+
+spec: elements#numbering elements#title-slots
+
+A labelled name without a counter (Proof) gets its label and no number, and takes no number from any counter.
+
+````tern
+:::proof
+Trivial.
+:::
+
+:::theorem
+A.
+:::
+````
+
+````html
+<section class="t-block proof" data-t="proof"><div class="t-title"><span class="t-label">Proof</span></div><p>Trivial.</p><span class="t-end" aria-hidden="true">∎</span></section>
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div><p>A.</p></section>
+````
+
+## numbering/equations-need-id
+
+spec: elements#numbering syntax-blocks#display-math
+
+Only equations with an id are numbered, on the counter `equation`, in document order.
+
+````tern
+$$ a $$
+
+$$ b $$ {#eq-b}
+
+$$
+c
+$$ {#eq-c}
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>a</span></div>
+<div id="eq-b" class="t-eq"><span class="t-math" data-display>b</span><span class="t-eqno">(1)</span></div>
+<div id="eq-c" class="t-eq"><span class="t-math" data-display>c</span><span class="t-eqno">(2)</span></div>
+````
+
+## numbering/listings-titled-only
+
+spec: elements#numbering syntax-blocks#fence elements#references
+
+Titled fences are listings on the counter `code`, numbered with or without an id; an untitled fence takes no number.
+
+`````tern
+```js[First]
+a();
+```
+
+```js
+b();
+```
+
+```js[Second]{#lst-2}
+c();
+```
+
+See @lst-2.
+`````
+
+````html
+<figure class="t-block code" data-t="code"><pre><code class="language-js">a();</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> First</figcaption></figure>
+<pre data-t="code"><code class="language-js">b();</code></pre>
+<figure id="lst-2" class="t-block code" data-t="code"><pre><code class="language-js">c();</code></pre><figcaption class="t-title"><span class="t-label">Listing 2</span> Second</figcaption></figure>
+<p>See <a class="t-ref" href="#lst-2">Listing 2</a>.</p>
+````
+
+## numbering/figures-share-counter
+
+spec: elements#numbering elements#figures
+
+Explicit and implicit figures are one name, `figure`, on one counter.
+
+````tern
+:::figure[First]{#fig-a}
+Body.
+:::
+
+![Second](b.jpg){#fig-b}
+````
+
+````html
+<figure id="fig-a" class="t-block figure" data-t="figure"><p>Body.</p><figcaption class="t-title"><span class="t-label">Figure 1</span> First</figcaption></figure>
+<figure id="fig-b" class="t-block figure" data-t="figure"><img src="b.jpg" alt=""><figcaption class="t-title"><span class="t-label">Figure 2</span> Second</figcaption></figure>
+````
+
+## numbering/table-caption-label
+
+spec: elements#numbering elements#table-caption elements#title-slots elements#references
+
+A `:::table` caption carries the schema's label "Table 1", and a reference to it reads the same.
+
+````tern
+:::table[Phases]{#tbl-phases}
+| Phase | Weeks |
+|---|---|
+| P2 | 2 |
+:::
+
+See @tbl-phases.
+````
+
+````html
+<table id="tbl-phases" class="t-block table" data-t="table"><caption class="t-title"><span class="t-label">Table 1</span> Phases</caption><thead><tr><th>Phase</th><th>Weeks</th></tr></thead><tbody><tr><td>P2</td><td>2</td></tr></tbody></table>
+<p>See <a class="t-ref" href="#tbl-phases">Table 1</a>.</p>
+````
+
+## numbering/data-tern-fields
+
+spec: elements#numbering elements#references
+
+The transforms record the tag, counter, number and label text under `data.tern`, and fill the `ref` node's children with the target's text.
+
+````tern
+:::theorem{#t1}
+:::
+
+See @t1.
+````
+
+````json transformed
+{"children":[
+ {"type":"containerDirective","name":"theorem",
+  "data":{"tern":{"tag":"section","counter":"theorem","number":1,"text":"Theorem 1"}}},
+ {"type":"paragraph","children":[
+  {"type":"text","value":"See "},
+  {"type":"ref","id":"t1","children":[{"type":"text","value":"Theorem 1"}],"data":{"tern":{"resolved":true}}},
+  {"type":"text","value":"."}]}]}
+````
+
+## numbering/equation-data
+
+spec: elements#numbering syntax-blocks#display-math
+
+A numbered equation records its number and the text `(n)` under `data.tern`.
+
+````tern
+$$ x $$ {#eq-x}
+````
+
+````json transformed
+{"children":[{"type":"math","value":"x","attributes":{"id":"eq-x"},"data":{"tern":{"number":1,"text":"(1)"}}}]}
+````
+
+## numbering/ref-counted-titled-default
+
+spec: elements#references
+
+The default text for a counted block is `{label} {n}`, even when it has a title.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+:::
+
+By @thm-rn.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div></section>
+<p>By <a class="t-ref" href="#thm-rn">Theorem 1</a>.</p>
+````
+
+## numbering/ref-counted-without-template
+
+spec: elements#references
+
+A counted block whose schema entry has no `ref` template uses the default `{label} {n}`.
+
+````tern
+:::definition{#def-ker}
+The kernel.
+:::
+
+By @def-ker.
+````
+
+````html
+<section id="def-ker" class="t-block definition" data-t="definition"><div class="t-title"><span class="t-label">Definition 1</span></div><p>The kernel.</p></section>
+<p>By <a class="t-ref" href="#def-ker">Definition 1</a>.</p>
+````
+
+## numbering/ref-equation
+
+spec: elements#references syntax-blocks#display-math
+
+The default text for an equation is `({n})`.
+
+````tern
+$$ E = mc^2 $$ {#eq-e}
+
+By @eq-e.
+````
+
+````html
+<div id="eq-e" class="t-eq"><span class="t-math" data-display>E = mc^2</span><span class="t-eqno">(1)</span></div>
+<p>By <a class="t-ref" href="#eq-e">(1)</a>.</p>
+````
+
+## numbering/ref-heading-inline-content
+
+spec: elements#references syntax-inline#reference
+
+A reference to a heading reads the heading's inline content, markup and math included.
+
+````tern
+## The *map* $T$ {#map}
+
+See @map.
+````
+
+````html
+<h2 id="map">The <em>map</em> <span class="t-math">T</span></h2>
+<p>See <a class="t-ref" href="#map">The <em>map</em> <span class="t-math">T</span></a>.</p>
+````
+
+## numbering/ref-heading-slug
+
+spec: elements#references elements#ids
+
+A heading's slug is an id like any other, so `@results` resolves to it.
+
+````tern
+## Results
+
+As @results shows.
+````
+
+````html
+<h2 id="results">Results</h2>
+<p>As <a class="t-ref" href="#results">Results</a> shows.</p>
+````
+
+## numbering/ref-titled-not-counted
+
+spec: elements#references
+
+A titled block that is not counted is referenced by its title, even when it has a label.
+
+````tern
+:::warning[Hot surface]{#hot}
+Do not touch.
+:::
+
+Mind @hot.
+````
+
+````html
+<div id="hot" class="t-block warning" data-t="warning"><div class="t-title"><span class="t-label">Warning</span> Hot surface</div><p>Do not touch.</p></div>
+<p>Mind <a class="t-ref" href="#hot">Hot surface</a>.</p>
+````
+
+## numbering/ref-anything-else-id
+
+spec: elements#references
+
+A target that is neither counted, an equation, a heading nor titled is referenced by its id.
+
+````tern
+A [key term]{#term} here.
+
+See @term.
+````
+
+````html
+<p>A <span id="term">key term</span> here.</p>
+<p>See <a class="t-ref" href="#term">term</a>.</p>
+````
+
+## numbering/ref-labelled-untitled-uncounted
+
+spec: elements#references
+
+A labelled target that is neither counted nor titled (an untitled Proof) reads as its label, "Proof", a row of the default-text table.
+
+````tern
+:::proof{#pf}
+Trivial.
+:::
+
+As in @pf.
+````
+
+````html
+<section id="pf" class="t-block proof" data-t="proof"><div class="t-title"><span class="t-label">Proof</span></div><p>Trivial.</p><span class="t-end" aria-hidden="true">∎</span></section>
+<p>As in <a class="t-ref" href="#pf">Proof</a>.</p>
+````
+
+## numbering/ref-select-label
+
+spec: elements#references syntax-inline#reference
+
+`ref=label` gives the label and number.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+:::
+
+See @thm-rn{ref=label}.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div></section>
+<p>See <a class="t-ref" href="#thm-rn">Theorem 1</a>.</p>
+````
+
+## numbering/ref-select-number
+
+spec: elements#references syntax-inline#reference
+
+`ref=number` gives the number alone.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+:::
+
+See @thm-rn{ref=number}.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div></section>
+<p>See <a class="t-ref" href="#thm-rn">1</a>.</p>
+````
+
+## numbering/ref-select-title
+
+spec: elements#references syntax-inline#reference
+
+`ref=title` gives the title.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+:::
+
+See @thm-rn{ref=title}.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div></section>
+<p>See <a class="t-ref" href="#thm-rn">Rank–nullity</a>.</p>
+````
+
+## numbering/ref-select-full
+
+spec: elements#references syntax-inline#reference
+
+`ref=full` gives the label, the number and the title in parentheses.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+:::
+
+See @thm-rn{ref=full}.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div></section>
+<p>See <a class="t-ref" href="#thm-rn">Theorem 1 (Rank–nullity)</a>.</p>
+````
+
+## numbering/ref-select-number-equation
+
+spec: elements#references
+
+`ref=number` on an equation gives the bare number, without the parentheses of its default text.
+
+````tern
+$$ x $$ {#eq-x}
+
+Equation @eq-x{ref=number}.
+````
+
+````html
+<div id="eq-x" class="t-eq"><span class="t-math" data-display>x</span><span class="t-eqno">(1)</span></div>
+<p>Equation <a class="t-ref" href="#eq-x">1</a>.</p>
+````
+
+## numbering/ref-select-missing-part
+
+spec: elements#references syntax-inline#reference
+
+`ref=title` on a target without a title asks for a part it lacks: the reference gets the default text, silently.
+
+````tern
+:::theorem{#thm-u}
+:::
+
+See @thm-u{ref=title}.
+````
+
+````html
+<section id="thm-u" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div></section>
+<p>See <a class="t-ref" href="#thm-u">Theorem 1</a>.</p>
+````
+
+````diagnostics
+````
+
+## numbering/ref-select-unknown-value
+
+spec: elements#references syntax-inline#reference syntax-blocks#merging-and-emission diagnostics#attr-malformed
+
+A `ref=` value other than `label`, `number`, `title` or `full` gets `attr.malformed` (W) at the first rejected character, the value's first letter, and the reference keeps its default text.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+:::
+
+See @thm-rn{ref=name}.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div></section>
+<p>See <a class="t-ref" href="#thm-rn">Theorem 1</a>.</p>
+````
+
+````diagnostics
+4:17 warning attr.malformed
+````
+
+## numbering/fragment-link-valid
+
+spec: elements#references
+
+A fragment link to an existing id is an ordinary link with the author's text, and is silent.
+
+````tern
+## Results
+
+See [the results](#results).
+````
+
+````html
+<h2 id="results">Results</h2>
+<p>See <a href="#results">the results</a>.</p>
+````
+
+````diagnostics
+````
+
+## numbering/fragment-link-dangling
+
+spec: elements#references syntax-inline#reference syntax-blocks#r7
+
+A fragment link to a missing id gets `ref.dangling` at the link's `[`; unlike an unresolved `@id`, it stays a link.
+
+````tern
+See [the proof](#nowhere).
+````
+
+````html
+<p>See <a href="#nowhere">the proof</a>.</p>
+````
+
+````diagnostics
+1:5 warning ref.dangling
+````
+
+## numbering/ref-unresolved-literal
+
+spec: elements#references syntax-inline#reference syntax-blocks#r7
+
+An unresolved `@name` stays literal text, with `ref.dangling` at the `@` and a hint to escape it.
+
+````tern
+Ask @alice.
+````
+
+````html
+<p>Ask @alice.</p>
+````
+
+````diagnostics
+1:5 warning ref.dangling "\@alice"
+````

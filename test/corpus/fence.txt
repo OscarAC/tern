@@ -1,0 +1,1041 @@
+# Fenced code and the raw HTML fence
+
+Cases for the fence opener and its info string, the closing fence, verbatim and
+dedented content, titled fences as numbered listings, the reserved keys, unclosed
+fences inside prefix containers, and the ```` ```=html ```` door.
+
+## fence/basic
+
+spec: syntax-blocks#fence elements#output-contract
+
+A backtick fence with a language: the content is verbatim and HTML-escaped, and the language becomes `language-LANG` on `<code>`.
+
+````tern
+```js
+if (a < b && c) { go(); }
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"code","lang":"js","value":"if (a < b && c) { go(); }"}]}
+````
+
+````html
+<pre data-t="code"><code class="language-js">if (a &lt; b &amp;&amp; c) { go(); }</code></pre>
+````
+
+## fence/untitled-attrs-on-pre
+
+spec: syntax-blocks#fence syntax-blocks#positions syntax-blocks#merging-and-emission
+
+The fenced-code example: an untitled fence puts author attributes on `<pre>`; `lines` wraps each line and `start` adds `data-start`, and neither is emitted as an attribute.
+
+````tern
+```python {start=10 lines .wide}
+def take(it, n):
+    return [x for _, x in zip(range(n), it)]
+```
+````
+
+````html
+<pre class="wide" data-t="code" data-lines data-start="10"><code class="language-python"><span class="t-line">def take(it, n):</span>
+<span class="t-line">    return [x for _, x in zip(range(n), it)]</span></code></pre>
+````
+
+## fence/title-attrs-listing
+
+spec: syntax-blocks#fence elements#output-contract elements#numbering
+
+The titled-fence example: a titled fence is a numbered listing, `figure.t-block.code` with the id on the figure, the reserved keys on `<pre>`, and the label from the schema's `code` entry.
+
+````tern
+```js[A lazy Fibonacci generator]{#lst-fib lines hl=4}
+function* fib() {
+  let [a, b] = [0, 1];
+  for (;;) {
+    yield a;
+    [a, b] = [b, a + b];
+  }
+}
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"code","lang":"js","attributes":{"id":"lst-fib"},"data":{"tern":{"title":[{"type":"text","value":"A lazy Fibonacci generator"}]}}}]}
+````
+
+````html
+<figure id="lst-fib" class="t-block code" data-t="code"><pre data-lines data-hl="4"><code class="language-js"><span class="t-line">function* fib() {</span>
+<span class="t-line">  let [a, b] = [0, 1];</span>
+<span class="t-line">  for (;;) {</span>
+<span class="t-line t-hl">    yield a;</span>
+<span class="t-line">    [a, b] = [b, a + b];</span>
+<span class="t-line">  }</span>
+<span class="t-line">}</span></code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> A lazy Fibonacci generator</figcaption></figure>
+````
+
+## fence/title-inline-content
+
+spec: syntax-blocks#fence
+
+The title is inline content, kept as `code.data.tern.title`, and rendered after the label in the figcaption.
+
+````tern
+```js[The *fast* path]
+x
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"code","lang":"js","value":"x","data":{"tern":{"title":[{"type":"text","value":"The "},{"type":"emphasis","children":[{"type":"text","value":"fast"}]},{"type":"text","value":" path"}]}}}]}
+````
+
+````html
+<figure class="t-block code" data-t="code"><pre><code class="language-js">x</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> The <em>fast</em> path</figcaption></figure>
+````
+
+## fence/title-spaced-parts
+
+spec: syntax-blocks#fence
+
+Spaces are allowed between the language, the title and the group; on a titled fence, author classes go on the figure after `t-block code`.
+
+````tern
+```js [Setup] {#lst-s .wide}
+x
+```
+````
+
+````html
+<figure id="lst-s" class="t-block code wide" data-t="code"><pre><code class="language-js">x</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> Setup</figcaption></figure>
+````
+
+## fence/title-math-skipped
+
+spec: syntax-blocks#fence syntax-inline#inline-math
+
+Math inside the title is skipped when matching brackets, so the `]` inside `$f]$` does not end the title.
+
+````tern
+```py[Bound $f]$ checked]
+x
+```
+````
+
+````html
+<figure class="t-block code" data-t="code"><pre><code class="language-py">x</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> Bound <span class="t-math">f]</span> checked</figcaption></figure>
+````
+
+## fence/tilde-title-code-skipped
+
+spec: syntax-blocks#fence syntax-inline#code-span syntax-blocks#r8
+
+A tilde fence's info may contain backticks, so its title can hold a code span, and the `]` inside the span does not end the title.
+
+````tern
+~~~js[Reads `a]`]
+x
+~~~
+````
+
+````html
+<figure class="t-block code" data-t="code"><pre><code class="language-js">x</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> Reads <code>a]</code></figcaption></figure>
+````
+
+## fence/title-schema-none
+
+spec: syntax-blocks#fence elements#title-slots
+options: schema=none
+
+Without a schema entry `code` a titled fence is still the listing figure, but it has no label and no number.
+
+````tern
+```js[Setup]
+x
+```
+````
+
+````html
+<figure class="t-block code" data-t="code"><pre><code class="language-js">x</code></pre><figcaption class="t-title">Setup</figcaption></figure>
+````
+
+## fence/listings-numbered
+
+spec: syntax-blocks#fence elements#numbering
+
+Titled fences are numbered in document order on the `code` counter; an untitled fence is not a listing and takes no number.
+
+````tern
+```js[First]
+a
+```
+
+```js
+b
+```
+
+```js[Second]
+c
+```
+````
+
+````html
+<figure class="t-block code" data-t="code"><pre><code class="language-js">a</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> First</figcaption></figure>
+<pre data-t="code"><code class="language-js">b</code></pre>
+<figure class="t-block code" data-t="code"><pre><code class="language-js">c</code></pre><figcaption class="t-title"><span class="t-label">Listing 2</span> Second</figcaption></figure>
+````
+
+## fence/listing-ref
+
+spec: syntax-blocks#fence elements#references syntax-inline#reference
+
+A titled fence with an id is referenceable, and `@id` renders the listing's label.
+
+````tern
+```js[Setup]{#lst-a}
+x
+```
+
+See @lst-a.
+````
+
+````html
+<figure id="lst-a" class="t-block code" data-t="code"><pre><code class="language-js">x</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> Setup</figcaption></figure>
+<p>See <a class="t-ref" href="#lst-a">Listing 1</a>.</p>
+````
+
+## fence/attrs-only
+
+spec: syntax-blocks#fence syntax-blocks#positions
+
+An info string that is only an attribute group (after spaces) gives a fence with no language, its attributes on `<pre>`, and no `class` on `<code>`.
+
+````tern
+``` {#setup .x}
+x
+```
+````
+
+````html
+<pre id="setup" class="x" data-t="code"><code>x</code></pre>
+````
+
+## fence/info-leading-space
+
+spec: syntax-blocks#fence
+
+A space between the backticks and the language is allowed, as in CommonMark: the language may follow spaces after the backticks.
+
+````tern
+``` js
+x
+```
+````
+
+````html
+<pre data-t="code"><code class="language-js">x</code></pre>
+````
+
+## fence/tilde
+
+spec: syntax-blocks#fence syntax-blocks#r8
+
+A tilde fence is accepted; it is closed only by tildes, so a backtick fence line inside it is code.
+
+````tern
+~~~markdown
+```
+inside
+```
+~~~
+````
+
+````html
+<pre data-t="code"><code class="language-markdown">```
+inside
+```</code></pre>
+````
+
+## fence/longer-encloses-shorter
+
+spec: syntax-blocks#fence
+
+A four-backtick fence encloses a three-backtick one: the shorter runs are content, because a closer needs at least as many backticks as the opener.
+
+`````tern
+````md
+```js
+x
+```
+````
+`````
+
+````html
+<pre data-t="code"><code class="language-md">```js
+x
+```</code></pre>
+````
+
+## fence/closer-longer
+
+spec: syntax-blocks#fence
+
+A closing run longer than the opener still closes the fence.
+
+``````tern
+```
+a
+`````
+``````
+
+````html
+<pre data-t="code"><code>a</code></pre>
+````
+
+## fence/closer-with-info-is-content
+
+spec: syntax-blocks#fence
+
+A closing fence holds the fence characters and nothing else, so a backtick line with a language inside a fence is content.
+
+````tern
+```
+```js
+```
+````
+
+````html
+<pre data-t="code"><code>```js</code></pre>
+````
+
+## fence/closer-indentation-ignored
+
+spec: syntax-blocks#fence syntax-blocks#r2
+
+The closing fence's indentation is ignored, however deep: there are no indented code blocks.
+
+````tern
+```
+a
+        ```
+````
+
+````html
+<pre data-t="code"><code>a</code></pre>
+````
+
+## fence/trailing-whitespace
+
+spec: syntax-blocks#fence syntax-blocks#r3 syntax-blocks#lines
+options: escaped
+
+Content lines keep their trailing spaces (verbatim body), and a closing fence followed by spaces still closes (no trailing-whitespace semantics).
+
+````tern
+```
+a\u0020\u0020
+```\u0020\u0020
+````
+
+````html
+<pre data-t="code"><code>a  </code></pre>
+````
+
+## fence/dedent-by-opener
+
+spec: syntax-blocks#fence syntax-blocks#r2
+
+Content is dedented by up to the opener's indentation: deeper lines keep the rest, shallower lines lose only what they have.
+
+````tern
+  ```
+  a
+      b
+ c
+d
+  ```
+````
+
+````html
+<pre data-t="code"><code>a
+    b
+c
+d</code></pre>
+````
+
+## fence/dedent-tab
+
+spec: syntax-blocks#fence syntax-blocks#columns
+options: escaped
+
+A tab advances to the next multiple of 4 when dedenting, so a leading tab under a fence indented four spaces is removed.
+
+````tern
+    ```
+\tx
+    ```
+````
+
+````html
+<pre data-t="code"><code>x</code></pre>
+````
+
+## fence/dedent-partial-tab
+
+spec: syntax-blocks#fence syntax-blocks#columns
+options: escaped
+
+A tab only partly removed by the dedent leaves its remaining columns as spaces (CommonMark): under a fence indented two spaces, a leading tab (four columns) becomes two spaces.
+
+````tern
+  ```
+\tx
+  ```
+````
+
+````html
+<pre data-t="code"><code>  x</code></pre>
+````
+
+## fence/dedent-in-container
+
+spec: syntax-blocks#fence syntax-blocks#r2 syntax-blocks#container
+
+Container bodies may be indented freely; a fence indented inside one is dedented by its own indentation, so the code keeps its relative indentation.
+
+````tern
+:::box
+  ```py
+  if x:
+      y()
+  ```
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<pre data-t="code"><code class="language-py">if x:
+    y()</code></pre>
+</div>
+````
+
+## fence/inside-list-dedent
+
+spec: syntax-blocks#fence syntax-blocks#lists syntax-blocks#r2
+
+A fence inside a list item interrupts the item's paragraph, and its content loses the item's indentation but keeps anything deeper.
+
+````tern
+- Build it:
+  ```sh
+  make all
+    --jobs 4
+  ```
+- Done.
+````
+
+````html
+<ul>
+<li>Build it:<pre data-t="code"><code class="language-sh">make all
+  --jobs 4</code></pre></li>
+<li>Done.</li>
+</ul>
+````
+
+## fence/verbatim-tern-lines
+
+spec: syntax-blocks#fence syntax-blocks#r1
+
+Inside a fence, `:::`, `$$`, `#`, `+++`, `::leaf`, raw HTML and blank lines are code: nothing is classified and no id is registered.
+
+````tern
+```tern
+:::note[Title]{#n}
+$$
+
+# Not a heading
++++
+::toc
+<div>
+:::
+```
+````
+
+````html
+<pre data-t="code"><code class="language-tern">:::note[Title]{#n}
+$$
+
+# Not a heading
++++
+::toc
+&lt;div&gt;
+:::</code></pre>
+````
+
+## fence/interrupts-paragraph
+
+spec: syntax-blocks#fence syntax-blocks#line-algorithm syntax-blocks#paragraph
+
+A fence opener interrupts a paragraph.
+
+````tern
+Run this:
+```sh
+make
+```
+````
+
+````html
+<p>Run this:</p>
+<pre data-t="code"><code class="language-sh">make</code></pre>
+````
+
+## fence/backtick-in-info-is-code-span
+
+spec: syntax-blocks#fence syntax-inline#code-span
+
+In a backtick fence the info may not contain a backtick; such a line is a paragraph holding a code span.
+
+````tern
+``` aa ```
+foo
+````
+
+````html
+<p><code>aa</code>
+foo</p>
+````
+
+## fence/escaped-opener
+
+spec: syntax-blocks#fence syntax-inline#escapes
+
+`` \``` `` at the start of a line is text, so the line and the next one form a paragraph.
+
+````tern
+\```
+not code
+````
+
+````html
+<p>```
+not code</p>
+````
+
+## fence/info-junk-word
+
+spec: syntax-blocks#fence diagnostics#fence-info-junk
+
+A word after the language is junk: `fence.info-junk` at its column, the fence still opens with its language, and the junk alone is kept in `data-meta` on `<pre>`.
+
+````tern
+```js extra
+x
+```
+````
+
+````html
+<pre data-t="code" data-meta="extra"><code class="language-js">x</code></pre>
+````
+
+````diagnostics
+1:7 warning fence.info-junk
+````
+
+## fence/info-junk-unclosed-title
+
+spec: syntax-blocks#fence diagnostics#fence-info-junk
+
+A `[` that never closes is not a title: everything from it is junk, kept in `data-meta` on `<pre>`, and the fence opens untitled with its language.
+
+````tern
+```js[Title
+x
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"code","lang":"js","value":"x"}]}
+````
+
+````html
+<pre data-t="code" data-meta="[Title"><code class="language-js">x</code></pre>
+````
+
+````diagnostics
+1:6 warning fence.info-junk
+````
+
+## fence/info-junk-order
+
+spec: syntax-blocks#fence diagnostics#fence-info-junk
+
+The parts come in order (language, title, group), so a title after the group is junk.
+
+````tern
+```js {.x} [T]
+x
+```
+````
+
+````diagnostics
+1:12 warning fence.info-junk
+````
+
+## fence/info-junk-bad-group
+
+spec: syntax-blocks#fence syntax-blocks#positions diagnostics#fence-info-junk
+
+A group that does not parse at the end of a fence opener is junk (`fence.info-junk` at the `{`), not `attr.malformed`, and is kept as written in `data-meta`.
+
+````tern
+```js {.x y=}
+x
+```
+````
+
+````html
+<pre data-t="code" data-meta="{.x y=}"><code class="language-js">x</code></pre>
+````
+
+````diagnostics
+1:7 warning fence.info-junk
+````
+
+## fence/info-junk-then-group
+
+spec: syntax-blocks#fence syntax-blocks#positions diagnostics#fence-info-junk
+
+Junk between the language and a trailing group is reported at the junk's first column. A group after junk is junk too: `{.x}` does not bind, and `data-meta` holds `extra {.x}`.
+
+````tern
+```js extra {.x}
+x
+```
+````
+
+````html
+<pre data-t="code" data-meta="extra {.x}"><code class="language-js">x</code></pre>
+````
+
+````diagnostics
+1:7 warning fence.info-junk
+````
+
+## fence/info-junk-titled
+
+spec: syntax-blocks#fence diagnostics#fence-info-junk
+
+On a titled fence the junk goes in `data-meta` on the `<figure>`, not on `<pre>`; the title and the listing are kept.
+
+````tern
+```js[Setup] extra
+x
+```
+````
+
+````html
+<figure class="t-block code" data-t="code" data-meta="extra"><pre><code class="language-js">x</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> Setup</figcaption></figure>
+````
+
+````diagnostics
+1:14 warning fence.info-junk
+````
+
+## fence/lines-hl
+
+spec: syntax-blocks#fence
+
+`hl` takes single lines and ranges; those lines get `t-hl`, and the value is copied to `data-hl`.
+
+````tern
+```txt{lines hl=2,4-5}
+a
+b
+c
+d
+e
+```
+````
+
+````html
+<pre data-t="code" data-lines data-hl="2,4-5"><code class="language-txt"><span class="t-line">a</span>
+<span class="t-line t-hl">b</span>
+<span class="t-line">c</span>
+<span class="t-line t-hl">d</span>
+<span class="t-line t-hl">e</span></code></pre>
+````
+
+## fence/hl-with-start
+
+spec: syntax-blocks#fence
+
+With `start=10`, the lines are numbered from 10, and `hl` counts the displayed numbers: `hl=11` is the second line.
+
+````tern
+```txt {lines start=10 hl=11}
+a
+b
+```
+````
+
+````html
+<pre data-t="code" data-lines data-start="10" data-hl="11"><code class="language-txt"><span class="t-line">a</span>
+<span class="t-line t-hl">b</span></code></pre>
+````
+
+## fence/hl-without-lines
+
+spec: syntax-blocks#fence
+
+`hl` without `lines` still wraps every line in `span.t-line` and marks the highlighted one; only `lines` adds `data-lines`.
+
+````tern
+```txt {hl=2}
+a
+b
+```
+````
+
+````html
+<pre data-t="code" data-hl="2"><code class="language-txt"><span class="t-line">a</span>
+<span class="t-line t-hl">b</span></code></pre>
+````
+
+## fence/start-without-lines
+
+spec: syntax-blocks#fence
+
+`start` without `lines` also wraps every line in `span.t-line` and adds `data-start`, but no `data-lines`.
+
+````tern
+```txt {start=5}
+a
+b
+```
+````
+
+````html
+<pre data-t="code" data-start="5"><code class="language-txt"><span class="t-line">a</span>
+<span class="t-line">b</span></code></pre>
+````
+
+## fence/attr-line-before
+
+spec: syntax-blocks#fence syntax-blocks#attribute-line
+
+An attribute line before an untitled fence puts its attributes on `<pre>`.
+
+````tern
+{.wide}
+```sh
+ls
+```
+````
+
+````html
+<pre class="wide" data-t="code"><code class="language-sh">ls</code></pre>
+````
+
+## fence/attr-line-before-titled
+
+spec: syntax-blocks#fence syntax-blocks#attribute-line
+
+An attribute line before a titled fence puts its attributes on the figure.
+
+````tern
+{.wide}
+```sh[Files in the build]
+ls
+```
+````
+
+````html
+<figure class="t-block code wide" data-t="code"><pre><code class="language-sh">ls</code></pre><figcaption class="t-title"><span class="t-label">Listing 1</span> Files in the build</figcaption></figure>
+````
+
+## fence/unclosed-runs-through-closer
+
+spec: syntax-blocks#fence syntax-blocks#closer diagnostics#block-unclosed-fence diagnostics#block-unclosed syntax-inline#residual-fences
+
+An unclosed fence runs through a `:::` closer to the end of the note, and the container it left open reports `block.unclosed` with a hint naming the fence.
+
+````tern
+:::box
+```js
+let x = 1;
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<pre data-t="code"><code class="language-js">let x = 1;
+:::</code></pre>
+</div>
+````
+
+````diagnostics
+2:1 error block.unclosed-fence
+1:1 error block.unclosed "the fence opened on line 2"
+````
+
+## fence/unclosed-in-quote
+
+spec: syntax-blocks#fence syntax-blocks#line-algorithm syntax-blocks#blockquote
+
+An unclosed fence inside a quote ends where the quote's prefix fails; the next line is not lazy (the open block was a fence) and starts a paragraph.
+
+````tern
+> ```
+> code
+after
+````
+
+````html
+<blockquote>
+<pre data-t="code"><code>code</code></pre>
+</blockquote>
+<p>after</p>
+````
+
+````diagnostics
+1:3 error block.unclosed-fence
+````
+
+## fence/unclosed-in-list-item
+
+spec: syntax-blocks#fence syntax-blocks#line-algorithm syntax-blocks#lists
+
+An unclosed fence inside a list item ends with the item, at the first line not indented to its content column.
+
+````tern
+- ```
+  code
+next
+````
+
+````html
+<ul>
+<li><pre data-t="code"><code>code</code></pre></li>
+</ul>
+<p>next</p>
+````
+
+````diagnostics
+1:3 error block.unclosed-fence
+````
+
+## fence/unclosed-list-closer-dedented
+
+spec: syntax-blocks#fence syntax-blocks#line-algorithm syntax-blocks#lists syntax-blocks#r2
+
+A closing fence below the item's content column is outside the item: the item's fence is unclosed, and the closer line opens a new fence that runs to the end of the note.
+
+````tern
+- ```
+  code
+```
+````
+
+````html
+<ul>
+<li><pre data-t="code"><code>code</code></pre></li>
+</ul>
+<pre data-t="code"><code></code></pre>
+````
+
+````diagnostics
+1:3 error block.unclosed-fence
+3:1 error block.unclosed-fence
+````
+
+## fence/unclosed-in-footnote
+
+spec: syntax-blocks#fence syntax-blocks#footnote-definition
+
+An unclosed fence inside a footnote definition ends with the definition, at the first line not indented 2 columns.
+
+````tern
+Text.[^n]
+
+[^n]: ```
+  code
+After.
+````
+
+````diagnostics
+3:7 error block.unclosed-fence
+````
+
+## fence/raw-html
+
+spec: syntax-blocks#html-fence elements#raw-html-scoping
+
+A ```` ```=html ```` fence emits its body verbatim with no `<pre>`, including phrasing-first content, blank lines and an omitted end tag.
+
+````tern
+```=html
+<span class="kicker">Part II</span>
+
+<p>Opening
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<span class=\"kicker\">Part II</span>\n\n<p>Opening","data":{"tern":{"kind":"fence"}}}]}
+````
+
+````html
+<span class="kicker">Part II</span>
+
+<p>Opening
+````
+
+## fence/raw-html-unbalanced-scoped
+
+spec: syntax-blocks#html-fence elements#raw-html-scoping
+
+Unbalanced HTML in a raw fence ends with the fence: the next paragraph is parsed as Tern.
+
+````tern
+```=html
+<div class="wrap">
+```
+
+*Tern* again.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div class=\"wrap\">","data":{"tern":{"kind":"fence"}}},{"type":"paragraph"}]}
+````
+
+````html
+<div class="wrap">
+<p><em>Tern</em> again.</p>
+````
+
+## fence/raw-html-title-or-attrs-junk
+
+spec: syntax-blocks#html-fence diagnostics#fence-info-junk
+
+A title or an attribute group on a raw HTML fence gets `fence.info-junk` at its first column.
+
+````tern
+```=html[Widget]
+<b>x</b>
+```
+
+```=html {.x}
+<i>y</i>
+```
+````
+
+````diagnostics
+1:9 warning fence.info-junk
+5:10 warning fence.info-junk
+````
+
+## fence/raw-html-info-junk-dropped
+
+spec: syntax-blocks#html-fence diagnostics#fence-info-junk
+
+An `=html` fence has no `<pre>`, so its info junk is not kept in `data-meta`: the message says it is dropped.
+
+````tern
+```=html {.box}
+<b>x</b>
+```
+````
+
+````html
+<b>x</b>
+````
+
+````diagnostics
+1:10 warning fence.info-junk "it is dropped"
+````
+
+## fence/raw-html-other-format
+
+spec: syntax-blocks#html-fence syntax-blocks#fence
+
+Any other info word starting with `=` makes an ordinary code fence, with class `language-FORMAT`, without the `=`.
+
+````tern
+```=latex
+\textbf{x}
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"code","value":"\\textbf{x}"}]}
+````
+
+````html
+<pre data-t="code"><code class="language-latex">\textbf{x}</code></pre>
+````
+
+## fence/raw-html-upper-case
+
+spec: syntax-blocks#html-fence syntax-blocks#fence
+
+Only lower-case `=html` is raw: ```` ```=HTML ```` is an ordinary code fence with class `language-HTML`, and its body is escaped code.
+
+````tern
+```=HTML
+<b>x</b>
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"code","value":"<b>x</b>"}]}
+````
+
+````html
+<pre data-t="code"><code class="language-HTML">&lt;b&gt;x&lt;/b&gt;</code></pre>
+````
+
+## fence/raw-html-unclosed
+
+spec: syntax-blocks#html-fence syntax-blocks#fence diagnostics#block-unclosed-fence
+
+An unclosed raw HTML fence ends like any fence, at the end of the note, with `block.unclosed-fence` at the opener. It is a fence, not a raw HTML comment or raw-text block, so the error block does not apply: the body is still emitted verbatim.
+
+````tern
+```=html
+<b>open
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<b>open","data":{"tern":{"kind":"fence"}}}]}
+````
+
+````html
+<b>open
+````
+
+````diagnostics
+1:1 error block.unclosed-fence
+````
+
+## fence/raw-html-attr-line
+
+spec: syntax-blocks#html-fence syntax-blocks#attribute-line
+
+An attribute line before a raw HTML fence stays text with `attributes.raw`, as before any raw HTML: the fence has no `<pre>` to carry it.
+
+````tern
+{.x}
+```=html
+<b>y</b>
+```
+````
+
+````html
+<p>{.x}</p>
+<b>y</b>
+````
+
+````diagnostics
+1:1 warning attributes.raw
+````

@@ -1,0 +1,82 @@
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+
+:::meta
+title: Project plan: Q4
+lang: en-GB
+author: O. Carrera
+date: 2026-10-07
+description: Phases, workstreams and exit criteria for the Tern rewrite
+:::
+
+# Project plan: Q4
+
+{.byline}
+O. Carrera · 7 October 2026
+
+:::aside[Contents]{#side-toc .sticky}
+::toc{depth=2}
+:::
+
+## Goals
+
+:::row{cols="2 1"}
+The engine is rewritten around one parser and one emitter. Every construct is positioned,
+every mistake is diagnosed, and the editor consumes the same tree the browser renders.
+:aside[Margin note: the parser design was accepted on 7 October; this plan starts the day
+after.]
+
+Three phases ship in order; each one gates on its tests (see @tbl-phases).
++++ {.muted}
+:::note[At a glance]
+- 3 phases
+- 2 browsers in CI
+- 1 syntax
+:::
+:::/row
+
+## Workstreams
+
+:::grid{cols=3}
+:::card[Parser]
+Container stack, delimiter stack, positions on every node.
+:::
+:::card[Runtime]
+In-place mount, scripts re-created in order, KaTeX in batches.
+:::
+:::card[Editor]
+A stdio LSP; Neovim becomes a client.
+:::
+:::/grid
+
+## Risks and budget
+
+:::details[Risks and mitigations]
+- Emphasis drifts from CommonMark: bounded by the imported examples.
+- The line ceiling is reached: tighten, do not bundle.
+:::
+
+:::details[Budget]{open}
+Roughly 5,000 lines, zero runtime dependencies.
+:::
+
+:::center
+*Schedule, by phase*
+:::
+
+:::table[Phases, owners and exit criteria]{#tbl-phases .wide}
+| Phase | Scope | Exit criterion | Owner | Weeks | Depends on |
+|---|---|---|---|--:|---|
+| P0 | Corpus, CI, hygiene | every rule has a case | O.C. | 1 | — |
+| P1 | Engine | corpus green, perf at 2×, fuzz 30 s | O.C. | 4 | P0 |
+| P2 | Model and emit | both docs match the golden DOM | O.C. | 2 | P1 |
+| P3 | Runtime | smoke green in Chromium and Firefox;\
+  no math task over 50 ms | O.C. | 3 | P2 |
+:::
+
+<style>
+  #side-toc { position: sticky; top: 1rem; float: right; width: 14rem; margin-left: 1rem; font-size: .9em; }
+  .byline { color: var(--t-muted); margin-top: -1rem; }
+  .t-cell.muted { color: var(--t-muted); }
+  @media (max-width: 60rem) { #side-toc { float: none; width: auto; position: static; } }
+</style>
+

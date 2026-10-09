@@ -1,0 +1,556 @@
+# Escapes and hard breaks
+
+Cases for backslash escapes and hard breaks (prose escapes, no escapes inside
+atoms), the `\` rows of the ambiguity rules, and the list residuals whose fix is an escape.
+Line-start escapes live with their blocks.
+
+## escape/all-ascii-punctuation
+
+spec: syntax-inline#escape syntax-inline#escapes
+
+All 32 ASCII punctuation characters can be escaped, back to back.
+
+````tern
+\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~
+````
+
+````html
+<p>!"#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~</p>
+````
+
+## escape/backslash-before-other-literal
+
+spec: syntax-inline#escape syntax-inline#escapes syntax-blocks#r4
+
+A backslash before a digit, a space, a non-ASCII letter or non-ASCII punctuation is a literal backslash.
+
+````tern
+\1, a \ b, \é and \—
+````
+
+````html
+<p>\1, a \ b, \é and \—</p>
+````
+
+## escape/hard-break
+
+spec: syntax-inline#hard-break syntax-inline#ambiguity
+
+`\` at the end of a paragraph line that is not the last is a hard break.
+
+````tern
+a\
+b
+````
+
+````html
+<p>a<br>
+b</p>
+````
+
+## escape/hard-break-trailing-whitespace
+
+spec: syntax-inline#hard-break syntax-blocks#r3
+
+Lines are right-trimmed first, so spaces after the backslash do not stop the hard break.
+
+````tern js
+'a\\   \nb\n'
+````
+
+````html
+<p>a<br>
+b</p>
+````
+
+## escape/backslash-last-line-literal
+
+spec: syntax-inline#hard-break syntax-inline#ambiguity
+
+At the end of a block (the paragraph's last line) the backslash is literal.
+
+````tern
+a
+b\
+````
+
+````html
+<p>a
+b\</p>
+````
+
+## escape/backslash-before-interrupting-heading
+
+spec: syntax-inline#hard-break syntax-blocks#paragraph
+
+A heading interrupts the paragraph, so the backslash ends the block and is literal.
+
+````tern
+a\
+# H
+````
+
+````html
+<p>a\</p>
+<h1 id="h">H</h1>
+````
+
+## escape/backslash-end-of-heading-literal
+
+spec: syntax-inline#hard-break syntax-blocks#heading syntax-inline#ambiguity
+
+A heading is a one-line construct: a trailing backslash is literal (and the slug drops it).
+
+````tern
+## Title\
+````
+
+````html
+<h2 id="title">Title\</h2>
+````
+
+## escape/hard-break-in-quote
+
+spec: syntax-inline#hard-break syntax-blocks#blockquote
+
+A hard break works in a paragraph inside any container.
+
+````tern
+> a\
+> b
+````
+
+````html
+<blockquote><p>a<br>
+b</p></blockquote>
+````
+
+## escape/list-item-break-then-literal
+
+spec: syntax-inline#hard-break syntax-blocks#lists
+
+Inside a list item a mid-paragraph backslash breaks; the one at the end of the item's paragraph is literal.
+
+````tern
+- a\
+  b\
+- c
+````
+
+````html
+<ul><li>a<br>
+b\</li><li>c</li></ul>
+````
+
+## escape/hard-break-in-element
+
+spec: syntax-inline#hard-break syntax-inline#inline-element
+
+Element content may cross a line, and a trailing backslash there is a hard break inside the element.
+
+````tern
+:kbd[a\
+b]
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd">a<br>
+b</kbd></p>
+````
+
+## escape/escaped-backslash-then-break
+
+spec: syntax-inline#hard-break syntax-inline#ambiguity
+
+Left to right, `\\\` at the end of a line is an escaped backslash followed by a hard break. `latex.linebreak` fires only when a soft break follows the `\\`, that is, when a line break was actually lost; here a hard break follows, so it is silent.
+
+````tern
+a\\\
+b
+````
+
+````html
+<p>a\<br>
+b</p>
+````
+
+````diagnostics
+````
+
+## escape/escaped-backslash-last-line
+
+spec: syntax-inline#hard-break
+
+`\\` at the end of the paragraph's last line is a literal backslash. No soft break follows it, so no line break was lost and `latex.linebreak` is silent.
+
+````tern
+a\\
+````
+
+````html
+<p>a\</p>
+````
+
+````diagnostics
+````
+
+## escape/latex-delimiters-once
+
+spec: syntax-inline#latex-delimiters diagnostics#latex-delimiters
+
+`\(` at the start of a line outside math is an escape (no math), with `latex.delimiters` (I) once per note: the later `\begin{` is silent.
+
+````tern
+\(a\) is not math.
+
+\begin{align} x \end{align}
+````
+
+````html
+<p>(a) is not math.</p>
+<p>\begin{align} x \end{align}</p>
+````
+
+````diagnostics
+1:1 info latex.delimiters
+````
+
+## escape/latex-delimiters-bracket
+
+spec: syntax-inline#latex-delimiters
+
+`\[` at the start of a line gets the hint too; the escaped brackets are text.
+
+````tern
+\[x^2\]
+````
+
+````html
+<p>[x^2]</p>
+````
+
+````diagnostics
+1:1 info latex.delimiters
+````
+
+## escape/latex-delimiters-escapes-silent
+
+spec: syntax-inline#latex-delimiters
+
+Escaped brackets around prose, and empty or escape-only delimiters, are escapes, not LaTeX: no hint.
+
+````tern
+See \[not a span\], \(\), \( \) and \[\*\].
+````
+
+````html
+<p>See [not a span], (), ( ) and [*].</p>
+````
+
+````diagnostics
+````
+
+## escape/latex-delimiters-paren-text
+
+spec: syntax-inline#latex-delimiters
+
+`\(…\)` with any content gets the hint; brackets need TeX inside.
+
+````tern
+\(see below\) and \[a\]
+````
+
+````html
+<p>(see below) and [a]</p>
+````
+
+````diagnostics
+1:1 info latex.delimiters
+````
+
+## escape/latex-delimiters-mid-line
+
+spec: syntax-inline#latex-delimiters
+
+Only `\begin{` must start a line; `\(` anywhere in a paragraph gets the hint when the matching `\)` follows it in the same paragraph. The escapes still apply.
+
+````tern
+see \(x\) here
+````
+
+````html
+<p>see (x) here</p>
+````
+
+````diagnostics
+1:5 info latex.delimiters
+````
+
+## escape/latex-delimiters-in-heading
+
+spec: syntax-inline#latex-delimiters syntax-blocks#heading
+
+`latex.delimiters` counts in any inline content, headings included; the slug is built from the escaped text.
+
+````tern
+## The map \(T\)
+````
+
+````html
+<h2 id="the-map-t">The map (T)</h2>
+````
+
+````diagnostics
+1:12 info latex.delimiters
+````
+
+## escape/latex-delimiters-continuation-line
+
+spec: syntax-inline#latex-delimiters syntax-blocks#paragraph diagnostics#latex-delimiters
+
+A paragraph's later line counts too; leading whitespace is stripped but the column is the backslash's own.
+
+````tern
+Consider
+  \begin{cases} x \end{cases}
+````
+
+````html
+<p>Consider
+\begin{cases} x \end{cases}</p>
+````
+
+````diagnostics
+2:3 info latex.delimiters
+````
+
+## escape/latex-delimiters-in-display-math-silent
+
+spec: syntax-inline#latex-delimiters syntax-inline#escapes
+
+Inside display math the backslash belongs to TeX: no hint.
+
+````tern
+$$
+\begin{aligned} x \end{aligned}
+$$
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>\begin{aligned} x \end{aligned}</span></div>
+````
+
+## escape/in-heading
+
+spec: syntax-inline#escapes syntax-blocks#heading
+
+Escapes apply in headings.
+
+````tern
+## a\*b\* {#ab}
+````
+
+````html
+<h2 id="ab">a*b*</h2>
+````
+
+## escape/in-container-title
+
+spec: syntax-inline#escapes syntax-blocks#container
+
+`\]` escapes inside a container title.
+
+````tern
+:::box[a\]b]
+x
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><div class="t-title">a]b</div><p>x</p></div>
+````
+
+## escape/in-element-content
+
+spec: syntax-inline#escapes syntax-inline#inline-element
+
+`\]` inside an inline element is a literal bracket, not the closer.
+
+````tern
+:kbd[\]]
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd">]</kbd></p>
+````
+
+## escape/in-leaf-content
+
+spec: syntax-inline#escapes syntax-blocks#leaf
+
+Escapes apply in leaf content.
+
+````tern
+::p[a\*b\*]
+````
+
+````html
+<p class="p" data-t="p">a*b*</p>
+````
+
+## escape/in-table-cell
+
+spec: syntax-inline#escapes syntax-blocks#tables
+
+Escapes apply in table cells.
+
+````tern
+| A |
+|---|
+| a\*b |
+````
+
+````html
+<table><thead><tr><th>A</th></tr></thead><tbody><tr><td>a*b</td></tr></tbody></table>
+````
+
+## escape/none-in-fence
+
+spec: syntax-inline#escapes syntax-blocks#fence
+
+Fence content is verbatim: no escapes.
+
+````tern
+```
+\*
+```
+````
+
+````html
+<pre data-t="code"><code>\*</code></pre>
+````
+
+## escape/none-in-attribute-values
+
+spec: syntax-inline#escapes syntax-blocks#finding-the-group
+
+Attribute values take no escapes, quoted or not, although `\*` and `\.` are escapes in prose.
+
+````tern
+[x]{title="a\*b" data-k=\.}
+````
+
+````html
+<p><span title="a\*b" data-k="\.">x</span></p>
+````
+
+## escape/none-in-raw-inline-html
+
+spec: syntax-inline#escapes syntax-inline#raw-inline-html
+
+A raw inline tag is an atom: the backslash inside its attribute stays.
+
+````tern
+a <span title="\*">b</span>
+````
+
+````html
+<p>a <span title="\*">b</span></p>
+````
+
+## escape/none-in-math
+
+spec: syntax-inline#escapes syntax-inline#inline-math
+
+Inside `$…$` the backslash belongs to TeX; the TeX reaches the output unchanged.
+
+````tern
+$\{x\}$
+````
+
+````html
+<p><span class="t-math">\{x\}</span></p>
+````
+
+## escape/bracket-not-link
+
+spec: syntax-inline#escape syntax-inline#ambiguity syntax-inline#links
+
+`\[` is the literal spelling of a bracket: no link forms.
+
+````tern
+\[a](u)
+````
+
+````html
+<p>[a](u)</p>
+````
+
+## escape/colon-not-element
+
+spec: syntax-inline#escape syntax-inline#ambiguity syntax-inline#inline-element
+
+`\:` is the literal spelling of an inline-element colon.
+
+````tern
+\:kbd[x]
+````
+
+````html
+<p>:kbd[x]</p>
+````
+
+## escape/run-broken-by-escape
+
+spec: syntax-inline#escape syntax-inline#strike-highlight syntax-inline#ambiguity
+
+An escaped `~` or `=` is not part of a delimiter run, so what remains are runs of one: text.
+
+````tern
+\~~a\~~ and \==b\==
+````
+
+````html
+<p>~~a~~ and ==b==</p>
+````
+
+## escape/residual-year-list
+
+spec: syntax-inline#residual-lists syntax-blocks#lists syntax-inline#escapes
+
+After a blank line `2019. was a year` is an ordered list (CommonMark); `2019\.` is the fix.
+
+````tern
+Busy.
+
+2019. was a year
+
+2019\. was a year
+````
+
+````html
+<p>Busy.</p>
+<ol start="2019"><li>was a year</li></ol>
+<p>2019. was a year</p>
+````
+
+## escape/residual-wrapped-bullet
+
+spec: syntax-inline#residual-lists syntax-blocks#lists syntax-inline#escapes
+
+A wrapped prose line starting `+ ` interrupts the paragraph as a bullet; `\+` keeps it prose.
+
+````tern
+The total is 5
++ 3 more.
+
+The total is 5
+\+ 3 more.
+````
+
+````html
+<p>The total is 5</p>
+<ul><li>3 more.</li></ul>
+<p>The total is 5
++ 3 more.</p>
+````

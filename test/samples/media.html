@@ -1,0 +1,60 @@
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+
+:::meta
+title: Field notes: the estuary
+lang: en-GB
+:::
+
+# Field notes: the estuary
+
+![Osprey over the estuary, 06:40.](img/osprey.jpg){#fig-osprey width=70% alt="An osprey in flight above grey water"}
+
+{.wide}
+![The same bird, cropped to the head.](img/osprey-crop.jpg){#fig-crop width=320 alt="Close crop of an osprey's head"}
+
+Compare @fig-osprey with @fig-crop. An image without an id stays an image, even alone:
+
+![A feather, drawn in ink](img/feather.svg){width=48}
+
+## Video
+
+:::figure[Time-lapse of the ebb tide, 40 s at 8× speed.]{#fig-tide}
+::video{src=media/tide.mp4 controls muted width=640 poster=img/osprey.jpg}
+:::
+
+## Embedded map
+
+::iframe{src="https://www.openstreetmap.org/export/embed.html?bbox=-3.2,55.95,-3.1,56.0" width=640 height=360 loading=lazy title="Estuary map"}
+
+## Tide clock (a web component)
+
+::tide-clock{station=leith units=m}
+
+<script type="module" src="components/tide-clock.js"></script>
+
+## Tide curve (a plot drawn by a script)
+
+:::figure[Two tide cycles at Leith, in metres above chart datum.]{#fig-curve}
+::plot{#tide-plot}
+:::
+
+<script>
+  const el = document.getElementById('tide-plot');
+  const w = 640, h = 200;
+  const pts = Array.from({ length: 97 }, (_, i) =>
+    `${(i * w / 96).toFixed(1)},${(h / 2 - Math.sin(i / 96 * 4 * Math.PI) * h * 0.4).toFixed(1)}`);
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="Two tide cycles">
+<polyline fill="none" stroke="currentColor" stroke-width="2" points="${pts.join(' ')}"/>
+</svg>`;
+</script>
+
+See @fig-curve: the second high water is the higher one.
+
+<style>
+  .plot { max-width: 640px; color: var(--t-link); }
+  @media (prefers-color-scheme: dark) {
+    :root { --t-bg: #101418; --t-link: #7fb3ff; }
+    figure.figure img { filter: brightness(.85); }
+  }
+</style>
+

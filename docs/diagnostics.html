@@ -1,0 +1,2879 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Diagnostics · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
+
+:::meta
+description: Every diagnostic Tern reports: its severity, what triggers it, where it points, what happens to the content, the engine's message and hint, and the fix, each with a live example.
+:::
+
+::site-nav
+
+# Diagnostics {#top}
+
+::toc
+
+Tern never drops what you wrote without telling you. When something is malformed, Tern keeps it visible where you wrote it and reports a *diagnostic*: a code such as `block.unclosed`, a severity, a message, a position and a hint that quotes the fix in Tern's own syntax.
+
+This page lists every diagnostic. For each one it says:
+
+- how serious it is;
+- exactly what triggers it;
+- where it points;
+- what happens to your content;
+- what the engine says, word for word;
+- how to fix it.
+
+Each code has a live example that triggers it, and a second one with the fix. Both are computed by the engine in your browser as you read: open an example to see its result, the HTML and the diagnostics.
+
+## At a glance {#summary}
+
+The first 53 codes come from the parser and the transforms, so `tern.check`, `tern check` and your editor report them. The six runtime codes come from the browser; `addon.failed` also comes from a transform that throws, and from the command line. `head.script` and `addon.remote` come from the command line and the language server only.
+
+| Code | Severity | What it means |
+|---|---|---|
+| [`block.unclosed`](#block-unclosed) | error | A container is still open when its parent or the note ends. |
+| [`block.closer-mismatch`](#block-closer-mismatch) | error | A named closer `:::/name` names no open container. |
+| [`block.stray-closer`](#block-stray-closer) | warning | A bare `:::` closes nothing. |
+| [`block.closer-count`](#block-closer-count) | info | A bare closer's colon count differs from its opener's. |
+| [`block.opener-junk`](#block-opener-junk) | error | A container opener has text it cannot read. |
+| [`block.bad-opener`](#block-bad-opener) | warning | A line starts with `:::` but no name follows. |
+| [`block.spaced-name`](#block-spaced-name) | warning | A space separates the colons from the name. |
+| [`block.unclosed-fence`](#block-unclosed-fence) | error | A fenced code block has no closing fence. |
+| [`fence.info-junk`](#fence-info-junk) | warning | A fence's info has something besides a language, a title and a group. |
+| [`html.unclosed`](#html-unclosed) | error | A raw HTML block never reaches its end. |
+| [`html.stray-closer`](#html-stray-closer) | info | An end tag closes nothing that is open. |
+| [`html.wrapper`](#html-wrapper) | warning | Tern written inside a raw HTML block is shown as HTML, not parsed. |
+| [`html.inline-unclosed`](#html-inline-unclosed) | warning | Inline content opens a tag it never closes. |
+| [`html.inline-escaped`](#html-inline-escaped) | info | A tag in inline content is shown as text. |
+| [`math.unclosed`](#math-unclosed) | error | A display-math block has no closing `$$`. |
+| [`math.opener-tail`](#math-opener-tail) | error | Attributes on the opening `$$` line. |
+| [`math.closer-tail`](#math-closer-tail) | warning | Text after the closing `$$`. |
+| [`math.inline-display`](#math-inline-display) | info | `$$` in the middle of a line is text. |
+| [`math.unclosed-inline`](#math-unclosed-inline) | info | A `$` followed by TeX never closes. |
+| [`math.bracket`](#math-bracket) | info | An interval in French notation is not math. |
+| [`math.suspect-price`](#math-suspect-price) | warning | A formula starts with a digit and holds words. |
+| [`attr.malformed`](#attr-malformed) | warning | An attribute group does not parse, or a reserved key has a bad value. |
+| [`attributes.orphan`](#attributes-orphan) | warning | An attribute line has no block to attach to. |
+| [`attributes.raw`](#attributes-raw) | warning | An attribute line before raw HTML. |
+| [`table.stray-delimiter`](#table-stray-delimiter) | warning | A paragraph line is shaped like a table's delimiter row. |
+| [`table.row-unterminated`](#table-row-unterminated) | warning | A row ends with `\` but nothing can continue it. |
+| [`table.misplaced-separator`](#table-misplaced-separator) | warning | A second delimiter row inside a table. |
+| [`table.extra-cell`](#table-extra-cell) | warning | A row has more cells than the header. |
+| [`cell.orphan`](#cell-orphan) | warning | A `+++` line outside a container's own level. |
+| [`leaf.demoted`](#leaf-demoted) | info | A line starts like a leaf but is not one. |
+| [`leaf.void-content`](#leaf-void-content) | warning | A void element was given content. |
+| [`inline.unclosed`](#inline-unclosed) | warning | A named inline element is never closed. |
+| [`inline.glued`](#inline-glued) | info | A named inline element is glued to a word. |
+| [`footnote.undefined`](#footnote-undefined) | warning | A footnote reference has no definition. |
+| [`footnote.duplicate`](#footnote-duplicate) | warning | A footnote label is defined twice. |
+| [`footnote.nested`](#footnote-nested) | warning | A footnote reference inside a footnote definition. |
+| [`footnote.unused`](#footnote-unused) | info | A footnote definition is never referenced. |
+| [`latex.delimiters`](#latex-delimiters) | info | LaTeX's math delimiters are not math here. |
+| [`latex.linebreak`](#latex-linebreak) | info | `\\` at the end of a line is not a line break. |
+| [`nesting.limit`](#nesting-limit) | error | Blocks nest more than 64 deep. |
+| [`doc.frontmatter`](#doc-frontmatter) | info | YAML front matter is not supported. |
+| [`meta.conflict`](#meta-conflict) | warning | The head and `:::meta` set the same key to different values. |
+| [`meta.duplicate`](#meta-duplicate) | warning | A metadata key is set twice. |
+| [`meta.malformed`](#meta-malformed) | warning | A `:::meta` line is not `key: value`. |
+| [`meta.nested`](#meta-nested) | warning | `:::meta` is not at the top level. |
+| [`name.reserved`](#name-reserved) | warning | A reserved name, key or class. |
+| [`tag.not-allowed`](#tag-not-allowed) | warning | `tag=`, or a schema's `tag`, names an element the level cannot be. |
+| [`table.body`](#table-body) | warning | A `:::table` whose body is not exactly one pipe table. |
+| [`name.unknown`](#name-unknown) | info, with `strict` only | A name has no schema entry and names no element. |
+| [`id.invalid`](#id-invalid) | warning | An id that is not a valid HTML id. |
+| [`id.duplicate`](#id-duplicate) | warning | Two elements have the same id. |
+| [`ref.dangling`](#ref-dangling) | warning | A reference points at no id. |
+| [`ref.unreferenceable`](#ref-unreferenceable) | warning | An id that `@` cannot reach. |
+| [`math.error`](#math-error) | error | KaTeX cannot typeset a formula. |
+| [`addon.failed`](#addon-failed) | error | An add-on did not load, or failed while it ran. |
+| [`script.document-write`](#script-document-write) | error | A note script called `document.write`. |
+| [`script.domcontentloaded`](#script-domcontentloaded) | error | A note script listens for `DOMContentLoaded`. |
+| [`katex.unavailable`](#katex-unavailable) | error | KaTeX did not load. |
+| [`doc.quirks`](#doc-quirks) | error | The file has no `<!doctype html>`. |
+| [`head.script`](#head-script) | info or warning | A head script was not run under node. |
+| [`addon.remote`](#addon-remote) | info | A remote add-on was not loaded under node. |
+
+## The diagnostic object {#object}
+
+Every diagnostic is a plain object with five fields. This is the one the first example of [`block.unclosed`](#block-unclosed) produces:
+
+```js
+{
+  code: 'block.unclosed',
+  severity: 'error',
+  message: '`:::note` opened on line 1 is still open at line 4',
+  position: {
+    start: {line: 1, column: 1, offset: 0},
+    end: {line: 1, column: 8, offset: 7},
+  },
+  hint: 'add `:::` or `:::/note`',
+}
+```
+
+| Field | What it holds |
+|---|---|
+| `code` | The name of the problem, `area.problem`. Every code has a section on this page, whose id is the code with its dots replaced by dashes. |
+| `severity` | `error`, `warning` or `info` ([Severity](#severity)). |
+| `message` | What went wrong, in one sentence. When it names a line, that is a note line ([Positions](#positions)). |
+| `position` | Where it went wrong: a `start` and an `end` ([Positions](#positions)). |
+| `hint` | How to fix it, quoting the fix in Tern's syntax. The field is absent when there is no hint, as for the command line's `head.script` and `addon.remote`. |
+
+Tools and tests match on `code`. The message and the hint are written for people.
+
+### Severity {#severity}
+
+Severity is graded by consequence ([rule R7](syntax-blocks.html#r7)):
+
+| Severity | Means | For example |
+|---|---|---|
+| `error` | Content was lost, or its meaning changed. | [`block.unclosed`](#block-unclosed): everything after the missing closer went into the block. |
+| `warning` | Probably not what you meant. Everything is still shown. | [`ref.dangling`](#ref-dangling): `@alice` names no id, so it stays text. |
+| `info` | A hint. The output is likely what you meant, or a habit from another syntax was noticed. | [`latex.delimiters`](#latex-delimiters): `\(x\)` is not math here. |
+
+Of the 53 parser and transform codes, 8 are errors, 32 are warnings and 13 are infos. Each code always has the same severity, with one exception: `head.script` is an info for a remote script and a warning otherwise. The six runtime codes are all errors, and `addon.remote` is an info.
+
+Severity decides how each tool treats a diagnostic:
+
+- `tern check` exits with 1 when it finds a diagnostic at or above `--fail-on`, which is `error` by default ([tools](tools.html#check)).
+- The console prints errors and warnings with `console.warn`, and infos with `console.info`.
+- The on-page panel opens itself when there is an error.
+- The language server sends severity 1 for an error, 2 for a warning and 3 for an info, which editors show as Error, Warning and Information.
+
+### Positions {#positions}
+
+A position has a `start` and an `end`, each `{line, column, offset}`:
+
+- **line** is 1-based and counts *note lines*: line 1 is the first line after the `tern.js` line.
+- **column** is 1-based and counts UTF-16 code units, as JavaScript strings and the language server do. A tab counts as one column, and an emoji such as 😀 counts as two.
+- **offset** is the 0-based index into the note, after `\r\n` and `\r` have become `\n`.
+- **end** is exclusive: the column just after the last character.
+
+On this page, "at 1:15" means line 1, column 15 of the example.
+
+The sections below use three phrases:
+
+| Phrase | Means |
+|---|---|
+| the line | The column where the line's remainder starts: after any `>` quote markers, list-item indentation and footnote-definition indentation. Every line-level code points there. |
+| the id | The `#` of `#id`, or the first letter of `id=`. |
+| the first bad column | The first character the grammar rejects: in `{#k!}`, the `!`. |
+
+Here the closer is inside a list item inside a quote. Its remainder starts after `> - `, so the diagnostic points at column 5, not column 1:
+
+```tern {.live expect="block.stray-closer"}
+> - :::
+```
+
+**Note lines and file lines.** Your editor counts *file lines*, from the top of the file. A file line is the note line plus the number of lines up to and including the `tern.js` line, so with the usual one-line head, file line 2 is note line 1. Each tool says which it means:
+
+- `tern check` prints file lines, `note.html:2:9`. The message still cites note lines, as the engine wrote it.
+- The panel shows both: `line 1:9 (file line 2)`.
+- The language server sends file lines, converted to the editor's 0-based lines.
+- `tern.check`, `tern.parse` and `tern.diagnostics` hold note positions.
+- The codes that concern the `tern.js` line or the head (`doc.quirks`, `addon.failed`, `katex.unavailable`) are at line 0, column 0, the line before the note's first. The panel shows them as `the tern.js line (file line 1)`.
+
+For example, `tern check` on a note whose first line is the usual head:
+
+```sh
+$ tern check note.html
+note.html:2:9: error block.opener-junk: this is not part of the opener; it is shown as an error paragraph
+    a title goes in brackets: `:::note[Danger]`
+tern check: 1 note: 1 error, 0 warnings, 0 infos
+```
+
+:::note
+In the browser, the file line can read too low when the head puts `<!doctype html>` and `<html …>` on lines of their own: the HTML parser drops the line breaks after them before tern.js can count them. With both on lines of their own, the panel's file line is 2 lower than the real one. `tern check` and the language server count from the file itself and are exact.
+:::
+
+### Where diagnostics appear {#console-and-panel}
+
+The same diagnostics reach six places:
+
+| Where | What you get | When |
+|---|---|---|
+| The console | One collapsed group, `tern: N problems` | Every time a note renders |
+| The panel | A list after the note | On `file:` and local hosts, or with `data-diagnostics`; never with `data-quiet` |
+| `tern.diagnostics` | A live array | On the page |
+| `tern.on('diagnostic', fn)` | Each runtime diagnostic as it is reported | On the page |
+| `tern check` | `file:line:col: severity code: message` | On the command line |
+| The language server | `textDocument/publishDiagnostics` | In your editor |
+
+**The console.** When a note has rendered, tern.js prints one collapsed group named `tern: N problems`, even when N is 0. Its first line gives the time each stage took. Then each diagnostic is one line, for example:
+
+```
+error math.error at line 1:5 (file line 2): KaTeX cannot typeset this formula: KaTeX parse error: Unexpected end of input in a macro argument, expected '}' at end of input: \frac{a} (the formula is shown as written; fix its TeX)
+```
+
+Errors and warnings use `console.warn`, infos `console.info`, and never `console.error`, so a note's own problems do not read as page errors. A diagnostic reported after the group, such as a formula typeset later, gets one `console.warn` line of its own, starting with `tern: `.
+
+**The panel.** An `<aside class="t-diagnostics" role="status">` after the note lists every diagnostic, of every severity: the severity, the code, `line L:C (file line F)`, the message and the hint. Its summary reads like `tern: 3 problems (2 errors, 1 info)`, and it opens itself when there is an error. It updates live, it is hidden when you print, and it appears only when there is at least one diagnostic. Whether it shows depends on where the page is open:
+
+| The page is open | The panel |
+|---|---|
+| from a `file:` URL | shows |
+| on `localhost`, `127.0.0.1` or `[::1]` | shows |
+| on any other host | is hidden, unless the tag has `data-diagnostics` |
+| with `data-quiet` on the tag | is hidden everywhere, even with `data-diagnostics` |
+
+So you see the panel while you write, and the readers of a published note do not. To see it on a published page, add `data-diagnostics` to the `tern.js` tag:
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js" data-diagnostics></script>
+```
+
+- `data-diagnostics` and `data-quiet` are booleans: present means on, and the values `false`, `0`, `off` and `no` turn them off.
+- `window.TERN = {diagnostics: true}` or `{quiet: true}`, set in a head script before the `tern.js` line, does the same; the tag's `data-*` wins over `window.TERN`.
+- The console group prints whatever these say.
+
+**`tern.diagnostics`.** A live array on the page ([API](api.html#diagnostics)). When the note mounts it holds the line-0 diagnostics first, then the parse and transform diagnostics sorted by position. Runtime diagnostics are appended as they happen. `tern.render(root, source)` replaces it, keeping the line-0 ones, when `root` is the note's `main.tern`. Under node, `tern.check(source, opts)` returns every parse and transform diagnostic of a source, sorted the same way ([API](api.html#check)).
+
+**`tern.on('diagnostic', fn)`.** Calls `fn` with each runtime diagnostic as it is reported ([API](api.html#on)). Parse and transform diagnostics are not events: read them from `tern.diagnostics`, for example after `await tern.ready`.
+
+**`tern check`.** Prints each diagnostic as `file:line:col: severity code: message`, with the hint on the next line, indented, and a summary on stderr ([tools](tools.html#check)). `--json` prints one array instead, `--fail-on` sets the severity that makes it exit with 1, and `--quiet` prints only the diagnostics at or above it. It also loads the note's vocabulary, its add-ons and head scripts, and reports [`addon.failed`](#addon-failed), [`addon.remote`](#addon-remote) and [`head.script`](#head-script) when it cannot. `tern build` prints the same diagnostics to stderr and writes the page anyway; the built page shows them in its own panel and console.
+
+**The language server.** Publishes the same diagnostics as `textDocument/publishDiagnostics` when you open or change a note ([tools](tools.html#lsp)). Each has the range, the severity (1, 2 or 3), the `code`, `source: "tern"`, and the message followed by a line break and the hint; the hint is also in `data.hint`.
+
+## The three most likely mistakes {#three-mistakes}
+
+Three mistakes are the most likely. Each is loud, and each leaves the rest of the note intact.
+
+**1. Braceless attributes.** Attributes always go in braces. This example uses the demo schema, which declares `theorem` ([the demo schema](schema.html#demo-schema)):
+
+```tern {.live schema=demo expect="block.opener-junk"}
+:::theorem[T] #rn .big
+Every linear map has a kernel.
+:::
+```
+
+The engine reports `block.opener-junk` (error) at 1:15:
+
+- **Message:** `this is not part of the opener; it is shown as an error paragraph`
+- **Hint:** `` attributes go in braces: `:::theorem[T]{#rn .big}` ``
+
+The block still opens as a theorem, and the junk is shown in red as its first paragraph. Put the attributes in braces:
+
+```tern {.live schema=demo}
+:::theorem[T]{#rn .big}
+Every linear map has a kernel.
+:::
+```
+
+**2. A forgotten closer.** Here `:::proof` has no closer, and `:::/section` closes the section:
+
+```tern {.live expect="block.unclosed"}
+:::section
+:::proof
+The proof.
+:::/section
+```
+
+The engine reports `block.unclosed` (error) at 2:1:
+
+- **Message:** `` `:::proof` opened on line 2 is still open at line 4 ``
+- **Hint:** `` add `:::` or `:::/proof` ``
+
+The error lands on the proof, line 2, not on the section: the named closer closed both, and only the proof was missing its closer. Add it:
+
+```tern {.live}
+:::section
+:::proof
+The proof.
+:::
+:::/section
+```
+
+**3. A blank line in `$$`.** TeX forbids blank lines in display math, so a blank line ends the block:
+
+```tern {.live expect="math.unclosed"}
+$$
+a^2 + b^2 = c^2
+
+## Next section
+```
+
+The engine reports `math.unclosed` (error) at 1:1:
+
+- **Message:** `` `$$` opened on line 1 ends at the blank line on line 3 without a closing `$$`; TeX forbids blank lines in display math ``
+- **Hint:** `` add a line holding only `$$` ``
+
+The source of the equation is shown in red, and the heading after it survives. Close the block:
+
+```tern {.live}
+$$
+a^2 + b^2 = c^2
+$$
+
+## Next section
+```
+
+## Blocks {#blocks}
+
+These concern containers (`:::name` … `:::`), their closers and the spelling of their first line. See [containers](syntax-blocks.html#container) and [closers](syntax-blocks.html#closer).
+
+### `block.unclosed` {#block-unclosed}
+
+**Error.** A container is still open when its parent or the note ends.
+
+- **Trigger.** A `:::name` container has no closer before one of these:
+  - the end of the note;
+  - the end of the quote, list item or footnote definition it is in;
+  - a named closer, `:::/outer`, that closes a container around it. Every container opened inside that one and still open is unclosed.
+- **Position.** The opener, from its first colon to the end of the name.
+- **Content.** Nothing is lost, but the meaning changes: the block runs to where it was closed, so everything after the missing closer is inside it.
+- **Message.** It names the line where the container was found still open. The hint adds a reason when the engine knows one: a fence or a raw `<script>` left open inside, or a closer left of a list item's content column.
+
+```tern {.live expect="block.unclosed"}
+:::note
+A note with no closer.
+
+This paragraph ends up inside the note.
+```
+
+The engine reports `block.unclosed` (error) at 1:1:
+
+- **Message:** `` `:::note` opened on line 1 is still open at line 4 ``
+- **Hint:** `` add `:::` or `:::/note` ``
+
+**Fix.** Add `:::` or `:::/note` where the block ends:
+
+```tern {.live}
+:::note
+A note with a closer.
+:::
+
+This paragraph is after the note.
+```
+
+Inside a list item, a closer must be indented to the item's content column. At column 1 it is outside the item, so the note ends with the item and the closer is stray:
+
+```tern {.live expect="block.unclosed block.stray-closer"}
+- An item
+  :::note
+  Inside the item.
+:::
+```
+
+The engine reports `block.unclosed` (error) at 2:3:
+
+- **Message:** `` `:::note` opened on line 2 is still open at line 4 ``
+- **Hint:** ``add `:::` or `:::/note`; indent the closer to the item’s content column``
+
+Indent the closer:
+
+```tern {.live}
+- An item
+  :::note
+  Inside the item.
+  :::
+```
+
+A fence left open inside a container swallows its closer, since a fence's content may hold `:::` lines. The hint says so:
+
+````tern {.live expect="block.unclosed block.unclosed-fence"}
+:::note
+```js
+let x = 1;
+:::
+````
+
+The engine reports `block.unclosed` (error) at 1:1:
+
+- **Message:** `` `:::note` opened on line 1 is still open at line 4 ``
+- **Hint:** ``add `:::` or `:::/note`; the fence opened on line 2 is unclosed``
+
+**Related.** [`block.closer-mismatch`](#block-closer-mismatch), [`block.stray-closer`](#block-stray-closer), [`block.unclosed-fence`](#block-unclosed-fence), [`html.unclosed`](#html-unclosed).
+
+### `block.closer-mismatch` {#block-closer-mismatch}
+
+**Error.** A named closer `:::/name` names no open container.
+
+- **Trigger.** A `:::/NAME` line when no container with exactly that name is open. Names are case-sensitive, so `:::/box` does not close `:::Box`. Inside a quote, list item or footnote definition, only the containers opened inside it count.
+- **Position.** The closer, the whole line.
+- **Content.** The line becomes paragraph text. The container it was meant to close stays open, so it usually gets [`block.unclosed`](#block-unclosed) too.
+- **Message.** It lists the containers that are open, or `none`. The hint offers the named closer of the innermost one, or says to remove the line when nothing is open.
+
+```tern {.live expect="block.closer-mismatch block.unclosed"}
+:::note
+A note.
+:::/box
+```
+
+The engine reports `block.closer-mismatch` (error) at 3:1:
+
+- **Message:** ``no `:::box` is open to close (open: `:::note`); the line is text``
+- **Hint:** `` write `:::/note` or `:::` ``
+
+**Fix.** Name the block you opened, or use a bare `:::`:
+
+```tern {.live}
+:::note
+A note.
+:::/note
+```
+
+Case matters:
+
+```tern {.live expect="block.closer-mismatch block.unclosed"}
+:::Box
+Names are case-sensitive.
+:::/box
+```
+
+The engine reports `block.closer-mismatch` (error) at 3:1:
+
+- **Message:** ``no `:::box` is open to close (open: `:::Box`); the line is text``
+- **Hint:** `` write `:::/Box` or `:::` ``
+
+**Related.** [`block.unclosed`](#block-unclosed), [`block.stray-closer`](#block-stray-closer), [`block.closer-count`](#block-closer-count).
+
+### `block.stray-closer` {#block-stray-closer}
+
+**Warning.** A bare `:::` closes nothing.
+
+- **Trigger.** A closer line, `:::` with three or more colons, when no container is open. Inside a quote, list item or footnote definition, a closer sees only the containers opened inside it, so `> :::` does not close a note around the quote.
+- **Position.** The line.
+- **Content.** The line becomes paragraph text. It ends the paragraph before it, and the lines after it continue the new paragraph.
+
+```tern {.live expect="block.stray-closer"}
+A paragraph.
+:::
+```
+
+The engine reports `block.stray-closer` (warning) at 2:1:
+
+- **Message:** ``this `:::` closes nothing: no container is open here``
+- **Hint:** `remove it, or open a container above it`
+
+**Fix.** Remove the line, or open the container it was meant to close:
+
+```tern {.live}
+:::note
+A paragraph.
+:::
+```
+
+A closer inside a quote does not reach the note around the quote:
+
+```tern {.live expect="block.stray-closer"}
+:::note
+> A quote.
+> :::
+:::
+```
+
+The engine reports `block.stray-closer` (warning) at 3:3:
+
+- **Message:** ``this `:::` closes nothing: no container is open here``
+- **Hint:** `remove it, or open a container above it`
+
+**Related.** [`block.closer-mismatch`](#block-closer-mismatch), [`block.unclosed`](#block-unclosed), [`block.spaced-name`](#block-spaced-name), [`name.reserved`](#name-reserved) (for `:::end`).
+
+### `block.closer-count` {#block-closer-count}
+
+**Info.** A bare closer's colon count differs from its opener's.
+
+- **Trigger.** A bare closer closes the innermost open container, whatever its colon count. When the counts differ, this hint fires, because you may have meant another block: colon counts are cosmetic, and names are how you choose.
+- **Position.** The closer.
+- **Content.** The innermost container closes as usual.
+- **Hint.** It names a closer to write instead: the open container whose colon count matches the closer's, if there is one, else the one that was closed.
+
+```tern {.live expect="block.closer-count"}
+::::outer
+:::inner
+Text.
+::::
+::::
+```
+
+The engine reports `block.closer-count` (info) at 4:1:
+
+- **Message:** ``this `::::` closes `:::inner` (line 2); colon counts do not choose the block``
+- **Hint:** `` write `:::/outer` ``
+
+The first `::::` closed `inner`, not `outer`, and the second closed `outer`. The output is the same as you meant here, but only by luck.
+
+**Fix.** Name the blocks, or match the counts:
+
+```tern {.live}
+::::outer
+:::inner
+Text.
+:::
+::::
+```
+
+**Related.** [`block.unclosed`](#block-unclosed), [`block.closer-mismatch`](#block-closer-mismatch).
+
+### `block.opener-junk` {#block-opener-junk}
+
+**Error.** A container opener has text it cannot read.
+
+- **Trigger.** After `:::NAME`, anything but an optional `[title]`, then an optional `{…}` group, then the end of the line: attributes without braces, a title without brackets, an unclosed `[`, a group that does not parse, or text after the group.
+- **Position.** From the first junk column to the end of the line.
+- **Content.** The block still opens, with its name and whatever parsed before the junk. The junk becomes the block's first child, a `<p class="t-error">`, shown as escaped text and never parsed as Tern. Since the attributes or title were lost, this is an error.
+- **Hint.** It depends on the junk. The examples below show each.
+
+```tern {.live expect="block.opener-junk"}
+:::note Danger
+Mind the gap.
+:::
+```
+
+The engine reports `block.opener-junk` (error) at 1:9:
+
+- **Message:** `this is not part of the opener; it is shown as an error paragraph`
+- **Hint:** `` a title goes in brackets: `:::note[Danger]` ``
+
+**Fix.** A title goes in brackets:
+
+```tern {.live}
+:::note[Danger]
+Mind the gap.
+:::
+```
+
+An unclosed bracket:
+
+```tern {.live expect="block.opener-junk"}
+:::note[Danger
+Mind the gap.
+:::
+```
+
+The engine reports `block.opener-junk` (error) at 1:8:
+
+- **Message:** `this is not part of the opener; it is shown as an error paragraph`
+- **Hint:** ``close the title with `]` on this line``
+
+A group that does not parse. A bad group on an opener is this error, not [`attr.malformed`](#attr-malformed):
+
+```tern {.live expect="block.opener-junk"}
+:::note{#gap!}
+Mind the gap.
+:::
+```
+
+The engine reports `block.opener-junk` (error) at 1:8:
+
+- **Message:** `this is not part of the opener; it is shown as an error paragraph`
+- **Hint:** `` write `{#id .class key=value}` ``
+
+Text after a title and a group. The opener already has a title, so the hint offers the title or the body:
+
+```tern {.live expect="block.opener-junk"}
+:::note[Danger]{.big} mind the gap
+Body.
+:::
+```
+
+The engine reports `block.opener-junk` (error) at 1:23:
+
+- **Message:** `this is not part of the opener; it is shown as an error paragraph`
+- **Hint:** `this text is not part of the opener: remove it, or put it in the title or the body`
+
+An editor's auto-wrap that breaks a long opener line causes this error too: the part that wrapped onto the next line becomes the body. Turn auto-wrap off for notes ([editors](tools.html#editors)).
+
+**Related.** [`block.bad-opener`](#block-bad-opener), [`block.spaced-name`](#block-spaced-name), [`attr.malformed`](#attr-malformed).
+
+### `block.bad-opener` {#block-bad-opener}
+
+**Warning.** A line starts with `:::` but no name follows.
+
+- **Trigger.** `:::` followed by anything but a name, `/NAME` or the end of the line: `:::{.x}`, `:::123`, `:::_x`, `:::!`, `:::/`, `:::/box extra`, `::: /box`. A name starts with a letter.
+- **Position.** The line.
+- **Content.** The line is paragraph text, and the closer meant for it usually becomes [`block.stray-closer`](#block-stray-closer).
+- **Hint.** For a line that starts with a group, `:::div` with that group; otherwise, that a name starts with a letter.
+
+```tern {.live expect="block.bad-opener block.stray-closer"}
+:::{.warning}
+An anonymous block.
+:::
+```
+
+The engine reports `block.bad-opener` (warning) at 1:1:
+
+- **Message:** `this opens no block: a name must follow the colons`
+- **Hint:** `` write `:::div{.warning}` ``
+
+**Fix.** Every block has a name. For a plain `div`, write `div`:
+
+```tern {.live}
+:::div{.warning}
+An anonymous block.
+:::
+```
+
+A name cannot start with a digit:
+
+```tern {.live expect="block.bad-opener"}
+:::2col
+```
+
+The engine reports `block.bad-opener` (warning) at 1:1:
+
+- **Message:** `this opens no block: a name must follow the colons`
+- **Hint:** `` a name starts with a letter: `:::name` ``
+
+**Related.** [`block.spaced-name`](#block-spaced-name), [`block.opener-junk`](#block-opener-junk).
+
+### `block.spaced-name` {#block-spaced-name}
+
+**Warning.** A space separates the colons from the name.
+
+- **Trigger.** `::: name` for a container, or `:: name` for a leaf.
+- **Position.** The line.
+- **Content.** The line is an ordinary paragraph line, so the lines after it continue the paragraph.
+- **Hint.** The spelling without the space.
+
+```tern {.live expect="block.spaced-name block.stray-closer"}
+::: note
+Body.
+:::
+```
+
+The engine reports `block.spaced-name` (warning) at 1:1:
+
+- **Message:** `a space after the colons makes this text, not a block`
+- **Hint:** `` write `:::note` ``
+
+**Fix.** Glue the name to the colons:
+
+```tern {.live}
+:::note
+Body.
+:::
+```
+
+The same for a leaf:
+
+```tern {.live expect="block.spaced-name"}
+:: toc
+```
+
+The engine reports `block.spaced-name` (warning) at 1:1:
+
+- **Message:** ``a space after `::` makes this text, not a leaf``
+- **Hint:** `` write `::toc` ``
+
+**Related.** [`block.bad-opener`](#block-bad-opener), [`leaf.demoted`](#leaf-demoted).
+
+## Fences and raw HTML {#fences-and-raw-html}
+
+These concern [fenced code](syntax-blocks.html#fence), the [raw HTML fence](syntax-blocks.html#html-fence), [raw HTML blocks](syntax-blocks.html#raw-html) and [inline raw HTML](syntax-inline.html#raw-inline-html).
+
+### `block.unclosed-fence` {#block-unclosed-fence}
+
+**Error.** A fenced code block has no closing fence.
+
+- **Trigger.** A fence reaches the end of the innermost quote, list item or footnote definition, or the end of the note, without a line of at least as many of the same character.
+- **Position.** The opening run of backticks or tildes.
+- **Content.** Everything up to that end is code: `:::` closers, headings and blank lines included, since a fence may legitimately hold them. A container whose closer was swallowed also gets [`block.unclosed`](#block-unclosed), with a hint naming the fence.
+- **Hint.** The closing fence to add.
+
+````tern {.live expect="block.unclosed-fence"}
+```js
+let x = 1;
+
+## Not a heading
+````
+
+The engine reports `block.unclosed-fence` (error) at 1:1:
+
+- **Message:** `the fence opened on line 1 is never closed`
+- **Hint:** ` add a closing ````` `
+
+**Fix.** Close the fence with at least as many backticks:
+
+````tern {.live}
+```js
+let x = 1;
+```
+
+## A heading
+````
+
+In a quote, the fence ends with the quote:
+
+````tern {.live expect="block.unclosed-fence"}
+> ```js
+> let x = 1;
+
+After the quote.
+````
+
+The engine reports `block.unclosed-fence` (error) at 1:3:
+
+- **Message:** `the fence opened on line 1 is never closed`
+- **Hint:** ` add a closing ````` `
+
+**Related.** [`block.unclosed`](#block-unclosed), [`html.unclosed`](#html-unclosed), [`fence.info-junk`](#fence-info-junk).
+
+### `fence.info-junk` {#fence-info-junk}
+
+**Warning.** A fence's info has something besides a language, a title and a group.
+
+- **Trigger.** The info is, in order and each optional: a language, a `[Title]`, a `{…}` group. Anything else is junk: an extra word, a part out of order, an unclosed `[`, a group that does not parse. A group after junk is junk too. On a raw `=html` fence, any title or group is junk.
+- **Position.** From the first junk character to the end of the line.
+- **Content.** The fence is still code. The junk is kept verbatim in `data-meta`, on the `<pre>`, or on the `<figure>` of a titled fence. A raw `=html` fence emits no element of its own, so there its junk is dropped.
+
+````tern {.live expect="fence.info-junk"}
+```python linenos
+print("hi")
+```
+````
+
+The engine reports `fence.info-junk` (warning) at 1:11:
+
+- **Message:** `this is not part of the fence info; it is kept in data-meta`
+- **Hint:** ``the info is a language, a `[Title]` and a `{…}` group, in that order``
+
+**Fix.** Line numbers are the reserved key `lines`, in braces:
+
+````tern {.live}
+```python {lines}
+print("hi")
+```
+````
+
+A title after the group is out of order:
+
+````tern {.live expect="fence.info-junk"}
+```js {lines} [Setup]
+let x = 1;
+```
+````
+
+The engine reports `fence.info-junk` (warning) at 1:15:
+
+- **Message:** `this is not part of the fence info; it is kept in data-meta`
+- **Hint:** ``the info is a language, a `[Title]` and a `{…}` group, in that order``
+
+Put the title first: ```` ```js[Setup]{lines} ````.
+
+A raw `=html` fence takes no attributes; put them in the HTML:
+
+````tern {.live expect="fence.info-junk"}
+```=html {.box}
+<b>raw</b>
+```
+````
+
+The engine reports `fence.info-junk` (warning) at 1:10:
+
+- **Message:** ``this is not part of the fence info; it is dropped, as an `=html` fence has no `<pre>` to keep it on``
+- **Hint:** ``the info is a language, a `[Title]` and a `{…}` group, in that order``
+
+**Related.** [`block.unclosed-fence`](#block-unclosed-fence), [`attributes.raw`](#attributes-raw).
+
+### `html.unclosed` {#html-unclosed}
+
+**Error.** A raw HTML block never reaches its end.
+
+- **Trigger.** It depends on the kind of block, fixed by its first line:
+  - a comment, `<!--`, with no `-->`;
+  - a raw-text element, `<script>`, `<style>`, `<pre>` or `<textarea>`, with no matching end tag, in any case, with optional spaces or tabs before its `>` (`</script >` counts);
+  - a generic block-level or custom element whose openings and closings never balance.
+
+  A comment or raw-text block runs to the end of the innermost quote, list item or footnote definition, or to the end of the note, through `:::` lines, since it may legitimately hold them. A generic block also stops at the first `:::` opener or closer line, which is then read normally.
+- **Position.** The first line of the block.
+- **Content.**
+  - An unclosed comment or raw-text block is **not** emitted as HTML: in the browser it would turn the rest of the page into a comment, a script or a stylesheet. It is shown as escaped source in a `<pre class="t-error">`, from its first line to the last line it held.
+  - An unclosed generic block is still emitted as raw HTML, up to where it stopped. The browser then balances the tags itself, which can change what ends up inside what.
+- **Hint.** The end tag to add.
+
+```tern {.live expect="html.unclosed"}
+:::note
+<div class="box">
+Boxed text.
+:::
+
+After the note.
+```
+
+The engine reports `html.unclosed` (error) at 2:1:
+
+- **Message:** ``the raw `<div>` opened on line 2 is never closed``
+- **Hint:** `` end it with `</div>` ``
+
+**Fix.** Close the element:
+
+```tern {.live}
+:::note
+<div class="box">
+Boxed text.
+</div>
+:::
+
+After the note.
+```
+
+An unclosed comment shows the rest of the note as source, so nothing is hidden:
+
+```tern {.live expect="html.unclosed"}
+<!-- TODO: finish this
+
+## Results
+```
+
+The engine reports `html.unclosed` (error) at 1:1:
+
+- **Message:** ``the raw `<!--` opened on line 1 is never closed``
+- **Hint:** `` end it with `-->` ``
+
+A raw-text block inside a container swallows its closer, and the container's hint says why:
+
+```tern {.live expect="html.unclosed block.unclosed"}
+:::note
+<script>
+let x = 1;
+:::
+```
+
+The engine reports `block.unclosed` (error) at 1:1:
+
+- **Message:** `` `:::note` opened on line 1 is still open at line 4 ``
+- **Hint:** ``add `:::` or `:::/note`; the `<script>` opened on line 2 is unclosed``
+
+**Related.** [`html.wrapper`](#html-wrapper), [`html.stray-closer`](#html-stray-closer), [`block.unclosed`](#block-unclosed), [`block.unclosed-fence`](#block-unclosed-fence).
+
+### `html.stray-closer` {#html-stray-closer}
+
+**Info.** An end tag closes nothing that is open.
+
+- **Trigger.** Two cases:
+  - **A line.** A line that is only an end tag, `</NAME>`, whose name is block-level or a custom element. It is a one-line raw HTML block.
+  - **Inline.** A lower-case end tag of a phrasing or custom element, such as `</b>`, with no matching open tag before it in the same inline content: the same paragraph, heading, table cell or title. Void elements (`</br>`) and those whose end tag HTML lets you omit (`rt`, `rp`, `option`, `optgroup`) are exempt, as for [`html.inline-unclosed`](#html-inline-unclosed).
+- **Position.** On a line, the line; inline, the end tag.
+- **Content.** The end tag passes through verbatim.
+- **Hint.** For a line, a container that would wrap the content (for `</table>`, a pipe table or a whole raw `<table>` block); inline, to open the tag earlier or remove it.
+
+An end tag that does not pass through, such as `</div>` in the middle of a paragraph, or `</B>`, is plain text with no diagnostic.
+
+```tern {.live expect="html.stray-closer"}
+Some text.
+
+</div>
+```
+
+The engine reports `html.stray-closer` (info) at 3:1:
+
+- **Message:** `` `</div>` closes nothing that is open; it is passed through ``
+- **Hint:** `` to wrap Tern content write `:::div{…}` … `:::` ``
+
+**Fix.** Remove it. To wrap Tern content in an element, use a container:
+
+```tern {.live}
+:::div{.box}
+Some text.
+:::
+```
+
+Inline:
+
+```tern {.live expect="html.stray-closer"}
+Some text</b> here.
+```
+
+The engine reports `html.stray-closer` (info) at 1:10:
+
+- **Message:** `</b> closes no open <b> in this paragraph`
+- **Hint:** `open it with <b> earlier in the paragraph, or remove it`
+
+A tag opened in one paragraph and closed in the next is unclosed in the first and stray in the second:
+
+```tern {.live expect="html.inline-unclosed html.stray-closer"}
+Start <b>bold
+
+end</b> here.
+```
+
+**Related.** [`html.unclosed`](#html-unclosed), [`html.inline-unclosed`](#html-inline-unclosed), [`html.wrapper`](#html-wrapper).
+
+### `html.wrapper` {#html-wrapper}
+
+**Warning.** Tern written inside a raw HTML block is shown as HTML, not parsed.
+
+- **Trigger.** In a generic raw block only, the first line inside the block (not its first line) that, after leading whitespace, does not begin with `<`, and either:
+  - follows a blank line inside the block (a line of spaces counts as blank); or
+  - holds Tern syntax: any of `*`, a backtick, `$`, `[` or `:::`, or begins with a heading marker, a list marker, `>` or `|`.
+
+  It fires at most once per block. Comments and raw-text blocks never get it.
+- **Position.** The line, from its first non-space character.
+- **Content.** Verbatim. The whole block is one raw HTML node, and nothing in it is parsed: Tern has no CommonMark-style `<div>`, blank line, Markdown, `</div>` interleave.
+- **Hint.** The container to write instead.
+
+```tern {.live expect="html.wrapper"}
+<div class="box">
+Some **bold** text.
+</div>
+```
+
+The engine reports `html.wrapper` (warning) at 2:1:
+
+- **Message:** ``This line is inside the raw `<div>` opened on line 1 and is shown as HTML, not parsed as Tern.``
+- **Hint:** ``To put Tern inside an element write `:::div{…}` … `:::`.``
+
+**Fix.** A container holds Tern, and `{.box}` gives it the class:
+
+```tern {.live}
+:::div{.box}
+Some **bold** text.
+:::
+```
+
+A blank line inside the block is enough:
+
+```tern {.live expect="html.wrapper"}
+<details>
+<summary>More</summary>
+
+Plain text after a blank line.
+</details>
+```
+
+The engine reports `html.wrapper` (warning) at 4:1:
+
+- **Message:** ``This line is inside the raw `<details>` opened on line 1 and is shown as HTML, not parsed as Tern.``
+- **Hint:** ``To put Tern inside an element write `:::details{…}` … `:::`.``
+
+Here the container is `details`, with the title as its summary:
+
+```tern {.live}
+:::details[More]
+Plain text, now *parsed*.
+:::
+```
+
+**Related.** [`html.unclosed`](#html-unclosed), [`attributes.raw`](#attributes-raw).
+
+### `html.inline-unclosed` {#html-inline-unclosed}
+
+**Warning.** Inline content opens a tag it never closes.
+
+- **Trigger.** A paragraph, heading, table cell or title opens a non-void phrasing tag, such as `<b>` or `<span>`, or a custom element, such as `<my-tag>`, and never closes it. Void elements (`<br>`, `<img>`, `<input>` …) are exempt, and so are those whose end tag HTML lets you omit: `rt`, `rp`, `option`, `optgroup`.
+- **Position.** The open tag.
+- **Content.** Verbatim. The browser would carry a formatting tag such as `<b>` on into the paragraphs that follow.
+- **Hint.** The end tag to add, and where.
+
+```tern {.live expect="html.inline-unclosed"}
+Some <b>bold text.
+
+The next paragraph.
+```
+
+The engine reports `html.inline-unclosed` (warning) at 1:6:
+
+- **Message:** `<b> is never closed in this paragraph`
+- **Hint:** `close it with </b> before the paragraph ends`
+
+**Fix.** Close the tag in the same paragraph, or use Tern's own spelling:
+
+```tern {.live}
+Some <b>bold</b> text, or some **bold** text.
+
+The next paragraph.
+```
+
+**Related.** [`html.stray-closer`](#html-stray-closer), [`html.inline-escaped`](#html-inline-escaped).
+
+### `html.inline-escaped` {#html-inline-escaped}
+
+**Info.** A tag in inline content is shown as text.
+
+- **Trigger.** Inline HTML passes through only for lower-case phrasing and custom tags. This fires on an escaped **start** tag (never an end tag) that names a current HTML element:
+  - a lower-case non-phrasing name, such as `<div>`, `<p>` or `<body …>`; `<svg>`, `<math>` and `<textarea>` count when their own end tag is missing from the same inline content;
+  - a name with an upper-case letter and two or more characters, such as `<DIV>`, `<Span>` or `<H1>`, always;
+  - a single upper-case letter, such as `<B>`, only when a matching end tag, in either case, follows in the same inline content. So `Box<A>` and `Vec<T>` stay silent.
+
+  Obsolete elements, such as `<center>`, stay silent.
+- **Position.** The tag.
+- **Content.** Text: the `<` is escaped.
+- **Hint.** For a lower-case name, to put block HTML on its own line; for an upper-case one, the lower-case spelling.
+
+```tern {.live expect="html.inline-escaped"}
+Make it <B>bold</B>.
+```
+
+The engine reports `html.inline-escaped` (info) at 1:9:
+
+- **Message:** `<B> is shown as text: inline tags are lower-case`
+- **Hint:** `inline tags are lower-case: write <b>`
+
+**Fix.** Inline tags are lower-case:
+
+```tern {.live}
+Make it <b>bold</b>, or make it **bold**.
+```
+
+A block tag in a sentence:
+
+```tern {.live expect="html.inline-escaped"}
+Put <div> here.
+```
+
+The engine reports `html.inline-escaped` (info) at 1:5:
+
+- **Message:** `<div> is not an inline tag, so it is shown as text`
+- **Hint:** `put block HTML on its own line`
+
+Generics stay silent:
+
+```tern {.live}
+A Box<A> holds a Vec<T>.
+```
+
+**Related.** [`html.inline-unclosed`](#html-inline-unclosed), [`html.stray-closer`](#html-stray-closer).
+
+## Math {#math}
+
+These concern [display math](syntax-blocks.html#display-math), [inline math](syntax-inline.html#inline-math) and [verbatim math](syntax-inline.html#verbatim-math). For formulas KaTeX rejects, see [`math.error`](#math-error).
+
+### `math.unclosed` {#math-unclosed}
+
+**Error.** A display-math block has no closing `$$`.
+
+- **Trigger.** A multi-line `$$` block meets one of these lines before its closer:
+  - a blank line;
+  - a heading line;
+  - a fence line;
+  - a `:::` opener or closer line;
+  - a `+++` line;
+  - the end of its parent, or of the note.
+
+  TeX forbids blank lines in display math, so no valid equation is cut.
+- **Position.** From the opening `$$` to where the terminating line starts.
+- **Content.** The block is emitted as `<div class="t-eq t-error">` holding its escaped source, opening `$$` included. The terminating line is then read normally, so an unclosed `$$` swallows at most one paragraph and never a heading.
+- **Message.** It names the line that ended the block.
+
+```tern {.live expect="math.unclosed"}
+$$
+x + y
+:::note
+A note.
+:::
+```
+
+The engine reports `math.unclosed` (error) at 1:1:
+
+- **Message:** `` `$$` opened on line 1 ends at the `:::` line on line 3 without a closing `$$` ``
+- **Hint:** `` add a line holding only `$$` ``
+
+**Fix.** Add a line holding `$$`:
+
+```tern {.live}
+$$
+x + y
+$$
+:::note
+A note.
+:::
+```
+
+The [third likely mistake](#three-mistakes) shows the blank-line case.
+
+**Related.** [`math.closer-tail`](#math-closer-tail), [`math.opener-tail`](#math-opener-tail), [`math.inline-display`](#math-inline-display), [`math.error`](#math-error).
+
+### `math.opener-tail` {#math-opener-tail}
+
+**Error.** Attributes on the opening `$$` line.
+
+- **Trigger.** A multi-line `$$` whose opening line holds, after `$$`, a strong group starting with `#` or `.`.
+- **Position.** The group.
+- **Content.** The group is not attributes: it stays in the TeX, as its first line. The equation gets no id and no number. In the browser, a group with a `#` makes KaTeX reject the formula ([`math.error`](#math-error)); a group of classes is typeset as letters.
+- **Hint.** Attributes go after the closing `$$`.
+
+```tern {.live expect="math.opener-tail"}
+$$ {#eq-pythagoras}
+a^2 + b^2 = c^2
+$$
+```
+
+The engine reports `math.opener-tail` (error) at 1:4:
+
+- **Message:** ``a group on the opening `$$` line is TeX, not attributes``
+- **Hint:** `` attributes go after the closing `$$`: `$$ {#eq}` ``
+
+**Fix.** Move the group after the closing `$$`:
+
+```tern {.live}
+$$
+a^2 + b^2 = c^2
+$$ {#eq-pythagoras}
+```
+
+**Related.** [`math.closer-tail`](#math-closer-tail), [`attributes.orphan`](#attributes-orphan).
+
+### `math.closer-tail` {#math-closer-tail}
+
+**Warning.** Text after the closing `$$`.
+
+- **Trigger.** After the closing `$$`, anything but nothing or one attribute group. A group followed by text is junk as a whole.
+- **Position.** The junk, to the end of the line.
+- **Content.** The equation is complete. The junk is emitted as a paragraph after it, which continues on the following lines by the usual paragraph rules. When the junk starts with a group, the equation gets no id.
+
+```tern {.live expect="math.closer-tail"}
+$$
+E = mc^2
+$$ where m is the mass.
+```
+
+The engine reports `math.closer-tail` (warning) at 3:4:
+
+- **Message:** ``text after the closing `$$` is not part of the equation; it starts a paragraph``
+- **Hint:** `` only an attribute group may follow the closing `$$` ``
+
+**Fix.** Start the text on a line of its own:
+
+```tern {.live}
+$$
+E = mc^2
+$$
+
+where $m$ is the mass.
+```
+
+A group followed by text is junk, group included:
+
+```tern {.live expect="math.closer-tail"}
+$$
+E = mc^2
+$$ {#eq-energy} (Einstein)
+```
+
+The engine reports `math.closer-tail` (warning) at 3:4:
+
+- **Message:** ``text after the closing `$$` is not part of the equation; it starts a paragraph``
+- **Hint:** `` only an attribute group may follow the closing `$$` ``
+
+**Related.** [`math.opener-tail`](#math-opener-tail), [`math.unclosed`](#math-unclosed).
+
+### `math.inline-display` {#math-inline-display}
+
+**Info.** `$$` in the middle of a line is text.
+
+- **Trigger.** Two adjacent dollars inside inline content, once per `$$` run. Display math goes on its own lines. This includes a line that starts with `$$` and has text after a second `$$`: the whole line is then a paragraph.
+- **Position.** The `$$`.
+- **Content.** Text. Nothing opens.
+- **Hint.** For a display-style formula inside a sentence, `\displaystyle`.
+
+```tern {.live expect="math.inline-display math.inline-display"}
+The energy $$E = mc^2$$ is famous.
+```
+
+The engine reports `math.inline-display` (info) at 1:12 and 1:22:
+
+- **Message:** `` `$$` inside a line is text: display math goes on its own lines ``
+- **Hint:** `` for an inline display style write `$\displaystyle …$` ``
+
+**Fix.** Inline math takes one dollar, and display math goes on its own lines:
+
+```tern {.live}
+The energy $E = mc^2$ is famous, or $\displaystyle E = mc^2$ in display style.
+
+$$
+E = mc^2
+$$
+```
+
+**Related.** [`math.unclosed`](#math-unclosed).
+
+### `math.unclosed-inline` {#math-unclosed-inline}
+
+**Info.** A `$` followed by TeX never closes.
+
+- **Trigger.** An opening `$` followed by a backslash, with no closer. The candidate closer is the next unescaped `$`, and it is the only candidate: when the rules reject it, this fires too. Prices, a `$` followed by a digit, make no noise.
+- **Position.** The `$`.
+- **Content.** Text.
+
+```tern {.live expect="math.unclosed-inline"}
+The $\alpha never closes.
+```
+
+The engine reports `math.unclosed-inline` (info) at 1:5:
+
+- **Message:** ``this `$` is followed by TeX, but nothing closes it``
+- **Hint:** ``close the formula with `$`, or write `\$` for a dollar sign``
+
+**Fix.** Close the formula, or escape the dollar:
+
+```tern {.live}
+The $\alpha$ closes, and \$\alpha is a dollar.
+```
+
+The only candidate closer comes right after a `{`, which the bracket clause rejects:
+
+```tern {.live expect="math.unclosed-inline"}
+Half is $\frac{1}{$ two.
+```
+
+Prices are silent:
+
+```tern {.live}
+Costs $5 and $10.
+```
+
+**Related.** [`math.bracket`](#math-bracket), [`math.suspect-price`](#math-suspect-price).
+
+### `math.bracket` {#math-bracket}
+
+**Info.** An interval in French notation is not math.
+
+- **Trigger.** The bracket clause rejected a span only because a `]` follows the opening `$` or a `[` comes before the closing `$`. These are intervals like `]0,1[`. Cases with `(` or `)` are prices and stay silent.
+- **Position.** The opening `$`.
+- **Content.** Text.
+- **Hint.** The same interval as verbatim math.
+
+```tern {.live expect="math.bracket"}
+The interval $]0,1[$ is open.
+```
+
+The engine reports `math.bracket` (info) at 1:14:
+
+- **Message:** ``a `]` after the opening `$` or a `[` before the closing one keeps this from being math``
+- **Hint:** `` for an interval write verbatim math: $`]0,1[` ``
+
+**Fix.** Verbatim math, `` $` `` … `` ` ``, is always math:
+
+```tern {.live}
+The interval $`]0,1[` is open.
+```
+
+**Related.** [`math.unclosed-inline`](#math-unclosed-inline), [`math.suspect-price`](#math-suspect-price).
+
+### `math.suspect-price` {#math-suspect-price}
+
+**Warning.** A formula starts with a digit and holds words.
+
+- **Trigger.** An inline-math span whose opener is followed by a digit, and that holds a run of three or more ASCII letters preceded by whitespace, which is neither a TeX control word nor inside a braced argument that directly follows a control word: `\text{…}`, `\mbox{…}`, `\operatorname{…}`, both arguments of `\frac{…}{…}`, and so on. It catches a price that found a later `$`.
+- **Position.** The opening `$`.
+- **Content.** Math, as written: the span is typeset.
+
+```tern {.live expect="math.suspect-price"}
+Costs $5 then x$ more.
+```
+
+The engine reports `math.suspect-price` (warning) at 1:7:
+
+- **Message:** ``this formula starts with a digit and holds words: is the `$` a price?``
+- **Hint:** `` if `$` is a price, write `\$` ``
+
+**Fix.** Escape the price:
+
+```tern {.live}
+Costs \$5 then $x$ more.
+```
+
+Words inside a control word's argument are fine:
+
+```tern {.live}
+Pay $5 \text{ per item}$, or $3 \frac{apples}{day}$.
+```
+
+**Related.** [`math.unclosed-inline`](#math-unclosed-inline), [`math.bracket`](#math-bracket).
+
+## Attributes {#attributes}
+
+These concern [attribute groups](syntax-blocks.html#attributes), `{#id .class key=value}`, and [attribute lines](syntax-blocks.html#attribute-line).
+
+### `attr.malformed` {#attr-malformed}
+
+**Warning.** An attribute group does not parse, or a reserved key has a bad value.
+
+- **Trigger.** A `{` is special only in a few positions, and only some failures are reported:
+
+  | Where the group is | Reported when it does not parse | What happens |
+  |---|---|---|
+  | Glued after a link, image, span, inline element or reference | always, except `{}` and a candidate that holds another `{` | the group stays text |
+  | Glued after a code span, math, `*`, `~~` or `==` closer, autolink or footnote reference | when it starts with `#` or `.` | the group stays text |
+  | At the end of a heading | when it starts with `#` or `.` | the group stays heading text |
+  | Alone on a line | when the line starts with `{#` or `{.` | the line is a paragraph |
+  | At the end of a leaf line | always | the line is a paragraph |
+
+  On a container opener a bad group is [`block.opener-junk`](#block-opener-junk), and on a fence [`fence.info-junk`](#fence-info-junk).
+
+  The reserved keys are checked too:
+  - a bad value: `cols=0` or a negative `cols`, which is ignored, and a `ref=` that is not `label`, `number`, `title` or `full`, which gives the default text;
+  - a reserved key where it does not apply, which is dropped: `ref=` anywhere but on a reference; `raw` anywhere but on a container; `cols=` anywhere but on a container, leaf or inline element, or on a core block such as `:::macros` or `:::script`; and `tag=` on a reserved or core name, such as `:::main{tag=section}` or `:::macros{tag=div}` (for `tag=` off a named element, see [`tag.not-allowed`](#tag-not-allowed));
+  - the id, classes and keys of a `:::meta` block, which emits no element to carry them. They are dropped, and its id is not registered.
+
+  A leaf or heading whose group does not parse gets this once.
+- **Position.** The first bad column; for a bad value, the value; for a key where it does not apply, the key; on `:::meta`, each id, class and key.
+- **Content.** As in the table; dropped, for a reserved key out of place and for `:::meta`.
+
+```tern {.live expect="attr.malformed"}
+## Results {#results!}
+```
+
+The engine reports `attr.malformed` (warning) at 1:21:
+
+- **Message:** `the attribute group does not parse; it stays heading text`
+- **Hint:** `` write `{#id .class key=value}` ``
+
+**Fix.** An id starts with a letter or `_`, and holds letters, digits, `_` and `-`:
+
+```tern {.live}
+## Results {#results}
+```
+
+After a span:
+
+```tern {.live expect="attr.malformed"}
+See [the term]{.term!}.
+```
+
+The engine reports `attr.malformed` (warning) at 1:21:
+
+- **Message:** `this attribute group does not parse at "!"`
+- **Hint:** `attributes are {#id .class key=value}; quote a value that holds spaces`
+
+An attribute line:
+
+```tern {.live expect="attr.malformed"}
+{#intro .lead!}
+A paragraph.
+```
+
+The engine reports `attr.malformed` (warning) at 1:14:
+
+- **Message:** `this attribute line does not parse; it is text`
+- **Hint:** `` write `{#id .class key=value}` ``
+
+A leaf line:
+
+```tern {.live expect="attr.malformed"}
+::spacer{#gap %}
+```
+
+The engine reports `attr.malformed` (warning) at 1:15:
+
+- **Message:** `the attribute group does not parse; the line is text`
+- **Hint:** `` write `{#id .class key=value}` ``
+
+An id must start with a letter or `_`. Compare [`ref.unreferenceable`](#ref-unreferenceable), for `id=2024`:
+
+```tern {.live expect="attr.malformed"}
+[the plan]{#2024}
+```
+
+The engine reports `attr.malformed` (warning) at 1:13:
+
+- **Message:** `this attribute group does not parse at "2"`
+- **Hint:** `attributes are {#id .class key=value}; quote a value that holds spaces`
+
+A bad `cols`:
+
+```tern {.live expect="attr.malformed"}
+:::row{cols=0}
+One.
+:::
+```
+
+The engine reports `attr.malformed` (warning) at 1:13:
+
+- **Message:** `` `cols` must be a positive number or a list of widths; it is ignored ``
+- **Hint:** `` write `cols=2` or `cols="2 1"` ``
+
+A bad `ref`:
+
+```tern {.live expect="attr.malformed"}
+## Results {#results}
+
+See @results{ref=page}.
+```
+
+The engine reports `attr.malformed` (warning) at 3:18:
+
+- **Message:** `ref=page is not one of label, number, title, full`
+- **Hint:** `write {ref=label}, {ref=number}, {ref=title} or {ref=full}`
+
+A `ref=` off a reference:
+
+```tern {.live expect="attr.malformed"}
+See [the results]{ref=title}.
+```
+
+The engine reports `attr.malformed` (warning) at 1:19:
+
+- **Message:** `` `ref=` applies only to a reference (`@id{ref=…}`); it is dropped here ``
+- **Hint:** `` remove it; on a reference it chooses the text: `@id{ref=title}` ``
+
+A `cols=` on a span, which has no grid:
+
+```tern {.live expect="attr.malformed"}
+[Two columns]{cols=2}
+```
+
+The engine reports `attr.malformed` (warning) at 1:15:
+
+- **Message:** `` `cols=` applies only to a container, leaf or inline element (`:::name{cols=2}`), whose grid it sets; it is dropped here ``
+- **Hint:** `` remove it, or put the content in a container: `:::row{cols=2}` … `:::` ``
+
+A `tag=` on a reserved name, which gets [`name.reserved`](#name-reserved) as well:
+
+```tern {.live expect="name.reserved attr.malformed"}
+:::main{tag=section}
+The main content.
+:::
+```
+
+The engine reports `attr.malformed` (warning) at 1:9:
+
+- **Message:** `` `tag=` applies only to `:::name`, `::name` and `:name[…]` with a name that is not reserved, and `main` is; it is dropped here ``
+- **Hint:** `` choose a name that is not reserved, and keep `tag=` ``
+
+Attributes on `:::meta`, one diagnostic each:
+
+```tern {.live expect="attr.malformed attr.malformed"}
+:::meta{#info .wide}
+title: Linear maps
+:::
+```
+
+The engine reports `attr.malformed` (warning) at 1:9 and 1:15:
+
+- At 1:9, the message ``the id "info" applies to no element here, as `:::meta` emits nothing; it is dropped``, with the hint ``remove it; metadata goes in the body, as `key: value` lines``.
+- At 1:15, the message ``the class "wide" applies to no element here, as `:::meta` emits nothing; it is dropped``, with the hint ``remove it; metadata goes in the body, as `key: value` lines``.
+
+Weak groups, and groups glued to code that do not start with `#` or `.`, are silent text:
+
+```tern {.live}
+The set {1, 2}, the call `f`{x}, and [x]{}.
+```
+
+**Related.** [`attributes.orphan`](#attributes-orphan), [`block.opener-junk`](#block-opener-junk), [`fence.info-junk`](#fence-info-junk).
+
+### `attributes.orphan` {#attributes-orphan}
+
+**Warning.** An attribute line has no block to attach to.
+
+- **Trigger.** An attribute line, one or more strong groups alone on a line, followed by a blank line, a closer, a `+++` line, the end of its container or the end of the note. A footnote definition takes no attributes, so an attribute line before one is an orphan too.
+- **Position.** The line. Consecutive orphan lines get one diagnostic, at the first.
+- **Content.** The line is shown as paragraph text. Consecutive orphan lines form one paragraph.
+
+```tern {.live expect="attributes.orphan"}
+{.lead}
+
+The opening paragraph.
+```
+
+The engine reports `attributes.orphan` (warning) at 1:1:
+
+- **Message:** `no block follows this attribute line; it is shown as text`
+- **Hint:** `put it right above its block`
+
+**Fix.** An attribute line attaches to the block on the very next line:
+
+```tern {.live}
+{.lead}
+The opening paragraph.
+```
+
+An auto-wrap that moves the group of `$$ {#eq}` onto the next line makes an orphan:
+
+```tern {.live expect="attributes.orphan"}
+$$
+E = mc^2
+$$
+{#eq-energy}
+```
+
+**Related.** [`attributes.raw`](#attributes-raw), [`attr.malformed`](#attr-malformed).
+
+### `attributes.raw` {#attributes-raw}
+
+**Warning.** An attribute line before raw HTML.
+
+- **Trigger.** An attribute line followed by a raw HTML block or an `=html` fence.
+- **Position.** The line.
+- **Content.** The line is shown as text; the raw HTML is unchanged.
+
+```tern {.live expect="attributes.raw"}
+{.note}
+<div>Raw HTML.</div>
+```
+
+The engine reports `attributes.raw` (warning) at 1:1:
+
+- **Message:** `attributes do not apply to raw HTML; this line is shown as text`
+- **Hint:** `put them in the tag`
+
+**Fix.** Put the attributes in the tag:
+
+```tern {.live}
+<div class="note">Raw HTML.</div>
+```
+
+**Related.** [`attributes.orphan`](#attributes-orphan), [`html.wrapper`](#html-wrapper), [`fence.info-junk`](#fence-info-junk).
+
+## Tables and cells {#tables-and-cells}
+
+These concern [pipe tables](syntax-blocks.html#tables) and [cells](syntax-blocks.html#cells).
+
+### `table.stray-delimiter` {#table-stray-delimiter}
+
+**Warning.** A paragraph line is shaped like a table's delimiter row.
+
+- **Trigger.** A paragraph line of `-` and `:` cells separated by `|`, with or without a leading pipe, that does not make a table. The usual causes: a table written without leading pipes, as GitHub allows; a header row that ends with a continuation `\`; a delimiter row inside a paragraph rather than at a block start.
+- **Position.** The line.
+- **Content.** Paragraph text.
+- **Hint.** When the line above ends with `\`, that the header row cannot continue; otherwise, that table rows start with `|`.
+
+```tern {.live expect="table.stray-delimiter"}
+Keys | Action
+---|---
+:w | write
+```
+
+The engine reports `table.stray-delimiter` (warning) at 2:1:
+
+- **Message:** `this line is shaped like a delimiter row, but no table starts here`
+- **Hint:** `` table rows start with `|`: write `| Keys | Action |` ``
+
+**Fix.** Every row starts with `|`:
+
+```tern {.live}
+| Keys | Action |
+|---|---|
+| :w | write |
+```
+
+A header row cannot continue onto the next line:
+
+```tern {.live expect="table.stray-delimiter"}
+| Keys | Action \
+|---|---|
+```
+
+The engine reports `table.stray-delimiter` (warning) at 2:1:
+
+- **Message:** `this line is shaped like a delimiter row, but no table starts here`
+- **Hint:** `the header row cannot continue onto the next line`
+
+**Related.** [`table.misplaced-separator`](#table-misplaced-separator), [`table.row-unterminated`](#table-row-unterminated).
+
+### `table.row-unterminated` {#table-row-unterminated}
+
+**Warning.** A row ends with `\` but nothing can continue it.
+
+- **Trigger.** A row whose last non-space character is a single unescaped `\` outside code and math continues on the next line. This fires when that line cannot join it: a blank line, the end of the note, a closer, a `+++` line, or a line outside the row's container.
+- **Position.** The row's line.
+- **Content.** The `\` is literal and stays in the last cell. The table ends as usual. A row that ends in `\\` is a literal backslash, with no diagnostic.
+
+```tern {.live expect="table.row-unterminated"}
+| Key | Action |
+|---|---|
+| :w | write \
+
+After the table.
+```
+
+The engine reports `table.row-unterminated` (warning) at 3:1:
+
+- **Message:** ``this row ends with `\` but nothing can continue it; the `\` is literal``
+- **Hint:** `continue the row on the next line, in the same block`
+
+**Fix.** Continue the row on the next line, or remove the `\`:
+
+```tern {.live}
+| Key | Action |
+|---|---|
+| :w | write the file \
+  to disk |
+```
+
+**Related.** [`table.stray-delimiter`](#table-stray-delimiter), [`latex.linebreak`](#latex-linebreak).
+
+### `table.misplaced-separator` {#table-misplaced-separator}
+
+**Warning.** A second delimiter row inside a table.
+
+- **Trigger.** A delimiter row in a table's body. Two delimiter rows at a block start count too: the first starts a headerless table, and the second is in its body.
+- **Position.** The line.
+- **Content.** It is rendered as a text row, with cells holding `---`.
+
+```tern {.live expect="table.misplaced-separator"}
+| Key | Action |
+|---|---|
+| :w | write |
+|---|---|
+| :q | quit |
+```
+
+The engine reports `table.misplaced-separator` (warning) at 4:1:
+
+- **Message:** `a delimiter row in the table body is shown as a text row`
+- **Hint:** `a table has one delimiter row, under its header`
+
+**Fix.** Remove it, or end the table with a blank line and start another.
+
+```tern {.live}
+| Key | Action |
+|---|---|
+| :w | write |
+| :q | quit |
+```
+
+**Related.** [`table.stray-delimiter`](#table-stray-delimiter).
+
+### `table.extra-cell` {#table-extra-cell}
+
+**Warning.** A row has more cells than the header.
+
+- **Trigger.** A row with more cells than the header row, or than the delimiter row of a headerless table. It fires once per row.
+- **Position.** The `|` before the first extra cell.
+- **Content.** The extra cells are kept. Missing cells are added, empty, with no diagnostic.
+
+An unescaped `|` in a cell's text is the usual cause:
+
+```tern {.live expect="table.extra-cell"}
+| Expression | Meaning |
+|---|---|
+| a | b | a or b |
+```
+
+The engine reports `table.extra-cell` (warning) at 3:9:
+
+- **Message:** `this row has more cells than the header's 2; the extra ones are kept`
+- **Hint:** `add a header cell, or remove this one`
+
+**Fix.** Escape the pipe, or put it in code, where it needs no escape:
+
+```tern {.live}
+| Expression | Meaning |
+|---|---|
+| a \| b | a or b |
+| `a | b` | the same, as code |
+```
+
+**Related.** [`inline.unclosed`](#inline-unclosed), for a pipe inside `:kbd[…]`.
+
+### `cell.orphan` {#cell-orphan}
+
+**Warning.** A `+++` line outside a container's own level.
+
+- **Trigger.** A `+++` line, with or without a group, outside any container, or inside a quote or list item within one: cells split only the container's own body.
+- **Position.** The line.
+- **Content.** Paragraph text. It ends the paragraph before it, and the lines after it continue the new paragraph.
+
+```tern {.live expect="cell.orphan"}
+Left.
++++
+Right.
+```
+
+The engine reports `cell.orphan` (warning) at 2:1:
+
+- **Message:** `` `+++` separates cells only directly inside a container; this is text ``
+- **Hint:** `move it to the container’s own level`
+
+**Fix.** Put the cells in a container:
+
+```tern {.live}
+:::row
+Left.
++++
+Right.
+:::
+```
+
+Inside a quote within a container:
+
+```tern {.live expect="cell.orphan"}
+:::row
+> A quote.
+> +++
+:::
+```
+
+The engine reports `cell.orphan` (warning) at 3:3:
+
+- **Message:** `` `+++` separates cells only directly inside a container; this is text ``
+- **Hint:** `move it to the container’s own level`
+
+**Related.** [`math.unclosed`](#math-unclosed) (a `+++` line ends display math).
+
+## Leaves and inline elements {#leaves-and-inline}
+
+These concern [leaves](syntax-blocks.html#leaf), `::name[…]{…}`, and [named inline elements](syntax-inline.html#inline-element), `:name[…]{…}`.
+
+### `leaf.demoted` {#leaf-demoted}
+
+**Info.** A line starts like a leaf but is not one.
+
+- **Trigger.** A line starts with `::NAME`, but the rest is not what a leaf accepts: there is text after it, or an unclosed `[`. A leaf must fill its line. Not for `::` alone (silent), `:: name` ([`block.spaced-name`](#block-spaced-name)) or a group that does not parse ([`attr.malformed`](#attr-malformed)).
+- **Position.** The `::` and the name.
+- **Content.** Paragraph text. It does not interrupt a paragraph; it continues one.
+- **Hint.** The one-line and the block spellings of that name.
+
+```tern {.live expect="leaf.demoted"}
+::before and ::after are pseudo-elements.
+```
+
+The engine reports `leaf.demoted` (info) at 1:1:
+
+- **Message:** `` `::before` is a leaf only when it fills the line; this is text ``
+- **Hint:** `` write `::before[…]` for a one-line element, or `:::before` … `:::` ``
+
+**Fix.** Here the line is prose, so escape the colons:
+
+```tern {.live}
+\::before and ::after are pseudo-elements.
+```
+
+A leaf broken over two lines, by hand or by an auto-wrap:
+
+```tern {.live expect="leaf.demoted"}
+::video{src=tide.mp4
+controls}
+```
+
+The engine reports `leaf.demoted` (info) at 1:1:
+
+- **Message:** `` `::video` is a leaf only when it fills the line; this is text ``
+- **Hint:** `` write `::video[…]` for a one-line element, or `:::video` … `:::` ``
+
+**Related.** [`block.spaced-name`](#block-spaced-name), [`leaf.void-content`](#leaf-void-content).
+
+### `leaf.void-content` {#leaf-void-content}
+
+**Warning.** A void element was given content.
+
+- **Trigger.** A leaf or a named inline element resolves to a void element, such as `hr`, `img`, `embed` or `wbr`, and has bracket content.
+- **Position.** The whole leaf or inline element.
+- **Content.** The content is emitted after the element: a leaf's in a paragraph of its own, an inline element's right after it in the text.
+- **Hint.** To remove the brackets, or to choose an element that holds content.
+
+```tern {.live expect="leaf.void-content"}
+::hr[Part two]
+```
+
+The engine reports `leaf.void-content` (warning) at 1:1:
+
+- **Message:** `<hr> holds no content; what the brackets hold follows it`
+- **Hint:** `remove the brackets, or choose an element that holds content`
+
+**Fix.** Keep the element and the text apart:
+
+```tern {.live}
+::hr
+
+## Part two
+```
+
+**Related.** [`leaf.demoted`](#leaf-demoted), [`tag.not-allowed`](#tag-not-allowed).
+
+### `inline.unclosed` {#inline-unclosed}
+
+**Warning.** A named inline element is never closed.
+
+- **Trigger.** `:NAME[` with no matching `]` in the same inline content. Brackets nest, and code and math hide a `]`. So a lone backtick inside can pair with a later one and swallow the `]`, and in a table an unescaped `|` inside the element splits the cell first.
+- **Position.** The `[`.
+- **Content.** Text, as written.
+
+```tern {.live expect="inline.unclosed"}
+Press :kbd[Ctrl and S.
+```
+
+The engine reports `inline.unclosed` (warning) at 1:11:
+
+- **Message:** `:kbd[ is never closed`
+- **Hint:** `` close it with `]`; a literal `]` inside is written `\]` ``
+
+**Fix.** Close each element:
+
+```tern {.live}
+Press :kbd[Ctrl]+:kbd[S].
+```
+
+A lone backtick pairs with the next one:
+
+```tern {.live expect="inline.unclosed"}
+Press :kbd[`] then type `x`.
+```
+
+Escape it:
+
+```tern {.live}
+Press :kbd[\`] then type `x`.
+```
+
+**Related.** [`inline.glued`](#inline-glued), [`table.extra-cell`](#table-extra-cell).
+
+### `inline.glued` {#inline-glued}
+
+**Info.** A named inline element is glued to a word.
+
+- **Trigger.** `:NAME[` where the `:` follows an ASCII letter or digit. After `_`, `:` or `/` the text is silent, as in times and URLs. The test is ASCII on purpose, so in Chinese, Japanese or Thai text an element right after a word still works.
+- **Position.** The `:`.
+- **Content.** Text.
+
+```tern {.live expect="inline.glued"}
+Then press:kbd[S] to save.
+```
+
+The engine reports `inline.glued` (info) at 1:11:
+
+- **Message:** `":kbd[" follows a letter or digit, so it is text`
+- **Hint:** `put a space before ":kbd["`
+
+**Fix.** Put a space before the colon:
+
+```tern {.live}
+Then press :kbd[S] to save. これは:kbd[S]です.
+```
+
+**Related.** [`inline.unclosed`](#inline-unclosed).
+
+## Footnotes {#footnotes}
+
+These concern [footnote references](syntax-inline.html#footnote-reference), `[^label]`, and [definitions](syntax-blocks.html#footnote-definition), `[^label]: …`. Labels match case-insensitively.
+
+### `footnote.undefined` {#footnote-undefined}
+
+**Warning.** A footnote reference has no definition.
+
+- **Trigger.** `[^label]` when no definition has that label. Inside a definition only [`footnote.nested`](#footnote-nested) is reported.
+- **Position.** The reference.
+- **Content.** The reference stays literal text.
+
+```tern {.live expect="footnote.undefined"}
+A claim.[^src]
+```
+
+The engine reports `footnote.undefined` (warning) at 1:9:
+
+- **Message:** `[^src] has no definition, so it stays text`
+- **Hint:** `` add a definition: `[^src]: …` ``
+
+**Fix.** Add the definition:
+
+```tern {.live}
+A claim.[^src]
+
+[^src]: The source.
+```
+
+A definition needs a space after its colon. Without it, the line is a paragraph holding a second reference:
+
+```tern {.live expect="footnote.undefined footnote.undefined"}
+A claim.[^src]
+
+[^src]:The source.
+```
+
+**Related.** [`footnote.unused`](#footnote-unused), [`footnote.nested`](#footnote-nested).
+
+### `footnote.duplicate` {#footnote-duplicate}
+
+**Warning.** A footnote label is defined twice.
+
+- **Trigger.** A second definition with the same label. Labels compare case-insensitively, so `[^a]:` and `[^A]:` are the same.
+- **Position.** Each later definition's `[^label]:`. The first gets none.
+- **Content.** The first wins. Each later one is dropped from the output.
+
+```tern {.live expect="footnote.duplicate"}
+A claim.[^a]
+
+[^a]: First.
+[^A]: Second.
+```
+
+The engine reports `footnote.duplicate` (warning) at 4:1:
+
+- **Message:** `[^A] is already defined on line 3; this definition is dropped`
+- **Hint:** `merge the two definitions, or give one another label`
+
+**Fix.** Merge them, or give one another label:
+
+```tern {.live}
+A claim.[^a] Another.[^b]
+
+[^a]: First.
+[^b]: Second.
+```
+
+**Related.** [`footnote.unused`](#footnote-unused), [`id.duplicate`](#id-duplicate).
+
+### `footnote.nested` {#footnote-nested}
+
+**Warning.** A footnote reference inside a footnote definition.
+
+- **Trigger.** `[^label]` inside a definition's content. Footnotes cannot nest. A nested reference to an undefined label gets only this diagnostic.
+- **Position.** The reference.
+- **Content.** The reference stays literal text. If it was the only reference to its definition, that definition is also [unused](#footnote-unused).
+
+```tern {.live expect="footnote.nested footnote.unused"}
+A claim.[^a]
+
+[^a]: See also[^b].
+[^b]: Another source.
+```
+
+The engine reports `footnote.nested` (warning) at 3:15:
+
+- **Message:** `[^b] is inside a footnote definition, so it stays text`
+- **Hint:** `footnotes cannot nest: put the text in this footnote, or move the reference into the main text`
+
+**Fix.** Put the text in the one footnote, or move the reference into the main text:
+
+```tern {.live}
+A claim.[^a] See also.[^b]
+
+[^a]: The source.
+[^b]: Another source.
+```
+
+**Related.** [`footnote.undefined`](#footnote-undefined), [`footnote.unused`](#footnote-unused).
+
+### `footnote.unused` {#footnote-unused}
+
+**Info.** A footnote definition is never referenced.
+
+- **Trigger.** A definition whose label no reference outside a definition uses.
+- **Position.** The definition's `[^label]:`.
+- **Content.** It is still emitted, after the referenced footnotes, with no back link.
+
+```tern {.live expect="footnote.unused"}
+Text.
+
+[^a]: Never used.
+```
+
+The engine reports `footnote.unused` (info) at 3:1:
+
+- **Message:** `[^a] is never referenced; it is listed after the referenced footnotes`
+- **Hint:** `reference it with [^a], or remove it`
+
+**Fix.** Reference it, or remove it:
+
+```tern {.live}
+Text.[^a]
+
+[^a]: Now used.
+```
+
+**Related.** [`footnote.nested`](#footnote-nested), [`footnote.undefined`](#footnote-undefined).
+
+## LaTeX habits {#latex-habits}
+
+These are hints for habits from LaTeX. See [escapes](syntax-inline.html#escape) and [hard breaks](syntax-inline.html#hard-break).
+
+### `latex.delimiters` {#latex-delimiters}
+
+**Info.** LaTeX's math delimiters are not math here.
+
+- **Trigger.** Once per note, the first of these:
+  - `\(` followed later in the same inline content by `\)`, with something between them besides whitespace and escape pairs;
+  - `\[` followed later in the same inline content by `\]`, with one of TeX's marks between them: `\` before a letter, `{`, `}`, `^`, `_` or `&`;
+  - `\begin{` at the start of a line.
+
+  `\[` is also the escape for a literal `[`, so `\[not a span\]` and a lone `\[` are silent.
+- **Position.** The backslash and the character after it.
+- **Content.** The escape applies: `\(` renders `(`, and `\[` renders `[`. `\begin{…}` stays text.
+
+```tern {.live expect="latex.delimiters"}
+Let \(x^2\) be small.
+```
+
+The engine reports `latex.delimiters` (info) at 1:5:
+
+- **Message:** `LaTeX's delimiters are not math in tern; the backslash is an escape`
+- **Hint:** `` math is `$…$` and `$$` ``
+
+**Fix.** Math is `$…$` inline and `$$` on its own lines:
+
+```tern {.live}
+Let $x^2$ be small.
+```
+
+An environment goes inside display math:
+
+```tern {.live expect="latex.delimiters"}
+\begin{aligned}
+a &= b
+\end{aligned}
+```
+
+```tern {.live}
+$$
+\begin{aligned}
+a &= b
+\end{aligned}
+$$
+```
+
+Escapes are silent:
+
+```tern {.live}
+\[not a span\] and \( \) stay text.
+```
+
+**Related.** [`latex.linebreak`](#latex-linebreak), [`math.inline-display`](#math-inline-display).
+
+### `latex.linebreak` {#latex-linebreak}
+
+**Info.** `\\` at the end of a line is not a line break.
+
+- **Trigger.** A paragraph line ends with `\\` and the paragraph continues on the next line, so a line break was lost. Never at the end of a table row, where `\\` is a literal backslash.
+- **Position.** The first of the two backslashes.
+- **Content.** A literal backslash, then a soft break.
+
+```tern {.live expect="latex.linebreak"}
+Roses are red,\\
+violets are blue.
+```
+
+The engine reports `latex.linebreak` (info) at 1:15:
+
+- **Message:** `` `\\` at the end of a line is a backslash followed by a soft break, not a line break ``
+- **Hint:** `` a line break is a single trailing `\` ``
+
+**Fix.** A line break is a single trailing `\`:
+
+```tern {.live}
+Roses are red,\
+violets are blue.
+```
+
+**Related.** [`latex.delimiters`](#latex-delimiters), [`table.row-unterminated`](#table-row-unterminated).
+
+## Nesting and the document {#nesting-and-document}
+
+### `nesting.limit` {#nesting-limit}
+
+**Error.** Blocks nest more than 64 deep.
+
+- **Trigger.** An opener that would make the stack of open blocks deeper than 64. Containers, list items, quotes and footnote definitions count; the note itself and lists do not ([the line algorithm](syntax-blocks.html#line-algorithm)).
+- **Position.** The opener: the colons and name, the `>` or the list marker.
+- **Content.** The opener becomes paragraph text, inside the 64th block.
+
+This line has 65 `>` markers. The 65th, at column 129, would open the 65th level:
+
+```tern {.live expect="nesting.limit"}
+> > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > Too deep.
+```
+
+The engine reports `nesting.limit` (error) at 1:129:
+
+- **Message:** `blocks nest at most 64 deep; this opener is shown as text`
+- **Hint:** `flatten the structure`
+
+**Fix.** Flatten the structure. Sixty-four levels are allowed:
+
+```tern {.live}
+> > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > > Deep enough.
+```
+
+**Related.** [`block.unclosed`](#block-unclosed).
+
+### `doc.frontmatter` {#doc-frontmatter}
+
+**Info.** YAML front matter is not supported.
+
+- **Trigger.** The note's first block, after any blank lines, is `---`, then `key: value` lines, then `---`.
+- **Position.** The opening `---`.
+- **Content.** A thematic break, a paragraph and a thematic break.
+
+```tern {.live expect="doc.frontmatter"}
+---
+title: Linear maps
+lang: en
+---
+
+# Linear maps
+```
+
+The engine reports `doc.frontmatter` (info) at 1:1:
+
+- **Message:** `front matter is not supported: this is a rule, a paragraph and a rule`
+- **Hint:** ``write metadata in a `:::meta` block``
+
+**Fix.** Metadata goes in a [`:::meta` block](elements.html#metadata):
+
+```tern {.live}
+:::meta
+title: Linear maps
+lang: en
+:::
+
+# Linear maps
+```
+
+The same lines after the first block are ordinary rules and text, with no hint.
+
+**Related.** [`meta.malformed`](#meta-malformed).
+
+## Metadata {#metadata}
+
+These concern [`:::meta`](elements.html#metadata). The examples that involve the preserved head, the HTML before the `tern.js` line, declare it for the example.
+
+### `meta.conflict` {#meta-conflict}
+
+**Warning.** The head and `:::meta` set the same key to different values.
+
+- **Trigger.** A `:::meta` key that the head also sets: `title` by `<title>`, `lang` and `dir` by `<html lang dir>`, any other key by `<meta name="key" content="…">`. Values compare exactly, except `lang`, which compares case-insensitively.
+- **Position.** The key in `:::meta`.
+- **Content.** The head wins, so the page agrees with what crawlers and the browser's tab saw before any script ran. The note's metadata holds the head's value.
+
+This example's head is `<title>Old title</title>`:
+
+```tern {.live expect="meta.conflict" head="<title>Old title</title>"}
+:::meta
+title: New title
+:::
+```
+
+The engine reports `meta.conflict` (warning) at 2:1:
+
+- **Message:** ``the head sets `title` to "Old title"; the head wins``
+- **Hint:** `set each key in one place`
+
+`:::meta` emits nothing in the body, so the result is empty.
+
+**Fix.** Set each key in one place: remove it from the head or from `:::meta`. A `lang` that differs only in case is no conflict:
+
+```tern {.live head='<html lang="en">'}
+:::meta
+lang: EN
+:::
+```
+
+**Related.** [`meta.duplicate`](#meta-duplicate).
+
+### `meta.duplicate` {#meta-duplicate}
+
+**Warning.** A metadata key is set twice.
+
+- **Trigger.** The same key twice, in one `:::meta` block or across top-level blocks, which merge.
+- **Position.** The later key.
+- **Content.** The first value wins.
+
+```tern {.live expect="meta.duplicate"}
+:::meta
+title: One
+:::
+
+:::meta
+title: Two
+:::
+```
+
+The engine reports `meta.duplicate` (warning) at 6:1:
+
+- **Message:** `` `title` is already set; the first value wins ``
+- **Hint:** `remove one of them`
+
+**Fix.** Keep one:
+
+```tern {.live}
+:::meta
+title: One
+:::
+```
+
+**Related.** [`meta.conflict`](#meta-conflict).
+
+### `meta.malformed` {#meta-malformed}
+
+**Warning.** A `:::meta` line is not `key: value`.
+
+- **Trigger.** A non-blank line in a top-level `:::meta` block that is not a key, a colon, a space and a value. A key starts with a letter and holds letters, digits, `_`, `.`, `:` and `-`, and does not end in `:`, so `og:title: …` is fine. An indented line is malformed. Blank lines are ignored.
+- **Position.** The line.
+- **Content.** The line is ignored.
+
+```tern {.live expect="meta.malformed meta.malformed meta.malformed"}
+:::meta
+title Linear maps
+  author: O. Carrera
+date:2026-10-07
+:::
+```
+
+The engine reports `meta.malformed` (warning) at 2:1, 3:1 and 4:1:
+
+- **Message:** `` a `:::meta` line is `key: value` ``
+- **Hint:** ``write `key: value`, unindented, the key starting with a letter``
+
+**Fix.** One `key: value` per line, unindented:
+
+```tern {.live}
+:::meta
+title: Linear maps
+author: O. Carrera
+date: 2026-10-07
+:::
+```
+
+**Related.** [`doc.frontmatter`](#doc-frontmatter).
+
+### `meta.nested` {#meta-nested}
+
+**Warning.** `:::meta` is not at the top level.
+
+- **Trigger.** A `:::meta` block inside a container, a quote, a list item or a footnote definition.
+- **Position.** The opener.
+- **Content.** The block is ignored. Its body is still verbatim, and nothing is emitted for it.
+
+```tern {.live expect="meta.nested"}
+:::note
+:::meta
+title: Linear maps
+:::
+:::
+```
+
+The engine reports `meta.nested` (warning) at 2:1:
+
+- **Message:** `` `:::meta` counts only at the top level; this one is ignored ``
+- **Hint:** `move it to the top of the note`
+
+**Fix.** Move it to the top of the note:
+
+```tern {.live}
+:::meta
+title: Linear maps
+:::
+
+:::note
+A note.
+:::
+```
+
+**Related.** [`meta.malformed`](#meta-malformed).
+
+## Names and elements {#names-and-elements}
+
+These concern how a name becomes an element: [names](elements.html#names), [allowlists](elements.html#allowlists) and [reserved names](elements.html#reserved).
+
+### `name.reserved` {#name-reserved}
+
+**Warning.** A reserved name, key or class.
+
+- **Trigger.** Any of these:
+  - a container, leaf or inline name that is reserved: `base body head html link main meta noscript script style template title`, `tern`, any name starting with `t-`, and `end`;
+  - `{tag=x}` with a reserved `x`;
+  - a schema entry whose `tag` is reserved, such as `tag: 'main'`;
+  - the key `data-t`, in any case;
+  - the class `tern` or any class starting with `t-`. Class names are case-sensitive, so `.Tern` is an ordinary class.
+
+  `:::meta` is the metadata block, so only `::meta` and `:meta[…]` count as reserved.
+- **Position.** The name, the key, or a class's `.`; for `tag=`, the key; for a schema's `tag`, the name.
+- **Content.**
+  - A reserved name falls back to `div` (container or leaf) or `span` (inline), **without** the name as its class, so `:::tern` cannot produce `class="tern"`. It keeps `data-t="NAME"`.
+  - `:::script`, `:::style` and `:::html` have a verbatim body, shown as `<pre class="t-error">` and never run. The `<pre>` carries the block's id, classes and keys.
+  - `:::end` is read as a bare closer.
+  - A reserved key or class is dropped. A reserved `tag=` or schema `tag` is ignored, and the next rule decides the element. A `tag=` on a reserved name is dropped too, with [`attr.malformed`](#attr-malformed).
+
+```tern {.live expect="name.reserved"}
+:::main
+The main content.
+:::
+```
+
+The engine reports `name.reserved` (warning) at 1:4:
+
+- **Message:** `` `main` is reserved; the element falls back to a `div` ``
+- **Hint:** `choose another name`
+
+**Fix.** Choose another name:
+
+```tern {.live}
+:::article
+The main content.
+:::
+```
+
+A reserved class:
+
+```tern {.live expect="name.reserved"}
+[x]{.t-box}
+```
+
+The engine reports `name.reserved` (warning) at 1:5:
+
+- **Message:** `the class "t-box" is reserved for tern's own use and is dropped`
+- **Hint:** `choose a class that is not "tern" and does not start with "t-"`
+
+A script is raw HTML, not a container:
+
+```tern {.live expect="name.reserved"}
+:::script
+console.log('hi')
+:::
+```
+
+The engine reports `name.reserved` (warning) at 1:4:
+
+- **Message:** `` `:::script` is reserved: its body is shown as text, not run ``
+- **Hint:** `` write `<script>` … `</script>` ``
+
+A reserved `tag=`:
+
+```tern {.live expect="name.reserved"}
+:::box{tag=main}
+Boxed.
+:::
+```
+
+The engine reports `name.reserved` (warning) at 1:8:
+
+- **Message:** `` `tag=main` names a reserved element and is ignored ``
+- **Hint:** `choose another element`
+
+A schema entry with a reserved `tag`, such as `tern.block('box', {tag: 'main'})`, reports at the name, `box`:
+
+- **Message:** `` the schema gives `box` the element `main`, which is reserved and never produced; the next rule decides ``
+- **Hint:** `choose a flow element such as section, aside or div`
+
+`:::end` closes a block, with a warning:
+
+```tern {.live expect="name.reserved"}
+:::note
+A note.
+:::end
+```
+
+The engine reports `name.reserved` (warning) at 3:4:
+
+- **Message:** `` `:::end` is reserved; it is read as `:::` ``
+- **Hint:** `` write `:::` or `:::/name` ``
+
+**Related.** [`tag.not-allowed`](#tag-not-allowed), [`name.unknown`](#name-unknown).
+
+### `tag.not-allowed` {#tag-not-allowed}
+
+**Warning.** `tag=`, or a schema's `tag`, names an element the level cannot be.
+
+- **Trigger.** Two cases:
+  - **Outside the allowlist.** `{tag=x}`, or a schema entry's `tag`, names an element outside the level's allowlist: a phrasing element on a container, a flow element on an inline element, `table` on a leaf. `a`, `img` and `br` are left out on purpose, since links, images and `\` spell them. A custom element is in no allowlist: write it as the name, `:::my-widget`. A reserved element is [`name.reserved`](#name-reserved) instead.
+  - **Off a named element.** `{tag=x}` anywhere but on `:::name`, `::name` or `:name[…]`: on a span, link, image, code span or heading, or on a block through an attribute line.
+- **Position.** The `tag` key; for a schema's `tag`, the name.
+- **Content.** Outside the allowlist, the `tag` is ignored, and the next rule decides the element: the schema's `tag`, a custom-element name, the allowlist, then `div` or `span` with the name as class. Off a named element, the `tag=` is dropped.
+- **Hint.** Elements this level can be.
+
+```tern {.live expect="tag.not-allowed"}
+:::aside{tag=span}
+Aside text.
+:::
+```
+
+The engine reports `tag.not-allowed` (warning) at 1:10:
+
+- **Message:** `` `tag=` asks for `span`, which a container cannot be; the next rule decides ``
+- **Hint:** `choose a flow element such as section, aside or div`
+
+**Fix.** Choose an element the level allows. Here the name alone is enough, since `aside` is in the container allowlist:
+
+```tern {.live}
+:::aside
+Aside text.
+:::
+```
+
+On an inline element:
+
+```tern {.live expect="tag.not-allowed"}
+A :note[remark]{tag=div}.
+```
+
+The engine reports `tag.not-allowed` (warning) at 1:17:
+
+- **Message:** `` `tag=` asks for `div`, which an inline element cannot be; the next rule decides ``
+- **Hint:** `choose a phrasing element such as kbd, abbr or span`
+
+Off a named element, on a span:
+
+```tern {.live expect="tag.not-allowed"}
+Press [Ctrl]{tag=kbd}.
+```
+
+The engine reports `tag.not-allowed` (warning) at 1:14:
+
+- **Message:** `` `tag=` applies only to `:::name`, `::name` and `:name[…]`; it is dropped here ``
+- **Hint:** `` remove it; to choose the element, name it: `:kbd[…]`, `::video[…]`, `:::aside` ``
+
+**Fix.** Name the element instead:
+
+```tern {.live}
+Press :kbd[Ctrl].
+```
+
+**Related.** [`name.reserved`](#name-reserved), [`table.body`](#table-body), [`leaf.void-content`](#leaf-void-content).
+
+### `table.body` {#table-body}
+
+**Warning.** A `:::table` whose body is not exactly one pipe table.
+
+- **Trigger.** A container whose element would be `table`, by its name, `tag=table` or a schema's `tag`, and whose body is anything but one pipe table: paragraphs, two tables, a raw `<table>`.
+- **Position.** The name.
+- **Content.** It becomes a `div` with its body as written. With a schema, it keeps its label and counter ([table captions](elements.html#table-caption)).
+
+```tern {.live expect="table.body"}
+:::table[Phases]
+Two phases, described in prose.
+:::
+```
+
+The engine reports `table.body` (warning) at 1:4:
+
+- **Message:** `` `:::table` becomes a <table> only when its body is exactly one pipe table; this one is a div ``
+- **Hint:** ``put one `| … |` table in the block, or use another name``
+
+**Fix.** Put exactly one pipe table in it; the title becomes the `<caption>`:
+
+```tern {.live}
+:::table[Phases]
+| Phase | Weeks |
+|---|---|
+| P1 | 2 |
+:::
+```
+
+A raw `<table>` keeps its own `<caption>`; write it without the container.
+
+**Related.** [`tag.not-allowed`](#tag-not-allowed).
+
+### `name.unknown` {#name-unknown}
+
+**Info, with `strict` only.** A name has no schema entry and names no element.
+
+- **Trigger.** Only when the schema has `strict: true`. A container, leaf or inline name that has no schema entry, is not a valid custom-element name and is not in the level's allowlist, so it falls back to `div` or `span`. A name the schema declares never gets it, even without a `tag`. Names are case-sensitive, so `:::Aside` is unknown.
+- **Position.** The name.
+- **Content.** The same as without `strict`: `div` (container, leaf) or `span` (inline), with the name as its class.
+- **Hint.** To check the spelling, or declare the name.
+
+The live examples on this page run without `strict`, so this one shows the fallback with no diagnostic:
+
+```tern {.live}
+:::theorm
+A typo.
+:::
+```
+
+`strict` is a field of the schema. A note turns it on in a head script before the `tern.js` line ([`window.TERN`](schema.html#window-tern)):
+
+```html
+<script>window.TERN = {schema: {strict: true}}</script>
+```
+
+An add-on listed in `data-use` can turn it on too, with `tern.schema.strict = true`, since add-ons run before the note is parsed. The note's own setting wins, so `strict: false` in `window.TERN.schema` turns it off whatever an add-on says. The browser, `tern check` and the language server all honour it.
+
+With it, the example above reports, at 1:4:
+
+- **Message:** `` `theorm` has no schema entry and names no element, so it is a div ``
+- **Hint:** `check the spelling, or declare the name with tern.block, tern.leaf or tern.inline`
+
+Under node, pass it in the schema: `tern.check(source, {schema: {...tern.schema, strict: true}})`.
+
+**Fix.** Correct the spelling, or declare the name ([schemas](schema.html#schema)).
+
+**Related.** [`name.reserved`](#name-reserved), [`tag.not-allowed`](#tag-not-allowed).
+
+## Ids and references {#ids-and-references}
+
+These concern [ids](elements.html#ids) and [references](elements.html#references): `@id` and fragment links `[text](#id)`.
+
+### `id.invalid` {#id-invalid}
+
+**Warning.** An id that is not a valid HTML id.
+
+- **Trigger.** An `id=` value that is empty or holds whitespace, as `id=""` or `id="a b"`. A `#id` cannot be either.
+- **Position.** The first letter of `id=`.
+- **Content.** The id is dropped. A heading that loses its id gets its slug instead.
+
+```tern {.live expect="id.invalid"}
+## Results {id="final results"}
+```
+
+The engine reports `id.invalid` (warning) at 1:13:
+
+- **Message:** `"final results" is not a valid HTML id: it is empty or holds whitespace, so it is dropped`
+- **Hint:** `write an id without spaces: {#my-id}`
+
+**Fix.** An id has no spaces:
+
+```tern {.live}
+## Results {#final-results}
+```
+
+**Related.** [`ref.unreferenceable`](#ref-unreferenceable), [`id.duplicate`](#id-duplicate), [`attr.malformed`](#attr-malformed).
+
+### `id.duplicate` {#id-duplicate}
+
+**Warning.** Two elements have the same id.
+
+- **Trigger.** Two *fixed* ids collide. Fixed ids are those you wrote, with `#id` or `id=`, anywhere, and the footnote ids `fn-LABEL`, `fnref-LABEL` and `fnref-LABEL-N`. Heading slugs never collide: a slug that is taken becomes `kernel-2`, silently.
+
+  Tern's own ids are taken before any of these: `tern-style`, `tern-color-scheme`, `tern-source` and `tern-diagnostics`, which tern.js gives elements of its own in the page. An id you write that is one of them gets this diagnostic once, and a slug yields to them silently (`tern-style-2`).
+- **Position.** The id, at every element that has it: the first and each later one.
+- **Content.** The first keeps the id, and references resolve to it. Each later element drops its `id` attribute, which keeps the HTML valid. A heading that loses its id gets its slug instead.
+- **Message.** The first says the id is used again and this element keeps it; each later one says it is already used and this element drops it.
+
+```tern {.live expect="id.duplicate id.duplicate"}
+## One {#part}
+
+## Two {#part}
+```
+
+The engine reports `id.duplicate` (warning) at 1:9 and 3:9:
+
+- At 1:9, the message `the id "part" is used again on line 3; this element keeps it`, with the hint `give each element its own id`.
+- At 3:9, the message `the id "part" is already used on line 1; this element drops it`, with the hint `give each element its own id`.
+
+**Fix.** Give each element its own id:
+
+```tern {.live}
+## One {#part-one}
+
+## Two {#part-two}
+```
+
+One of Tern's own ids:
+
+```tern {.live expect="id.duplicate"}
+{#tern-style}
+A paragraph.
+```
+
+The engine reports `id.duplicate` (warning) at 1:2:
+
+- **Message:** `the id "tern-style" belongs to tern itself, which gives it to an element of its own in the page; this element drops it`
+- **Hint:** `choose another id`
+
+An id you write wins over a heading's slug, with no diagnostic:
+
+```tern {.live}
+## Kernel
+
+:::definition{#kernel}
+The kernel of a map.
+:::
+```
+
+**Related.** [`footnote.duplicate`](#footnote-duplicate), [`id.invalid`](#id-invalid).
+
+### `ref.dangling` {#ref-dangling}
+
+**Warning.** A reference points at no id.
+
+- **Trigger.** A reference `@id`, or a fragment link `[text](#id)`, whose id names nothing in the note. The usual cause is a mention, such as `@alice`, or a typo.
+- **Position.** The reference, with its group; for a link, its `[`.
+- **Content.** `@id` stays literal text, and a group after it is consumed. A fragment link stays a link.
+- **Hint.** For `@`, the escape; for a link, to check the id.
+
+```tern {.live expect="ref.dangling"}
+Thanks to @alice for the review.
+```
+
+The engine reports `ref.dangling` (warning) at 1:11:
+
+- **Message:** `no id in this note has this name, so the reference stays text`
+- **Hint:** `if it is not a reference, write \@alice`
+
+**Fix.** Escape a mention:
+
+```tern {.live}
+Thanks to \@alice for the review.
+```
+
+A fragment link:
+
+```tern {.live expect="ref.dangling"}
+See [the proof](#proof).
+```
+
+The engine reports `ref.dangling` (warning) at 1:5:
+
+- **Message:** `the link points to #proof, which names no id in this note`
+- **Hint:** `check the id, or give the target that id`
+
+**Related.** [`ref.unreferenceable`](#ref-unreferenceable), [`id.duplicate`](#id-duplicate).
+
+### `ref.unreferenceable` {#ref-unreferenceable}
+
+**Warning.** An id that `@` cannot reach.
+
+- **Trigger.** An `id=` value that is a valid HTML id but not a Tern identifier: it starts with a digit, or holds `:` or `.`, as `id=2024` or `id=a.b`. A `#2024` is [`attr.malformed`](#attr-malformed) instead.
+- **Position.** The first letter of `id=`.
+- **Content.** The id is kept. A fragment link, `[text](#2024)`, still reaches it.
+
+```tern {.live expect="ref.unreferenceable"}
+[The plan]{id=2024}
+```
+
+The engine reports `ref.unreferenceable` (warning) at 1:12:
+
+- **Message:** `the id "2024" is kept, but @ cannot reach it: a referenceable id starts with a letter or _ and holds no ":" or "."`
+- **Hint:** `write it like {#plan-2024}`
+
+**Fix.** Start the id with a letter:
+
+```tern {.live}
+[The plan]{#plan-2024}, see @plan-2024.
+```
+
+**Related.** [`id.invalid`](#id-invalid), [`ref.dangling`](#ref-dangling).
+
+## Runtime {#runtime}
+
+The browser reports these while it renders a note, after parsing. A live example cannot produce them, so their examples below are plain source. All six are errors. Each appears in the console, in the panel when it shows, and in `tern.diagnostics`, and each is passed to `tern.on('diagnostic', fn)` ([the lifecycle](api.html#lifecycle)).
+
+### `math.error` {#math-error}
+
+**Error.** KaTeX cannot typeset a formula.
+
+- **Trigger.** KaTeX rejects the TeX of an inline or display formula, or of a `:::macros` block. Tern passes TeX to KaTeX unchanged, so this is a TeX error, not a Tern one.
+- **Position.** The formula's start, from its element's `data-pos`: the `$` of inline math, the line of a display block's opening `$$`, or a `:::macros` block's opener.
+- **Content.** The formula keeps its TeX as text. Its element gets the class `t-error` and a `title` holding KaTeX's message. Other formulas are unaffected.
+- **When.** As formulas are typeset, which can be after the console group: a formula in a closed `<details>` is typeset when it opens.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+Bad $\frac{a}$ and good $x^2$.
+```
+
+The panel shows, at `line 1:5 (file line 2)`:
+
+- **Message:** `KaTeX cannot typeset this formula: KaTeX parse error: Unexpected end of input in a macro argument, expected '}' at end of input: \frac{a}`
+- **Hint:** `the formula is shown as written; fix its TeX`
+
+A `:::macros` block that does not parse gives the message `the :::macros block does not parse: ` followed by KaTeX's message, and the hint `fix the TeX of the definitions`.
+
+**Fix.** Correct the TeX: `$\frac{a}{b}$`. `tern build --katex` reports the same failures as warnings, with the code `math.error`, and leaves those formulas to tern.js ([building](publishing.html#build)).
+
+**Related.** [`katex.unavailable`](#katex-unavailable), [`math.opener-tail`](#math-opener-tail).
+
+### `addon.failed` {#addon-failed}
+
+**Error.** An add-on did not load, or failed while it ran.
+
+- **Trigger.**
+  - **In the browser:**
+    - a script or stylesheet listed in `data-use` fails to load. The note waits for every add-on to load or fail, then renders without the ones that failed. On a page written by `tern build`, only script add-ons are reported;
+    - a script add-on throws while it runs;
+    - a transform registered with `tern.transform(name, fn)` throws. The engine reports this one, so `tern.check` and the command line do too.
+  - **On the command line and in the language server,** which run a note's script add-ons under node to learn its vocabulary (every `data-use` entry that is not a `.css` file):
+    - an add-on file that cannot be read, or is a directory;
+    - one that does not parse as a classic script, which is how tern.js runs an add-on;
+    - one that throws;
+    - a transform it registers that throws.
+
+    A remote add-on is [`addon.remote`](#addon-remote) instead.
+- **Position.** The `tern.js` line: line 0 in the browser, shown as `the tern.js line (file line 1)`; the file line of the tag, column 1, on the command line.
+- **Content.**
+  - An add-on that did not load: the note renders without it, so its names get the core output, with no label, counter or behaviour.
+  - An add-on that threw: the note renders with what the add-on registered before the error.
+  - A transform that threw: it is skipped, and the note renders without it.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js" data-use="missing.js"></script>
+Hello.
+```
+
+The panel shows:
+
+- **Message:** `the add-on missing.js did not load; the note renders without it`
+- **Hint:** `check the path in data-use`
+
+An add-on that throws while it runs, here `vocab.js` calling a function that does not exist:
+
+- **Message:** `the add-on vocab.js threw while it ran: undefinedFn is not defined; the note renders with what it registered before the error`
+- **Hint:** `fix the add-on; the browser console shows where it threw`
+
+From a page opened as a `file:` URL, a browser may give only `Script error.` as the error's text; the console shows the real one.
+
+A transform that throws, registered as `tern.transform('boom', fn)`:
+
+- **Message:** `the transform "boom" threw: bad; the note renders without it`
+- **Hint:** `` fix the function given to tern.transform("boom", …) ``
+
+`tern check` prints the reason, with no hint:
+
+```sh
+$ tern check note.html
+note.html:1:1: error addon.failed: the add-on missing.js did not load: cannot read /home/me/notes/missing.js
+note.html:1:1: error addon.failed: the add-on bad.js did not load: it does not parse as a classic script, which is how tern.js runs an add-on: Unexpected identifier 'is'
+note.html:1:1: error addon.failed: the add-on throws.js did not load: it threw: undefinedFn is not defined
+note.html:1:1: error addon.failed: the transform "boom" of the add-on tx.js threw: bad
+```
+
+A directory reads `/home/me/notes/dir.js is a directory`. `tern build` prints these as `tern build:` warnings, since the page itself is still written.
+
+**Fix.** Check the path in `data-use`. A relative path resolves from the note, as any URL in it does ([add-ons](schema.html#addons)). For an add-on or a transform that throws, fix its code.
+
+**Related.** [`addon.remote`](#addon-remote), [`head.script`](#head-script), [`katex.unavailable`](#katex-unavailable).
+
+### `script.document-write` {#script-document-write}
+
+**Error.** A note script called `document.write`.
+
+- **Trigger.** A `<script>` in the note's raw HTML calls `document.write` or `document.writeln`. tern.js runs the note's scripts after the note has rendered, when the page is already parsed.
+- **Position.** The script's `<script` tag, as written in the note. The position is left out when the scripts in the note and on the page do not match one for one.
+- **Content.** The output is dropped, and the script goes on running. A page written by `tern build` runs its scripts while it is parsed, so there `document.write` writes and nothing is reported.
+- **Message.** It quotes the written text, with whitespace collapsed, cut at 60 characters.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+Hello.
+
+<script>
+document.write("<p>Hi</p>");
+</script>
+```
+
+The panel shows, at `line 3:1 (file line 4)`:
+
+- **Message:** `a note script called document.write("<p>Hi</p>"); the page is already parsed, so its output is dropped`
+- **Hint:** `build elements with the DOM instead, for example document.currentScript.after(element)`
+
+**Fix.** Build elements with the DOM:
+
+```html
+<script>
+const p = document.createElement('p');
+p.textContent = 'Hi';
+document.currentScript.after(p);
+</script>
+```
+
+**Related.** [`script.domcontentloaded`](#script-domcontentloaded).
+
+### `script.domcontentloaded` {#script-domcontentloaded}
+
+**Error.** A note script listens for `DOMContentLoaded`.
+
+- **Trigger.** A `<script>` in the note's raw HTML calls `addEventListener('DOMContentLoaded', …)` on `document` or `window`. The event fired before note scripts run.
+- **Position.** The script's `<script` tag, as for [`script.document-write`](#script-document-write).
+- **Content.** The listener is not registered, so it never runs. A page written by `tern build` runs it normally.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+Hello.
+
+<script>
+document.addEventListener('DOMContentLoaded', () => setup());
+</script>
+```
+
+The panel shows, at `line 3:1 (file line 4)`:
+
+- **Message:** `a note script listens for DOMContentLoaded, which fired before note scripts run, so the listener never runs`
+- **Hint:** `use tern.on('ready', fn), or run the code directly`
+
+**Fix.** The note is in the page when a note script runs, so call the code directly, or wait for Tern's own `ready` event ([events](api.html#on)):
+
+```html
+<script>
+tern.on('ready', () => setup());
+</script>
+```
+
+**Related.** [`script.document-write`](#script-document-write).
+
+### `katex.unavailable` {#katex-unavailable}
+
+**Error.** KaTeX did not load.
+
+- **Trigger.** KaTeX's script or stylesheet fails to load from its base: the pinned CDN by default, or the URL in `data-katex`. It is reported once, and only when the note has math.
+- **Position.** The `tern.js` line (line 0).
+- **Content.** Every formula is shown as its TeX source.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js" data-katex="vendor/katex"></script>
+Math $x^2$ here.
+```
+
+When `vendor/katex` does not hold KaTeX, the panel shows:
+
+- **Message:** `KaTeX did not load from vendor/katex; math is shown as TeX source`
+- **Hint:** `check the connection or data-katex; data-katex="none" turns math rendering off`
+
+**Fix.** Check the connection, or the path in `data-katex`. For notes read offline, serve KaTeX locally ([KaTeX](publishing.html#katex), [offline use](publishing.html#offline)). `data-katex="none"` loads no KaTeX and reports nothing.
+
+**Related.** [`math.error`](#math-error), [`doc.quirks`](#doc-quirks).
+
+### `doc.quirks` {#doc-quirks}
+
+**Error.** The file has no `<!doctype html>`.
+
+- **Trigger.** The page is in quirks mode, which is what a browser does with a file that does not start with `<!doctype html>`.
+- **Position.** The `tern.js` line (line 0).
+- **Content.** The note still renders in place, but its math is shown as TeX source: KaTeX refuses quirks mode, and a page cannot leave quirks mode without replacing the document.
+- **Hint.** The canonical first line, with your `src` and `data-use`.
+
+```html
+<meta charset="utf-8"><script src="tern.js"></script>
+Math $x^2$ here.
+```
+
+The panel shows:
+
+- **Message:** `the file has no <!doctype html>, so the browser renders it in quirks mode and math is shown as TeX source`
+- **Hint:** `make the first line <!doctype html><meta charset="utf-8"><script src="tern.js"></script>`
+
+**Fix.** Start the file with the canonical first line, which `tern new` writes ([the file](publishing.html#the-file)):
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+```
+
+**Related.** [`katex.unavailable`](#katex-unavailable).
+
+## Command line and editors {#tools-codes}
+
+### `head.script` {#head-script}
+
+**Info or warning.** A head script was not run under node.
+
+- **Trigger.** The command line and the language server run the classic scripts in the head, before the `tern.js` line, to learn the vocabulary they declare in `window.TERN.schema` ([`window.TERN`](schema.html#window-tern)). Inline scripts and local files run; `async`, `defer` and module scripts are left out. This fires for a head script they could not run:
+  - **info:** a remote script, which they never load;
+  - **warning:** a local script that cannot be read, or a script that throws.
+
+  `tern check` and the language server report it. `tern build` prints the warnings among its own `tern build:` lines. The browser runs head scripts itself, so it never reports this code.
+- **Position.** The script's `<script` tag, as a file position. It has no note position and no hint.
+- **Content.** The note is checked without what that script declares, so its names get the core output there. The page in the browser is not affected.
+
+```html
+<!doctype html><meta charset="utf-8">
+<script src="https://example.com/vocab.js"></script>
+<script src="vocab.js"></script>
+<script src="tern.js"></script>
+:::theorem
+…
+:::
+```
+
+When `vocab.js` is missing, `tern check` prints:
+
+```sh
+$ tern check note.html
+note.html:2:1: info head.script: the head script https://example.com/vocab.js is not run under node, so vocabulary it declares in window.TERN.schema is unknown here
+note.html:3:1: warning head.script: the head script vocab.js cannot be read (/home/me/notes/vocab.js)
+```
+
+A script that throws reads `the head script vocab.js threw under node: ` and the error, then `; vocabulary it declares may be missing`. An inline script is named `inline script on line N`.
+
+**Fix.** Keep the vocabulary in a local file, or inline in the head, so that the tools can read it. A remote script stays an info: the tools work without its names, and the page has them.
+
+**Related.** [`addon.remote`](#addon-remote), [`addon.failed`](#addon-failed).
+
+### `addon.remote` {#addon-remote}
+
+**Info.** A remote add-on was not loaded under node.
+
+- **Trigger.** A `data-use` entry with a remote URL, such as `https://…`. The command line and the language server load nothing from the network, so they do not learn the names the add-on declares. The browser loads it as usual, so it never reports this code.
+- **Position.** The `tern.js` line, as a file position: the file line of the tag, column 1. It has no note position and no hint.
+- **Content.** The note is checked without the add-on's vocabulary, so its names get the core output there. The page in the browser is not affected. Being an info, it does not make `tern check` fail; `tern build` prints it as a `tern build:` warning, since the page it writes uses those names without their schema.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js" data-use="https://example.com/vocab.js"></script>
+Hello.
+```
+
+```sh
+$ tern check note.html
+note.html:1:1: info addon.remote: the add-on https://example.com/vocab.js is not loaded under node; names it declares are unknown to tern check
+tern check: 1 note: 0 errors, 0 warnings, 1 info
+```
+
+**Fix.** Nothing is wrong with the page. To check the note with its vocabulary, keep a local copy of the add-on and list that in `data-use`.
+
+**Related.** [`addon.failed`](#addon-failed), [`head.script`](#head-script).

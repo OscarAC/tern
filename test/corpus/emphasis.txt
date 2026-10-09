@@ -1,0 +1,504 @@
+# Emphasis, strong, strikethrough and highlight
+
+Cases for emphasis, strong, strikethrough and highlight, and their rows of the ambiguity rules. CommonMark's numbered `*`
+examples are imported elsewhere; these are Tern's own.
+
+## emphasis/spelling
+
+spec: syntax-inline#emphasis
+
+The three spellings of emphasis and strong.
+
+````tern
+*em*, **strong**, ***both***
+````
+
+````html
+<p><em>em</em>, <strong>strong</strong>, <em><strong>both</strong></em></p>
+````
+
+## emphasis/spaced-stars-text
+
+spec: syntax-inline#emphasis syntax-inline#ambiguity
+
+A `*` with whitespace on both sides is neither left- nor right-flanking; a later closer then has no opener.
+
+````tern
+2 * 3 * 4 and x * a*
+````
+
+````html
+<p>2 * 3 * 4 and x * a*</p>
+````
+
+## emphasis/intraword
+
+spec: syntax-inline#emphasis
+
+`*` may open and close inside a word, as on GitHub.
+
+````tern
+x*y*z
+````
+
+````html
+<p>x<em>y</em>z</p>
+````
+
+## emphasis/multiple-of-three-skip
+
+spec: syntax-inline#emphasis
+
+The `**` can both open and close, and 1 + 2 is a multiple of 3, so it does not pair with either `*`; the outer pair matches and the `**` is text.
+
+````tern
+*a**b*
+````
+
+````html
+<p><em>a**b</em></p>
+````
+
+## emphasis/multiple-of-three-nest
+
+spec: syntax-inline#emphasis
+
+The rule of 3 keeps the first `**` from closing the `*`, so the two `**` pair inside the emphasis.
+
+````tern
+*x**y**z*
+````
+
+````html
+<p><em>x<strong>y</strong>z</em></p>
+````
+
+## emphasis/partial-run
+
+spec: syntax-inline#emphasis
+
+A closer uses only as many stars as it has; the opener's leftover star is text.
+
+````tern
+**a*
+````
+
+````html
+<p>*<em>a</em></p>
+````
+
+## emphasis/punctuation-flanking
+
+spec: syntax-inline#emphasis
+
+A `*` after a letter and before punctuation is not left-flanking, so `a*"b"*` has no opener; a `*` at the start before punctuation is.
+
+````tern
+a*"b"* is text.
+
+*(a)* is emphasis.
+````
+
+````html
+<p>a*"b"* is text.</p>
+<p><em>(a)</em> is emphasis.</p>
+````
+
+## emphasis/unmatched-text
+
+spec: syntax-inline#emphasis syntax-inline#ambiguity
+
+An opener with no closer is text.
+
+````tern
+*a and b
+````
+
+````html
+<p>*a and b</p>
+````
+
+## emphasis/underscore-pairs-text
+
+spec: syntax-inline#emphasis syntax-inline#ambiguity
+
+Underscore runs of any length are text, even where `*` would be emphasis.
+
+````tern
+_a_ and __b__ and ___c___
+````
+
+````html
+<p>_a_ and __b__ and ___c___</p>
+````
+
+## emphasis/underscore-in-url
+
+spec: syntax-inline#emphasis syntax-inline#autolinks
+
+`_a_` inside a bare URL is neither emphasis nor a stop.
+
+````tern
+https://x.com/_a_/b
+````
+
+````html
+<p><a href="https://x.com/_a_/b">https://x.com/_a_/b</a></p>
+````
+
+## emphasis/underscore-inside-em
+
+spec: syntax-inline#emphasis
+
+An underscore inside emphasis is just a character.
+
+````tern
+*snake_case*
+````
+
+````html
+<p><em>snake_case</em></p>
+````
+
+## emphasis/glued-strong-group
+
+spec: syntax-inline#emphasis syntax-blocks#positions
+
+A strong group glued to a `**` closer attaches to the `<strong>`.
+
+````tern
+**b**{.y}
+````
+
+````html
+<p><strong class="y">b</strong></p>
+````
+
+## emphasis/glued-group-triple-star
+
+spec: syntax-inline#emphasis syntax-blocks#positions
+
+`***x***` is `<em><strong>x</strong></em>`, and a strong group glued to its closer binds to the outer element, the `<em>`.
+
+````tern
+***x***{.c}
+````
+
+````html
+<p><em class="c"><strong>x</strong></em></p>
+````
+
+## emphasis/glued-id-on-em
+
+spec: syntax-inline#emphasis syntax-blocks#positions elements#ids
+
+An `#id` glued to a `*` closer goes on the `<em>`.
+
+````tern
+*a*{#e}
+````
+
+````html
+<p><em id="e">a</em></p>
+````
+
+## emphasis/glued-weak-group-text
+
+spec: syntax-inline#emphasis syntax-blocks#positions
+
+After a delimiter closer only strong groups attach; `{open}` stays text, silently.
+
+````tern
+**b**{open}
+````
+
+````html
+<p><strong>b</strong>{open}</p>
+````
+
+## emphasis/glued-malformed-hash
+
+spec: syntax-inline#emphasis syntax-blocks#positions diagnostics#attr-malformed
+
+A candidate starting with `#` that does not parse stays text, with `attr.malformed` (W) at the first bad column.
+
+````tern
+**b**{#x "y"}
+````
+
+````html
+<p><strong>b</strong>{#x "y"}</p>
+````
+
+````diagnostics
+1:10 warning attr.malformed
+````
+
+## emphasis/glued-malformed-key-silent
+
+spec: syntax-inline#emphasis syntax-blocks#positions
+
+After a delimiter closer, a bad candidate that does not start with `#` or `.` is text with no diagnostic.
+
+````tern
+**b**{x "y"}
+````
+
+````html
+<p><strong>b</strong>{x "y"}</p>
+````
+
+## emphasis/spaced-group-text
+
+spec: syntax-inline#emphasis syntax-blocks#positions
+
+A group after a space is not glued.
+
+````tern
+**b** {.y}
+````
+
+````html
+<p><strong>b</strong> {.y}</p>
+````
+
+## emphasis/link-inside
+
+spec: syntax-inline#emphasis syntax-inline#links
+
+Emphasis may contain a link.
+
+````tern
+*[a](u)*
+````
+
+````html
+<p><em><a href="u">a</a></em></p>
+````
+
+## emphasis/cannot-cross-link
+
+spec: syntax-inline#emphasis syntax-inline#algorithm
+
+Delimiters inside link text are resolved there: the inner `*` cannot close the outer opener.
+
+````tern
+*[a*](u)
+````
+
+````html
+<p>*<a href="u">a*</a></p>
+````
+
+## emphasis/cannot-cross-element
+
+spec: syntax-inline#emphasis syntax-inline#algorithm syntax-inline#inline-element
+
+The same holds for inline-element content: emphasis cannot cross the element's brackets.
+
+````tern
+*a :kbd[b* c]
+````
+
+````html
+<p>*a <kbd class="kbd" data-t="kbd">b* c</kbd></p>
+````
+
+## emphasis/del-and-mark
+
+spec: syntax-inline#strike-highlight
+
+The two spellings of strikethrough and highlight.
+
+````tern
+~~gone~~ and ==key==
+````
+
+````html
+<p><del>gone</del> and <mark>key</mark></p>
+````
+
+## emphasis/strike-glued-text
+
+spec: syntax-inline#strike-highlight syntax-inline#ambiguity
+
+`~~` glued to ASCII letters on the outside can neither open nor close.
+
+````tern
+x~~y~~z
+````
+
+````html
+<p>x~~y~~z</p>
+````
+
+## emphasis/tilde-path-text
+
+spec: syntax-inline#strike-highlight syntax-inline#ambiguity
+
+A single `~` is never a delimiter.
+
+````tern
+~/.vimrc and ~user and a~b
+````
+
+````html
+<p>~/.vimrc and ~user and a~b</p>
+````
+
+## emphasis/mark-in-parens
+
+spec: syntax-inline#strike-highlight
+
+Punctuation outside is not an ASCII letter or digit, so `(==x==)` highlights.
+
+````tern
+(==x==)
+````
+
+````html
+<p>(<mark>x</mark>)</p>
+````
+
+## emphasis/cjk-glue
+
+spec: syntax-inline#strike-highlight syntax-blocks#character-classes
+
+The glue test is ASCII only, so `==` and `~~` work between CJK characters.
+
+````tern
+これは==重要==です
+
+中文~~删除~~中文
+````
+
+````html
+<p>これは<mark>重要</mark>です</p>
+<p>中文<del>删除</del>中文</p>
+````
+
+## emphasis/mark-non-ascii-letter
+
+spec: syntax-inline#strike-highlight syntax-blocks#character-classes
+
+A consequence of the ASCII test: non-ASCII letters outside the run do not block it.
+
+````tern
+α==β==γ
+````
+
+````html
+<p>α<mark>β</mark>γ</p>
+````
+
+## emphasis/mark-after-underscore
+
+spec: syntax-inline#strike-highlight syntax-blocks#character-classes
+
+`_` is not an ASCII letter or digit, so it does not block a run.
+
+````tern
+_==x==_
+````
+
+````html
+<p>_<mark>x</mark>_</p>
+````
+
+## emphasis/run-lengths-text
+
+spec: syntax-inline#strike-highlight syntax-inline#ambiguity
+
+Runs of one, or of three or more, are text.
+
+````tern
+a ~x~ b ===y=== c ~~~z~~~ d ====w====
+````
+
+````html
+<p>a ~x~ b ===y=== c ~~~z~~~ d ====w====</p>
+````
+
+## emphasis/mark-glued-open-text
+
+spec: syntax-inline#strike-highlight
+
+The opening `==` follows an ASCII letter, so it cannot open; the closing one has nothing to close.
+
+````tern
+a==b==
+````
+
+````html
+<p>a==b==</p>
+````
+
+## emphasis/mark-glued-close-text
+
+spec: syntax-inline#strike-highlight
+
+The closing `==` is followed by an ASCII letter, so it cannot close.
+
+````tern
+==b==c
+````
+
+````html
+<p>==b==c</p>
+````
+
+## emphasis/mark-flanking-space-text
+
+spec: syntax-inline#strike-highlight
+
+`==` uses `*`'s flanking: an opener followed by a space, or a closer preceded by one, does not count.
+
+````tern
+== x ==
+````
+
+````html
+<p>== x ==</p>
+````
+
+## emphasis/del-around-strong
+
+spec: syntax-inline#strike-highlight syntax-inline#emphasis
+
+`~~` and `**` nest through the one stack.
+
+````tern
+~~**a**~~
+````
+
+````html
+<p><del><strong>a</strong></del></p>
+````
+
+## emphasis/shared-stack
+
+spec: syntax-inline#strike-highlight syntax-inline#algorithm
+
+`~~` and `==` resolve through the same stack: when the `~~` pair closes, the `==` opener between them is dropped, and the last `==` has nothing to close.
+
+````tern
+~~a ==b~~ c==
+````
+
+````html
+<p><del>a ==b</del> c==</p>
+````
+
+## emphasis/mark-del-glued-groups
+
+spec: syntax-inline#strike-highlight syntax-blocks#positions
+
+Strong groups glued to `==` and `~~` closers attach to `<mark>` and `<del>`.
+
+````tern
+==k=={.x} and ~~g~~{#d}
+````
+
+````html
+<p><mark class="x">k</mark> and <del id="d">g</del></p>
+````

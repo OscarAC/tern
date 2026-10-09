@@ -1,0 +1,1441 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>JavaScript API · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
+
+:::meta
+description: The tern object in node and in the browser: parse, transform, emit, toHTML, check, visit, outline, the schema registry, the runtime API and its events, tern.config, the lifecycle, and the AST with its data.tern fields.
+:::
+
+::site-nav
+
+# JavaScript API {#top}
+
+::toc
+
+Everything Tern does is on one object, `tern`. In a browser it is `window.tern`; under node it is what `require('./tern.js')` returns. It has two halves:
+
+- **The engine** turns a note's source into an AST, computes its semantics and writes HTML. It is pure: no DOM, no I/O, the same output in node and in every browser.
+- **The runtime** renders a note in the page, runs DOM behaviours and fires events. It exists only in a browser. Under node its members are present but do nothing.
+
+This page is the reference for both, for the order in which the runtime does things, and for the AST the engine produces. The [Guide](guide.html#top) is the gentler introduction, and [Vocabulary and behaviour](schema.html#top) explains schemas, add-ons and behaviours with worked examples.
+
+| Member | Half | What it does | Under node |
+|---|---|---|---|
+| [`tern.parse(source, opts)`](#parse) | engine | source → `{ast, diagnostics}` | works |
+| [`tern.transform(ast, opts)`](#transform) | engine | ids, numbers, labels, references, toc, in place | works |
+| [`tern.transform(name, fn, where)`](#registering-a-transform) | engine | adds a transform | works |
+| [`tern.emit(ast, opts)`](#emit) | engine | AST → HTML string | works |
+| [`tern.toHTML(source, opts)`](#tohtml) | engine | parse, transform and emit, synchronously | works |
+| [`tern.check(source, opts)`](#check) | engine | every diagnostic of a note | works |
+| [`tern.visit(tree, type, fn)`](#visit) | engine | walks a tree | works |
+| [`tern.outline(ast)`](#outline) | engine | the editor digest | works |
+| [`tern.schema`](#registry) | engine | the vocabulary, as plain data | works |
+| [`tern.block`, `tern.leaf`, `tern.inline`](#registry) | engine | declare a name | works |
+| [`tern.transforms`](#tern-transforms) | engine | the transform order | works |
+| [`tern.css`](#tern-css) | engine | the base stylesheet, as a string | works |
+| [`tern.version`](#tern-version) | engine | `'0.2.0-dev'` | works |
+| [`tern.define`, `tern.undefine`](#define) | runtime | DOM behaviours | registers; nothing runs |
+| [`tern.on(event, fn)`](#on) | runtime | `render`, `math`, `ready`, `diagnostic` | registers; nothing fires |
+| [`tern.render(root, source)`](#render) | runtime | renders into an element | resolves to `[]` |
+| [`tern.ready`](#ready) | runtime | a Promise | never settles |
+| [`tern.diagnostics`](#diagnostics) | runtime | the page's diagnostics | stays `[]` |
+| [`tern.config`](#config) | runtime | `window.TERN` and the tag's `data-*` | `{use: {}, katex: {}}` |
+| [`tern.style(css)`](#style) | runtime | adds a stylesheet | does nothing |
+
+## Loading {#loading}
+
+### In a browser {#in-a-browser}
+
+A note's first line loads tern.js:
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js"></script>
+```
+
+When tern.js runs from that tag, it defines `window.tern` and starts the runtime. The runtime takes the rest of the file as the note, renders it in place and fires its events ([the lifecycle](#lifecycle)). So code that runs after that line finds `tern` as a global: the add-ons listed in `data-use`, and the `<script>` elements in the note. A script in the head, *before* the tern.js line, runs before `tern` exists. It talks to Tern through `window.TERN` instead ([`tern.config`](#config)).
+
+The runtime starts only when all of these hold:
+
+- tern.js is loaded by a plain `<script src>` written in the file, so the HTML parser runs it while the document is still loading;
+- the tag has no `async`, `defer` or `type="module"`;
+- the page has no `main.tern` yet. A page written by [`tern build`](tools.html#build) has one, and its tag has `data-built`, which gives it [its own start](#built-page).
+
+Loaded any other way, tern.js defines `window.tern` and starts nothing. The engine works, and [`tern.render(element, source)`](#render-into-your-page) renders a note into an element of your own page. With `async` or `defer` it also warns in the console: `tern: load tern.js with a plain <script src>, without async or defer; the note was not rendered`.
+
+A second tern.js on the same page leaves the first in charge. It warns, `tern: tern.js is already loaded; this second copy does nothing`, and `window.tern` stays the first object.
+
+### Under node {#under-node}
+
+```js
+const tern = require('./tern.js');
+
+tern.version;                    // → '0.2.0-dev'
+tern.toHTML('Hello *world*.');   // → '<p>Hello <em>world</em>.</p>\n'
+```
+
+tern.js is one file with no dependencies, so `require` needs nothing else. It returns the same object a browser gets:
+
+- **The engine** works exactly as in a browser: the same AST, the same diagnostics, the same HTML, byte for byte. The command line and the language server are built on it.
+- **The runtime** is inert. It never touches a DOM, so nothing needs to be stubbed:
+
+```js
+tern.config;                          // → { use: {}, katex: {} }
+tern.diagnostics;                     // → []
+await tern.render();                  // → []
+tern.style('p { color: red }');       // → undefined, and nothing happens
+const off = tern.define('box', fn);   // registered, never called; off() removes it
+tern.on('ready', fn);                 // registered, never called
+tern.ready;                           // a Promise that never settles
+```
+
+Under node there are no add-ons and no `window.TERN`. Declare vocabulary with [`tern.block`, `tern.leaf` and `tern.inline`](#registry), or pass it to each call as `opts.schema`. The [command line](tools.html#top) does more: it runs a note's head scripts and its `data-use` add-ons in a sandbox, so `tern check` and `tern build` see the note's own vocabulary and run its add-ons' transforms.
+
+Everything the engine returns is plain data that survives `JSON.stringify`: the AST, the diagnostics, the outline. The AST is the interchange format of `tern parse`, the language server and the conformance corpus.
+
+## The engine {#engine}
+
+The engine is a pipeline of three steps. Each is a function you can call on its own:
+
+```
+source ──parse──▶ AST + diagnostics ──transform──▶ transformed AST ──emit──▶ HTML
+```
+
+- [`tern.parse`](#parse) reads the syntax. Its AST says what was *written*: a container named `theorem`, a reference to `kernel`.
+- [`tern.transform`](#transform) computes what it *means*, in place: element names, ids and slugs, numbers and labels, the text of references, footnote numbers, the table of contents.
+- [`tern.emit`](#emit) writes HTML from the transformed AST and nothing else.
+
+[`tern.toHTML`](#tohtml) runs all three, and [`tern.check`](#check) runs the first two and returns every diagnostic.
+
+**Options.** The functions share one options object. Each reads the keys it needs and ignores the rest, so you can pass the same object to all of them.
+
+| Option | Read by | Default | What it does |
+|---|---|---|---|
+| `schema` | `parse`, `transform`, `toHTML`, `check` | the registry, [`tern.schema`](#registry) | the vocabulary `{block, leaf, inline}`. It replaces the registry for that call; it is not merged with it. `strict: true` in it turns on `name.unknown` |
+| `head` | `parse`, `transform`, `toHTML`, `check` | `''` | the preserved head, as a string: everything before the tern.js line. `parse` checks `:::meta` against it, and `transform` reads its `<title>` and `<html lang>` |
+| `lang` | `transform`, `toHTML`, `check` | none | the language that picks a label from a `{lang: label}` map |
+| `maxDepth` | `parse`, `toHTML`, `check` | `64` | how deep blocks may nest |
+| `positions` | `emit`, `toHTML` | `true` | writes `data-pos="line:col"` on elements |
+| `safe` | `emit`, `toHTML` | `false` | escapes raw HTML and drops risky attributes and URLs |
+
+### `tern.parse` {#parse}
+
+:::syntax
+```js
+tern.parse(source, opts) → { ast, diagnostics }
+```
+:::
+
+Parses a note and returns its AST and the parser's diagnostics.
+
+```js
+const noPos = (key, value) => (key === 'position' ? undefined : value);
+const { ast, diagnostics } = tern.parse('Hi *you*.');
+
+JSON.stringify(ast, noPos);
+// → {"type":"root","children":[{"type":"paragraph","children":[
+//     {"type":"text","value":"Hi "},
+//     {"type":"emphasis","children":[{"type":"text","value":"you"}]},
+//     {"type":"text","value":"."}]}]}
+diagnostics;   // → []
+```
+
+Every node has a `position`; the outputs on this page leave positions out with a replacer like `noPos`, except under [Positions](#positions).
+
+- **`source`** is the note only: everything *after* the line that holds the tern.js tag, not the whole file. The parser normalises it first: `\r\n` and `\r` become `\n`, a leading BOM is dropped, and NUL becomes U+FFFD. Positions count in the normalised text.
+- **`ast`** is the root node, in the [shapes below](#node-types). It is the parse AST: it records what the note says, and nothing is resolved yet. A reference is `{type: 'ref', id: 'kernel'}` with no text, a heading has no slug, and nothing is numbered.
+- **`diagnostics`** is a new array of the parser's diagnostics, sorted by position. The parser's diagnostics are not stored in the AST.
+
+The parser never throws on a note, whatever its content: every mistake becomes a diagnostic.
+
+```js
+tern.parse(':::note\nOpen.').diagnostics;
+// → [{ code: 'block.unclosed', severity: 'error',
+//      message: '`:::note` opened on line 1 is still open at line 2',
+//      position: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 8, offset: 7 } },
+//      hint: 'add `:::` or `:::/note`' }]
+```
+
+**`opts.schema`.** The parser reads one schema field, `body: 'raw'`. A container whose entry has it keeps its body as text, as `{raw}` does:
+
+```js
+const schema = { block: { mermaid: { body: 'raw' } }, leaf: {}, inline: {} };
+const src = ':::mermaid\na --> *b*\n:::';
+
+tern.parse(src).ast.children[0].children;            // → [ { type: 'paragraph', … } ]
+tern.parse(src, { schema }).ast.children[0].value;   // → 'a --> *b*'
+```
+
+**`opts.head`.** The head, as a string, lets the parser report a `:::meta` key that the head already sets differently. The head wins, and `root.data.tern.meta` holds its value:
+
+```js
+const { ast, diagnostics } = tern.parse(':::meta\ntitle: A\n:::', { head: '<title>B</title>' });
+diagnostics.map((d) => d.code);   // → ['meta.conflict']
+ast.data.tern.meta;               // → { title: 'B' }
+```
+
+**`opts.maxDepth`.** Quotes, list items, footnote definitions and containers nest at most `maxDepth` deep, 64 by default. An opener past the limit is shown as text, with [`nesting.limit`](diagnostics.html#nesting-limit):
+
+```js
+tern.parse('> > > x', { maxDepth: 2 }).diagnostics.map((d) => d.message);
+// → ['blocks nest at most 2 deep; this opener is shown as text']
+```
+
+### `tern.transform` {#transform}
+
+:::syntax
+```js
+tern.transform(ast, opts) → ast
+tern.transform(name, fn, { before | after }) → remove
+```
+:::
+
+With an AST, `tern.transform` runs the transforms on it; with a name, it [registers a transform](#registering-a-transform).
+
+**Running the transforms.** They change the tree in place and return the same object. Their diagnostics go into `ast.data.tern.diagnostics`, sorted. They read `opts.schema`, `opts.head` and `opts.lang`.
+
+```js
+const { ast } = tern.parse('# Kernel\n\nSee @kernel.');
+ast.children[1].children[1];   // → { type: 'ref', id: 'kernel' }
+
+tern.transform(ast);
+ast.children[1].children[1];
+// → { type: 'ref', id: 'kernel', data: { tern: { resolved: true } },
+//     children: [ { type: 'text', value: 'Kernel' } ] }
+ast.data;
+// → { tern: { diagnostics: [], transformed: true, footnotes: [],
+//     ids: { kernel: { kind: 'heading', explicit: false, line: 1, column: 1 } },
+//     meta: { title: 'Kernel' } } }
+```
+
+- **Once per tree.** The first run sets `ast.data.tern.transformed`. A later call returns the tree unchanged, because running again would treat the slugs it wrote as ids the author wrote.
+- **Pure.** The built-in transforms touch nothing but the tree: no DOM, no I/O. They are the same code in node and in the browser.
+- **What they write** is listed under [The transformed AST](#transformed-ast). [`tern.emit`](#emit) reads only that.
+
+The built-in transforms run in this order, which [`tern.transforms`](#tern-transforms) returns:
+
+| # | Transform | What it does |
+|---|---|---|
+| 1 | `figures` | a paragraph holding only an image with an id becomes a `figure` container ([figures](elements.html#figures)) |
+| 2 | `tables` | a container whose element is `table` merges with its one pipe table ([table captions](elements.html#table-caption)) |
+| 3 | `attributes` | resolves each name to an element and its title slot; schema `class` and `attrs`; reserved keys; `cols`; fence keys |
+| 4 | `footnotes` | numbers footnotes by first reference; their `fn-` and `fnref-` ids |
+| 5 | `ids` | the id registry: Tern's own ids, then duplicate and invalid ids, then heading slugs |
+| 6 | `numbering` | counters, labels such as "Theorem 1", equation numbers |
+| 7 | `refs` | the text of each reference; dangling references and fragment links |
+| 8 | `toc` | fills each table-of-contents leaf from the headings |
+| 9 | `meta` | the title fallback: the first level-1 heading, when neither the head nor `:::meta` sets a title |
+
+**The label language** is `opts.lang`, then the `lang` of `:::meta`, then the `lang` of the head's `<html>` tag. It picks an entry from a label map such as `{en: 'Lemma', fr: 'Lemme'}`. [Labels in other languages](schema.html#languages) gives the matching rules.
+
+#### Registering a transform {#registering-a-transform}
+
+`tern.transform(name, fn, where)` adds your own step to the pipeline and returns a function that removes it.
+
+```js
+const off = tern.transform('todo', (ast, ctx) => {
+  tern.visit(ast, 'text', (node) => {
+    if (node.value.includes('TODO')) {
+      ctx.report('note.todo', node, 'a TODO is left in the text', 'finish it, then remove the TODO', 'info');
+    }
+  });
+}, { before: 'ids' });
+
+tern.transforms;
+// → ['figures', 'tables', 'attributes', 'footnotes', 'todo',
+//    'ids', 'numbering', 'refs', 'toc', 'meta']
+tern.check('Ship it. TODO: tests.');
+// → [{ code: 'note.todo', severity: 'info', message: 'a TODO is left in the text',
+//      position: { start: { line: 1, column: 1, offset: 0 },
+//                  end: { line: 1, column: 22, offset: 21 } },
+//      hint: 'finish it, then remove the TODO' }]
+off();
+tern.transforms;
+// → ['figures', 'tables', 'attributes', 'footnotes',
+//    'ids', 'numbering', 'refs', 'toc', 'meta']
+```
+
+- **`fn(ast, ctx)`** gets the root and a context:
+
+  | `ctx` field | What it is |
+  |---|---|
+  | `schema` | the schema of this run: `opts.schema`, or the registry |
+  | `opts` | the options the run was called with |
+  | `lang` | the label language, as a string (`''` when there is none) |
+  | `report(code, at, message, hint, severity)` | adds a diagnostic to `ast.data.tern.diagnostics` and returns it |
+
+- **`ctx.report`.**
+  - `at` is a node (its `position` is used), a position `{start, end}`, or nothing (line 1, column 1).
+  - A code from [the diagnostics table](diagnostics.html#top) keeps its own severity. Any other code takes `severity`, `'warning'` when it is left out.
+  - `hint` is optional.
+- **Where it runs.** `{before: 'ids'}` or `{after: 'figures'}` names a transform already in the order, built-in or your own. Without `where`, the transform runs last.
+- **Changing the tree.** A custom transform may add, remove or replace nodes: the built-in transforms after it look at the tree again. Nodes you add need no `position`; [`tern.outline`](#outline) skips nodes that have none.
+- **The registration is global.** Every later `tern.transform`, `tern.toHTML` and `tern.check` runs it, until it is removed.
+- **Registering a name again** moves it to the new place with the new function. The first registration's remover then does nothing.
+- **A transform that throws** is skipped, and the transforms after it still run, so the note still renders. It is reported as [`addon.failed`](diagnostics.html#addon-failed), an error at line 0, column 0, in `ast.data.tern.diagnostics`. What it changed in the tree before it threw stays.
+
+```js
+const off = tern.transform('boom', () => { throw new Error('nope'); });
+tern.check('Hi.');
+// → [{ code: 'addon.failed', severity: 'error',
+//      message: 'the transform "boom" threw: nope; the note renders without it',
+//      position: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
+//      hint: 'fix the function given to tern.transform("boom", …)' }]
+off();
+```
+
+- **Errors in the call**, thrown at once:
+  - a name that is not a non-empty string, or a `fn` that is not a function: `TypeError`;
+  - the name of a built-in transform: `Error: tern.transform: "ids" is a built-in transform`;
+  - a `before` or `after` that names no transform in the order, or names the transform itself: `Error: tern.transform("x"): there is no transform "nope"`.
+
+:::note
+An add-on's transforms run wherever the note is processed. In the browser they run at mount. Under node, the command line and the language server load the note's add-ons in a sandbox and run their transforms too: `tern check`, `tern build`, `tern parse --transformed` and the editor see their changes and their diagnostics, and a transform that throws is `addon.failed` there as well.
+:::
+
+### `tern.emit` {#emit}
+
+:::syntax
+```js
+tern.emit(ast, { positions = true, safe = false }) → string
+```
+:::
+
+Writes the HTML of a transformed AST: the note's body, without `<html>`, the head or the `main` element around it.
+
+The emitter reads only the tree: the nodes and what the transforms wrote under `data.tern`. It never looks at the schema or the source. So emit a **transformed** tree. A parse AST still emits, but with nothing the transforms compute: no slugs, no labels, no numbers, and references stay literal.
+
+```js
+const { ast } = tern.parse('## Kernel\n\n:::note\nSee @kernel.\n:::');
+
+tern.emit(ast);
+// → '<h2>Kernel</h2>\n'
+//   + '<div class="t-block note" data-t="note" data-pos="3:1"><p>See @kernel.</p>\n</div>\n'
+
+tern.transform(ast);
+tern.emit(ast);
+// → '<h2 id="kernel">Kernel</h2>\n'
+//   + '<div class="t-block note" data-t="note" data-pos="3:1">'
+//   + '<p>See <a class="t-ref" href="#kernel">Kernel</a>.</p>\n</div>\n'
+tern.emit(ast, { positions: false });
+// → '<h2 id="kernel">Kernel</h2>\n'
+//   + '<div class="t-block note" data-t="note">'
+//   + '<p>See <a class="t-ref" href="#kernel">Kernel</a>.</p>\n</div>\n'
+```
+
+**`positions`** (default `true`) writes `data-pos="line:col"`, the start of the node in the note, on fences, display and inline math, containers, leaves, inline elements and cells. The runtime uses it to position [`math.error`](diagnostics.html#math-error). `positions: false` leaves it out, for output that does not change when lines move, as in the conformance corpus.
+
+**`safe`** (default `false`) is the [raw HTML scoping](elements.html#safe):
+
+- raw HTML is escaped: a raw block becomes a plain `<pre>`, an inline tag becomes text;
+- `on*`, `srcdoc`, `formaction` and `style` attributes are dropped;
+- URLs other than `http:`, `https:`, `mailto:` and relative ones are dropped from links, images and URL attributes;
+- Tern's own grid style (`--t-cols`) is kept when its value holds only numbers, words and `(),.%/+*-`.
+
+```js
+const src = '<b onclick="go()">Hi</b> [x](javascript:go()) [y](https://example.org)';
+
+tern.toHTML(src);
+// → '<p><b onclick="go()">Hi</b> <a href="javascript:go()">x</a>'
+//   + ' <a href="https://example.org">y</a></p>\n'
+tern.toHTML(src, { safe: true });
+// → '<p>&lt;b onclick=&quot;go()&quot;&gt;Hi&lt;/b&gt; <a>x</a>'
+//   + ' <a href="https://example.org">y</a></p>\n'
+tern.toHTML('<div onclick="go()">\nHi\n</div>', { safe: true });
+// → '<pre>&lt;div onclick=&quot;go()&quot;&gt;\nHi\n&lt;/div&gt;</pre>\n'
+```
+
+:::note
+The runtime emits with one more option, `cssom`. It writes Tern's own column alignment and grid columns as `data-t-align` and `data-t-cols` instead of `style`, and the runtime then sets them through the CSSOM, which a strict Content-Security-Policy allows ([CSP](publishing.html#csp)). The result needs the runtime to look right, so it is not for other callers: `tern.toHTML` and `tern build` write `style`.
+:::
+
+### `tern.toHTML` {#tohtml}
+
+:::syntax
+```js
+tern.toHTML(source, opts) → string
+```
+:::
+
+Parses, transforms and emits a note, and returns its HTML. It is synchronous, always: it returns the string, never a Promise. It is the same as:
+
+```js
+const { ast } = tern.parse(source, opts);
+tern.transform(ast, opts);
+const html = tern.emit(ast, opts);
+```
+
+It takes every option: `schema`, `head`, `lang` and `maxDepth` for the first two steps, `positions` and `safe` for the emitter. Diagnostics are not returned; [`tern.check`](#check) gives them.
+
+```js
+const schema = {
+  block: { lemma: { counter: 'lemma', label: { en: 'Lemma', fr: 'Lemme' } } },
+  leaf: {},
+  inline: {},
+};
+const src = ':::lemma[Zorn]\nEvery chain has a bound.\n:::';
+
+tern.toHTML(src, { schema, positions: false });
+// → '<div class="t-block lemma" data-t="lemma">'
+//   + '<div class="t-title"><span class="t-label">Lemma 1</span> Zorn</div>'
+//   + '<p>Every chain has a bound.</p>\n</div>\n'
+tern.toHTML(src, { schema, lang: 'fr', positions: false });
+// → '<div class="t-block lemma" data-t="lemma">'
+//   + '<div class="t-title"><span class="t-label">Lemme 1</span> Zorn</div>'
+//   + '<p>Every chain has a bound.</p>\n</div>\n'
+tern.toHTML(src, { schema, head: '<html lang="fr-CA">', positions: false });
+// → the same, with "Lemme 1": the head's <html lang> picks the label
+```
+
+**What the string holds.** It is the body of the note. The runtime puts it inside `<main class="tern">`, and `tern build` does the same in a static page. It leaves out:
+
+- **the head:** `:::meta` writes nothing into the body. Its keys are in `ast.data.tern.meta`, and the runtime and `tern build` write them into the head;
+- **typeset math:** a formula is its TeX inside `span.t-math`, until KaTeX typesets it in the browser (or `tern build --katex` does);
+- **behaviours:** `tern.define` and schema `dom` functions run on the DOM, in the browser.
+
+```js
+tern.toHTML(':::meta\ntitle: T\nauthor: me\n:::\n\nHi.');   // → '<p>Hi.</p>\n'
+tern.toHTML('');                                             // → ''
+```
+
+### `tern.check` {#check}
+
+:::syntax
+```js
+tern.check(source, opts) → diagnostics
+```
+:::
+
+Returns every diagnostic of a note: the parser's and the transforms', in one array sorted by position (start, then end), then by code. It takes the options of `parse` and `transform`.
+
+```js
+tern.check('# Notes\n\n:::note\nSee @nowhere and [^x].\n')
+  .map((d) => `${d.position.start.line}:${d.position.start.column} ${d.severity} ${d.code}`);
+// → ['3:1 error block.unclosed', '4:5 warning ref.dangling', '4:18 warning footnote.undefined']
+```
+
+Each diagnostic is a plain object:
+
+| Field | Value |
+|---|---|
+| `code` | the code, such as `block.unclosed`. Each is listed on the [Diagnostics](diagnostics.html#top) page |
+| `severity` | `'error'` (content lost or meaning changed), `'warning'` (probably not what you meant) or `'info'` (a hint) |
+| `message` | one sentence, citing note lines |
+| `position` | `{start, end}`, each `{line, column, offset}` in the note ([Positions](#positions)); `end` is exclusive |
+| `hint` | how to fix it; absent when there is none |
+
+```js
+tern.check('Hi @you.');
+// → [{ code: 'ref.dangling', severity: 'warning',
+//      message: 'no id in this note has this name, so the reference stays text',
+//      position: { start: { line: 1, column: 4, offset: 3 }, end: { line: 1, column: 8, offset: 7 } },
+//      hint: 'if it is not a reference, write \\@you' }]
+```
+
+`tern.check` gives the parse and transform codes, plus `addon.failed` for a [registered transform that throws](#registering-a-transform). The other runtime codes (`math.error`, `doc.quirks` …) arise only in a browser and reach [`tern.diagnostics`](#diagnostics). The command line adds `head.script`, `addon.remote` for a remote add-on it does not load, and `addon.failed` for an add-on it cannot load or run ([Command line](tools.html#check)).
+
+### `tern.visit` {#visit}
+
+:::syntax
+```js
+tern.visit(tree, type?, fn)      fn(node, index, parent) → false skips the children
+```
+:::
+
+Walks a tree in document order (pre-order: a node before its children) and calls `fn` on each node, or on each node of `type`. It is the subset of `unist-util-visit` that Tern needs.
+
+```js
+const { ast } = tern.parse('# A\n\n## B\n\n> ## Quoted\n\nText with `code`.');
+
+const heads = [];
+tern.visit(ast, 'heading', (node, index, parent) => {
+  heads.push(`${node.depth} ${parent.type}[${index}]`);
+});
+heads;   // → ['1 root[0]', '2 root[1]', '2 blockquote[0]']
+
+const types = [];
+tern.visit(ast, (node) => {
+  types.push(node.type);
+  if (node.type === 'blockquote') return false;
+});
+types;
+// → ['root', 'heading', 'text', 'heading', 'text', 'blockquote',
+//    'paragraph', 'text', 'inlineCode', 'text']
+```
+
+- `fn` gets the node, its index in its parent's `children`, and the parent. For the tree itself, `index` and `parent` are `null`.
+- Returning `false` skips the node's children. With a `type`, only the nodes of that type are passed to `fn`, and the walk still goes through the others.
+- The walk follows `children` only. Inline content stored under `data.tern` is not visited: a titled fence's title (`code.data.tern.title`), an image's caption (`image.data.tern.caption`) and a toc's entries (`data.tern.toc`).
+
+### `tern.outline` {#outline}
+
+:::syntax
+```js
+tern.outline(ast) → { headings, blocks, refs, math, tables, raw, inline }
+```
+:::
+
+Returns a digest of a note for editors: one walk over the AST, so an editor never needs a second grammar. The language server sends it after each analysis as the `tern/outline` notification, with file lines ([Editors](tools.html#outline)).
+
+```js
+const { ast } = tern.parse('# Notes\n\n:::note[Careful]{#warn}\nSee @warn and $x^2$.\n:::\n');
+tern.transform(ast);
+tern.outline(ast);
+// → { headings: [ { line: 1, depth: 1, id: 'notes', text: 'Notes' } ],
+//     blocks: [ { line: 3, endLine: 5, kind: 'container', name: 'note',
+//                 id: 'warn', title: 'Careful', colons: 3 } ],
+//     refs: [ { line: 4, col: 5, end: 10, id: 'warn', text: 'Careful', resolved: true } ],
+//     math: [ { line: 4, col: 15, endLine: 4, end: 20, display: false, tex: 'x^2' } ],
+//     tables: [], raw: [], inline: [] }
+```
+
+| List | One entry per | Fields |
+|---|---|---|
+| `headings` | heading | `line`, `depth`, `id`, `text` (plain text) |
+| `blocks` | container and leaf | `line`, `endLine`, `kind` (`'container'` or `'leaf'`), `name`, `id`, `title` (plain text), `label` ("Theorem 1"), `colons` |
+| `refs` | reference | `line`, `col`, `end` (the column after it), `id`, `text`, `resolved` |
+| `math` | formula, inline or display | `line`, `col`, `endLine`, `end` (the column after it, on `endLine`), `display`, `number` ("(1)"), `tex` |
+| `tables` | pipe table | `line`, `endLine` |
+| `raw` | raw HTML block | `line`, `endLine`, `kind` (`comment`, `rawtext`, `oneline`, `generic` or `fence`) |
+| `inline` | inline element | `line`, `col`, `end`, `name` |
+
+- Lines are note lines, and columns are UTF-16 columns, both 1-based.
+- A field the tree does not have is left out. On a parse AST there are no slugs, labels, numbers, reference texts or `resolved`; on a transformed AST they are there.
+- Nodes without a position are skipped: the text the transforms copy into references and toc entries is not in the source.
+
+### The registry {#registry}
+
+:::syntax
+```js
+tern.block(name, spec) → entry      tern.leaf(name, spec) → entry      tern.inline(name, spec) → entry
+tern.schema                         // → { block: {…}, leaf: {…}, inline: {…} }
+```
+:::
+
+`tern.schema` is the vocabulary: which names get which element, label, counter and behaviour. It is plain data, keyed by level and name. `tern.block` declares a container name (`:::name`), `tern.leaf` a leaf (`::name`) and `tern.inline` an inline element (`:name[…]`). The core declares none; add-ons and notes declare their own ([Vocabulary and behaviour](schema.html#top)).
+
+```js
+const entry = tern.block('theorem', { tag: 'section', counter: 'theorem', label: 'Theorem' });
+
+entry === tern.schema.block.theorem;   // → true
+tern.schema;
+// → { block: { theorem: { tag: 'section', counter: 'theorem', label: 'Theorem' } },
+//     leaf: {}, inline: {} }
+tern.toHTML(':::theorem[Rank–nullity]{#rn}\n…\n:::\n\nBy @rn.', { positions: false });
+// → '<section id="rn" class="t-block theorem" data-t="theorem">'
+//   + '<div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div>'
+//   + '<p>…</p>\n</section>\n'
+//   + '<p>By <a class="t-ref" href="#rn">Theorem 1</a>.</p>\n'
+```
+
+- **The entry** is a shallow copy of `spec`, stored at `tern.schema[level][name]` and returned. Declaring a name again replaces its entry.
+- **Names** are case-sensitive and must be a whole NAME: a letter, then letters, marks, digits, `_` and `-`.
+- **Errors**, thrown as `TypeError`:
+  - a name that is not a NAME: `tern.leaf: "2col" is not an element name`;
+  - a reserved name: `tern.block: "main" is reserved`. The reserved names are `base body head html link main meta noscript script style template title`, `tern`, `end` and any `t-…` name ([reserved names](elements.html#reserved)); `tern.block` also refuses `macros`, the other core container;
+  - a spec that is not an object: `tern.inline("kbd", spec): spec must be an object`.
+- **Who reads it.** Every engine call without `opts.schema` uses the registry. A call with `opts.schema` uses that object instead and ignores the registry entirely.
+- **`strict`.** A schema with `strict: true` reports [`name.unknown`](diagnostics.html#name-unknown) for a name that has no entry and names no element. A declared name never gets it, with or without a `tag`. In a browser, a note turns it on for its registry with `strict: true` in [`window.TERN.schema`](#config), which wins over an add-on's setting either way:
+
+```js
+const strict = { block: tern.schema.block, leaf: {}, inline: {}, strict: true };
+tern.check(':::theorm\nx\n:::', { schema: strict }).map((d) => `${d.severity} ${d.code}: ${d.message}`);
+// → ['info name.unknown: `theorm` has no schema entry and names no element, so it is a div']
+```
+
+The fields of a spec, all optional ([Schema fields](schema.html#fields) has each one in full):
+
+| Field | Value |
+|---|---|
+| `tag` | the element, from the level's [allowlist](elements.html#allowlists). One outside it gets `tag.not-allowed`, and a reserved one `name.reserved`, at the element's name; the next rule then decides |
+| `class` | classes put before the author's |
+| `attrs` | default attributes, under the author's |
+| `counter` | a counter name; names that share it share one sequence |
+| `within` | accepted and kept, but not applied: numbering is document-wide |
+| `label` | a string, a `{lang: string}` map, or a function `(n, node) → text` that returns the whole label |
+| `ref` | a reference template over `{label}`, `{n}`, `{title}` and `{id}` |
+| `title` | the title slot: `'block'`, `'inline'`, `'summary'`, `'figcaption'`, `'caption'` or `'legend'` |
+| `titleDefault` | the title when none is written |
+| `body` | `'blocks'` (the default) or `'raw'`, a verbatim body; read by the parser |
+| `end` | a mark at the end of a container, such as `'∎'` |
+| `transform` | `'toc'`, a built-in filler, with `depth` (`'2-3'` by default) |
+| `css` | a stylesheet, added with [`tern.style`](#style) when the entry is declared in a browser |
+| `dom` | a DOM behaviour, run like a [`tern.define`](#define) function, before them |
+
+Under node the entry is stored all the same, `css` and `dom` included, but neither does anything: there is no page.
+
+#### `tern.transforms` {#tern-transforms}
+
+A new array, on each read, of the transform names in the order they run: the nine built-in ones and any you [registered](#registering-a-transform).
+
+```js
+tern.transforms;
+// → ['figures', 'tables', 'attributes', 'footnotes', 'ids', 'numbering', 'refs', 'toc', 'meta']
+```
+
+#### `tern.css` {#tern-css}
+
+The base stylesheet, as a string: colours as `--t-*` custom properties for light and dark, the typography, and the rules for Tern's classes (`t-block`, `t-title`, `t-math` …). The file `tern.css` holds the same rules after a two-line header comment. The runtime inserts it as `<style id="tern-style">` unless the head links `tern.css` or the tag names one with `data-css` ([CSP](publishing.html#csp)).
+
+```js
+tern.css.slice(0, 26);   // → ':root {\n  color-scheme: li'
+```
+
+#### `tern.version` {#tern-version}
+
+The version of this tern.js, as a string: `'0.2.0-dev'`. A script can check it to tell whether `window.tern` is Tern's object, as tern.js itself does before taking over.
+
+## The runtime {#runtime}
+
+The runtime is the browser half: it renders the note in the page, runs behaviours, typesets math with KaTeX and reports what went wrong. [The lifecycle](#lifecycle) gives the order of everything it does. Its API is on the same object as the engine.
+
+### `tern.define` and `tern.undefine` {#define}
+
+:::syntax
+```js
+tern.define(name, fn) → remove      fn(element), with this = element
+tern.undefine(name)
+```
+:::
+
+Gives the elements named `name` a DOM behaviour. `fn` runs once on each element whose `data-t` is `name`: the elements of the note, and any rendered later with [`tern.render`](#render).
+
+Every named element carries its name in `data-t`: containers, leaves and inline elements, whatever element they resolve to. A fence carries `data-t="code"`, so a syntax highlighter is a behaviour on `code`. A bare span `[text]{…}` has none.
+
+````tern {.live}
+:::box
+A container.
+:::
+
+::chart[Sales by month]{data-src=sales.csv}
+
+Press :kbd[Ctrl] and type `code`.
+
+```js
+let x = 1;
+```
+````
+
+```js
+tern.define('chart', (el) => {
+  fetch(el.dataset.src)
+    .then((r) => r.text())
+    .then((csv) => { el.textContent = `${csv.split('\n').length} rows`; });
+});
+```
+
+- **Once per element and function.** Each element gets each function once. The runtime remembers which elements a function has seen, so a later [`tern.render()`](#render) does not run it again on them.
+- **Several per name.** `define` is additive: every function registered for a name runs, in registration order.
+- **Schema `dom` first.** A schema entry's `dom` function runs on the element before the `define` functions. For a `t-block` element the runtime looks the name up among containers first, then leaves, then inline elements; for any other element, leaves, then inline elements, then containers. So a fence finds a container entry named `code`.
+- **Document order.** Elements are visited in document order, and each gets all its functions before the next element.
+- **Before math.** Behaviours run after the note's scripts and before the [`render`](#on) event, and math is typeset after them. A formula is still its TeX source, in `span.t-math` with a `data-tex` attribute. A behaviour that needs typeset math listens for [`math`](#on).
+- **Late definitions.** A function defined after the behaviours ran is applied at once to the matching elements already rendered.
+- **Errors.** An exception in `fn` is caught and logged as "tern: the "NAME" behaviour failed"; the other behaviours still run.
+- **The remover** that `define` returns removes that one function: elements rendered later do not get it.
+- **`tern.undefine(name)`** removes every function defined for `name`. It does not remove a schema `dom`, and it does not undo what a behaviour already did to an element.
+- **Errors in the call.** A `name` that is not a non-empty string, or an `fn` that is not a function, throws a `TypeError`.
+
+Behaviours key on `data-t` and on the class, never on the element: the same name can become a `section` in one note and a `div` in another ([output contract](elements.html#output-contract)).
+
+### `tern.on` {#on}
+
+:::syntax
+```js
+tern.on(event, fn) → remove      event: 'render' | 'math' | 'ready' | 'diagnostic'
+```
+:::
+
+Listens for one of the runtime's four events. There are no others.
+
+| Event | When | `fn` gets |
+|---|---|---|
+| `render` | the note is in the page, its scripts have run and its behaviours have run; math is not typeset yet | the root, `main.tern` |
+| `math` | the formulas in view are typeset; again for a `<details>`, after the formulas inside it are typeset when it opens | the root, or the `<details>` element |
+| `ready` | everything is done, once: math, the scroll to the URL's fragment, the console group | the root, `main.tern` |
+| `diagnostic` | the runtime reports a problem of its own: a failed add-on, a note script's `document.write`, a formula KaTeX rejects … Never for the diagnostics of the parse and the transforms, a throwing transform's `addon.failed` included | the [diagnostic](#check) |
+
+`render` and `math` fire again for each [`tern.render`](#render) call, with that call's root. `ready` fires once per page.
+
+For a note with one behaviour and a formula KaTeX rejects, a listener on each event logs:
+
+```js
+tern.define('probe', (el) => log.push(`define ${el.id}`));
+tern.on('render', (root) => log.push(`render ${root.localName}.${root.className}`));
+tern.on('diagnostic', (d) => log.push(`diagnostic ${d.code}`));
+tern.on('math', (root) => log.push(`math ${root.localName}`));
+tern.on('ready', (root) => log.push(`ready ${root.localName}`));
+tern.ready.then(() => log.push('tern.ready'));
+
+// log → ['define p1', 'render main.tern', 'diagnostic math.error',
+//        'math main', 'ready main', 'tern.ready']
+```
+
+- **Where to listen.** Listeners must be registered before the event. An add-on in `data-use` and a script in the note both run before `render`. A head script before the tern.js line runs before `tern` exists.
+- **`ready` after the fact.** A `ready` listener registered after `ready` never runs. Use [`tern.ready`](#ready), a Promise, which works at any time.
+- **Errors.** An exception in a listener is caught and logged as "tern: a "EVENT" listener failed"; the other listeners still run.
+- **The remover** that `on` returns removes that listener.
+- **Errors in the call.** An unknown event throws `TypeError: tern.on: "load" is not one of render, math, ready, diagnostic`; an `fn` that is not a function throws a `TypeError` too.
+
+### `tern.render` {#render}
+
+:::syntax
+```js
+tern.render(root = main.tern, source?) → Promise<diagnostics>
+```
+:::
+
+Renders, or re-renders, a root element.
+
+- **Without a source**, it runs behaviours on the elements under `root` that have not had them, and typesets the formulas not yet typeset. A second call changes nothing. It fires `render` and `math` with `root`.
+- **With a source**, it first replaces `root`'s content with the note's HTML: parse, transform and emit, with the page's head and `tern.config.lang`. The `<script>` elements of the new content then run in order, as a note's do ([note scripts](#after-mount)). Then it goes on as without a source.
+- **It resolves** to the diagnostics of `source`, parse and transform, or to `[]` without a source.
+- **The page's own root.** When `root` is the page's `main.tern`, the new diagnostics replace those in [`tern.diagnostics`](#diagnostics) (keeping the line-0 ones, which concern the head) and the panel is rebuilt. For any other element, `tern.diagnostics` is left alone.
+- **`root`** defaults to the page's `main.tern`. Anything other than an element rejects the Promise with `TypeError: tern.render(root, source): root must be an element`.
+- **`ready`** does not fire again.
+
+A live preview re-renders an element on every edit:
+
+```js
+const preview = document.getElementById('preview');
+const input = document.getElementById('source');
+
+input.addEventListener('input', async () => {
+  const problems = await tern.render(preview, input.value);
+  preview.dataset.problems = problems.length;
+});
+```
+
+#### Rendering into your own page {#render-into-your-page}
+
+A page that is not a note can load tern.js in any way the runtime does not start from: `defer`, `async`, a module, or a script it inserts itself. Then `tern.render(element, source)` renders a note into any element of the page.
+
+- **Styles.** The runtime adds no stylesheet. Link `tern.css` yourself, and give the element the class `tern`: most of its rules apply inside `.tern`. Its `html` and `body` rules (colours, font, margins) style the whole page, so leave them to your own CSS where they clash.
+- **Configuration.** `window.TERN` and `data-*` are not read, so [`tern.config`](#config) stays `{use: {}, katex: {}}`. Set what you need on it before the first render that needs it: `tern.config.lang` for labels, `tern.config.katex.base` and the KaTeX options before the first render with math.
+- **KaTeX** is loaded on the first render that has math, from `tern.config.katex.base`, or from the pinned CDN with SRI when it is not set.
+- **`tern.ready`** never settles, and `tern.diagnostics` stays empty: use the diagnostics `tern.render` resolves to.
+
+```html
+<link rel="stylesheet" href="tern.css">
+<div class="tern" id="out"></div>
+<script defer src="tern.js"></script>
+<script type="module">
+  tern.config.lang = 'de';
+  tern.config.katex.base = '/vendor/katex';
+  tern.block('lemma', { counter: 'lemma', label: { en: 'Lemma', de: 'Hilfssatz' } });
+  const out = document.getElementById('out');
+  const problems = await tern.render(out, ':::lemma\nEvery chain has a bound.\n:::');
+</script>
+```
+
+With `defer`, tern.js still warns once in the console that the note was not rendered; inserting the script yourself does not.
+
+### `tern.ready` {#ready}
+
+:::syntax
+```js
+tern.ready → Promise<undefined>
+```
+:::
+
+A Promise that resolves, with no value, right after the `ready` listeners have run. It never rejects. Unlike `tern.on('ready')`, it works whenever you await it, before or after the event.
+
+```js
+await tern.ready;
+document.querySelectorAll('main.tern .t-math .katex').length;   // the typeset formulas
+```
+
+It never settles under node, nor on a page where the runtime did not start ([When nothing starts](#no-start)).
+
+### `tern.diagnostics` {#diagnostics}
+
+The page's diagnostics, in one array that stays the same object for the life of the page: hold a reference and it stays current.
+
+- **At mount** it holds, sorted by position:
+  - the runtime diagnostics found before the mount, at line 0, which therefore come first: [`doc.quirks`](diagnostics.html#doc-quirks), and [`addon.failed`](diagnostics.html#addon-failed) for an add-on that did not load or threw while it ran;
+  - the note's parse and transform diagnostics, as [`tern.check`](#check) returns them, including `addon.failed` for a registered transform that threw.
+- **Later** runtime diagnostics are appended as they happen: [`script.document-write`](diagnostics.html#script-document-write) and [`script.domcontentloaded`](diagnostics.html#script-domcontentloaded) while the note's scripts run, then [`math.error`](diagnostics.html#math-error) and [`katex.unavailable`](diagnostics.html#katex-unavailable) while math is typeset. Each diagnostic the runtime reports itself, early or late, also fires the [`diagnostic`](#on) event; those of the parse and the transforms do not.
+- **`tern.render(main, source)`** replaces the contents with the new note's diagnostics, keeping the line-0 ones.
+- **On a built page** it holds the build's diagnostics, read from the page, then an `addon.failed` for each add-on script that failed to load or threw while it ran.
+
+Each entry has the [shape of a diagnostic](#check). The runtime's six codes are all errors:
+
+| Code | Position | Reported when |
+|---|---|---|
+| [`doc.quirks`](diagnostics.html#doc-quirks) | line 0 | the file has no `<!doctype html>`, so the page is in quirks mode and math stays TeX |
+| [`addon.failed`](diagnostics.html#addon-failed) | line 0 | a `data-use` entry did not load; a script add-on threw while it ran (the note renders with what it registered before the error); a registered transform threw |
+| [`katex.unavailable`](diagnostics.html#katex-unavailable) | line 0 | KaTeX's script or stylesheet did not load, and the note has math |
+| [`math.error`](diagnostics.html#math-error) | the formula's `data-pos` | KaTeX rejects a formula or a `:::macros` body |
+| [`script.document-write`](diagnostics.html#script-document-write) | the `<script` tag | a note script calls `document.write` or `writeln` |
+| [`script.domcontentloaded`](diagnostics.html#script-domcontentloaded) | the `<script` tag | a note script listens for `DOMContentLoaded` |
+
+Line 0, column 0 is the line before the note's first: the problem is with the tern.js line or the head, not with a line of the note.
+
+The same diagnostics reach the console and, where the author works, the page ([Console and panel](diagnostics.html#console-and-panel)):
+
+- **The console.** One collapsed group, "tern: N problems", is printed at `ready`, even when N is 0. Its first line gives the time each stage took. Each diagnostic in it is a `console.warn` (error or warning) or a `console.info`, never a `console.error`. A diagnostic that arrives after `ready` gets a `console.warn` line of its own.
+- **The panel.** An `<aside class="t-diagnostics" role="status">` after `main`, listing each diagnostic as "line L:C (file line F)" with its hint. It is shown on `file:` pages, on `localhost`, `127.0.0.1` and `[::1]`, and on any page with `data-diagnostics` ([`tern.config`](#config)); `data-quiet` turns it off everywhere. It appears only when there is something to list, and it is hidden in print.
+
+### `tern.config` {#config}
+
+The runtime's configuration: `window.TERN` merged with the `data-*` attributes of the tern.js tag. Where both set a key, the attribute wins.
+
+```html
+<!doctype html><meta charset="utf-8">
+<script>window.TERN = { katex: { macros: { '\\R': '\\mathbb{R}' } }, lang: 'en' }</script>
+<script src="tern.js" data-use="theorems.js?labels=de theme.min.css?dark"
+        data-katex="/vendor/katex" data-nonce="abc"></script>
+```
+
+On that page, once tern.js has started:
+
+```js
+tern.config;
+// → { use: { theorems: { labels: 'de' }, theme: { dark: '' } },
+//     katex: { macros: { '\\R': '\\mathbb{R}' }, base: '/vendor/katex' },
+//     lang: 'en', nonce: 'abc', diagnostics: false, quiet: false }
+```
+
+- **When.** `tern.config` is filled once, when tern.js starts. So `window.TERN` must be set by a script in the head, before the tern.js line; setting it later does nothing.
+- **What is copied.** Every key of `window.TERN` is copied into `tern.config`, including keys Tern does not use. An add-on can read its own settings from there.
+- **Booleans.** For `data-diagnostics` and `data-quiet`, the values `false`, `0`, `off` and `no` (in any case) mean false; any other value, or none, means true. Without the attribute, the `window.TERN` value counts, and false when it has none.
+
+| `window.TERN` | Attribute | `tern.config` | Value |
+|---|---|---|---|
+| `use` | `data-use` | `use` | the add-ons' options. Each `data-use` entry's query string goes to `use[NAME]`, where NAME is the file name without `.min` and `.js`, `.mjs` or `.css`: `theorems.js?labels=de` gives `use.theorems.labels === 'de'`, and a key without a value is `''`. The query wins over a `window.TERN.use[NAME]` key of the same name |
+| `katex` | `data-katex` | `katex` | KaTeX's options, plus `base`, the folder of `katex.min.js` and `katex.min.css`, or `'none'` for no math rendering. The attribute sets `katex.base`; a string as `window.TERN.katex` is a base |
+| `schema` | | `schema` | the note's own vocabulary, `{block, leaf, inline}` in the registry's shape, applied at mount after the add-ons ([`window.TERN.schema`](schema.html#window-tern)). Its `strict` sets `tern.schema.strict`, over an add-on's |
+| `css` | `data-css` | `css` | a stylesheet to use as the base instead of the inline one ([CSP](publishing.html#csp)) |
+| `nonce` | `data-nonce` | `nonce` | a CSP nonce, set on every `style`, `link` and `script` Tern adds, and on the note's re-created scripts |
+| `lang` | `data-lang` | `lang` | the label language. After mount, when nothing set it, it is the `lang` of `<html>` (which `:::meta` may have set). The command line picks labels in the same order: `data-lang`, `window.TERN.lang`, the `lang` of `:::meta`, then `<html lang>` |
+| `diagnostics` | `data-diagnostics` | `diagnostics` | true shows the panel everywhere, not only on `file:` and `localhost` |
+| `quiet` | `data-quiet` | `quiet` | true hides the panel everywhere; it wins over `diagnostics` |
+| any other key | | the same key | copied as it is |
+
+**`data-use`** is also how add-ons are loaded. Its value is a list of URLs, separated by spaces, resolved against the page. An entry ending in `.css` (before its query) is a stylesheet, linked in its place in the [cascade](#style); any other is a script. Scripts are fetched in parallel and run in the order listed, and the note mounts only once every entry has loaded or failed.
+
+**KaTeX options.** Every key of `katex` except `base`, `displayMode` and `throwOnError` is passed to KaTeX: `macros`, `trust`, `strict`, `output`, `leqno` and the rest. `throwOnError` is always true, so that a bad formula is reported as `math.error` and keeps its TeX. `macros` is copied into one table that every formula shares; the `:::macros` blocks of the note are defined into it first.
+
+Two other attributes belong to the tag but not to `tern.config`. `data-built` marks a page written by `tern build`, with the value `math` when the build left formulas to typeset ([A built page](#built-page)). `src` must name a file called `tern.js` for editors and the command line to [detect the note](tools.html#detection).
+
+An add-on reads its options like this:
+
+```js
+// theorems.js, listed as data-use="theorems.js?labels=de"
+const opts = tern.config.use.theorems || {};   // → { labels: 'de' }
+```
+
+### `tern.style` {#style}
+
+:::syntax
+```js
+tern.style(css) → HTMLStyleElement
+```
+:::
+
+Adds a stylesheet to the head and returns its `<style>` element. It is how a script add-on brings its CSS, and a schema entry's `css` field goes through it.
+
+Tern keeps its sheets together in the head, in this order:
+
+1. KaTeX's stylesheet;
+2. the base: `<style id="tern-style">`, or the `data-css` link, or a head link to `tern.css`;
+3. each `data-use` entry, in its order: a CSS add-on's link, or the sheets a script add-on adds with `tern.style` while it runs;
+4. every other `tern.style` sheet, such as one added by a note script.
+
+The group sits before the head's first stylesheet of your own, so your head CSS wins over Tern's at equal specificity, and a theme listed after another add-on wins over it.
+
+```js
+// my-addon.js
+tern.style('.t-block.aside { border-inline-start: 3px solid var(--t-line); }');
+```
+
+`tern.config.nonce` goes on the element. `css` is converted to a string; `null` and `undefined` give an empty sheet. Under node `tern.style` does nothing and returns `undefined`.
+
+## The lifecycle {#lifecycle}
+
+What the runtime does, in order, from the moment tern.js runs to `ready`:
+
+```
+capture → config → add-ons (fetched in parallel, run in order) → DOMContentLoaded
+→ window.TERN.schema → parse → transform → emit → mount → note <script>s in order
+→ behaviours → 'render' → math in time slices → 'math' → fragment scroll → console → 'ready'
+```
+
+### Capture {#capture}
+
+tern.js runs from its `<script src>` tag while the HTML parser is still reading the file. Everything after the line that holds the tag is the note.
+
+1. **Config.** It reads `window.TERN` and the tag's `data-*` into [`tern.config`](#config).
+2. **The head.** It keeps the preserved head as a string, for `:::meta` conflicts, and counts the file line of the tag, for the panel's file lines. A page in quirks mode gets [`doc.quirks`](diagnostics.html#doc-quirks).
+3. **One `document.write`** adds to the head:
+   - `<meta name="color-scheme" content="light dark">`, unless the head has one, so the page never flashes white;
+   - a preload for each script add-on;
+   - preloads for KaTeX's script and stylesheet, at low priority, unless KaTeX is off or already on the page;
+   - `<plaintext id="tern-source" hidden>`, which makes the HTML parser read the rest of the file as plain text: the note.
+4. **Add-ons and styles,** in the same task:
+   - every script add-on is appended at once, with `async = false`: fetched in parallel, run in the order listed;
+   - CSS add-ons and `data-css` become links;
+   - the base stylesheet goes in, so the empty page already has its colours;
+   - KaTeX's script and stylesheet are requested, so that KaTeX is usually ready by the time the note is.
+5. **Waiting.** The runtime waits for `DOMContentLoaded`, which means the whole note has arrived, and for each add-on to load or fail. There is no timeout. An add-on that fails to load is [`addon.failed`](diagnostics.html#addon-failed), and so is a script add-on that throws while it runs: the note still mounts, with whatever the add-on registered before the error.
+
+### Mount {#mount}
+
+1. **The note's vocabulary.** The entries of `window.TERN.schema` are declared with `tern.block`, `tern.leaf` and `tern.inline`, after the add-ons declared theirs: the note's own entry wins for a name both declare. A bad entry is a console warning.
+2. **The engine.** Parse, transform and emit, with the head, `tern.config.lang` and the `cssom` option. If the engine throws, which is a bug, the note is shown as escaped source in `<pre class="t-error">`, with one `console.error`.
+3. **The head.** `:::meta` is written into the existing head; a key the head already sets is left alone. `tern.config.lang` falls back to the `lang` of `<html>`. A viewport meta is added if there is none.
+4. **The DOM.** The HTML is parsed through a `<template>` as `<main class="tern">…</main>`, which replaces the body's content. There is one emitter: the DOM is built from its string, never by a second renderer.
+5. **Presentation.** Column alignments and grid columns are set through the CSSOM. Each `<video>` gets its `poster` attribute set again, which Chromium needs to load a poster parsed in a `<template>`.
+6. **The panel**, if it is on and there is something to list.
+
+### Scripts, behaviours and events {#after-mount}
+
+1. **Note scripts.** The `<script>` elements of the note are re-created in document order, so that they run:
+   - an inline script runs at once;
+   - an external one without `async` runs in order: the next waits for it to load or fail;
+   - one with `async` runs whenever it loads;
+   - a module is awaited;
+   - a type that is not JavaScript, a module, an import map or speculation rules is a data block, and stays inert.
+
+   While they run, `document.write` writes nothing ([`script.document-write`](diagnostics.html#script-document-write)), and a `DOMContentLoaded` listener is not registered ([`script.domcontentloaded`](diagnostics.html#script-domcontentloaded)): that event is over, and it is not fired again. Use `tern.on('ready', fn)`, or run the code directly.
+2. **Behaviours.** Every formula gets `data-tex`, its TeX; a fence with line numbers and a `start` gets its first number; then each element with `data-t` gets its schema `dom` and its [`tern.define`](#define) functions, in document order.
+3. **`render`** fires with `main.tern`.
+4. **Math.** KaTeX typesets the formulas in slices of about 10 ms, one per frame, so the page stays responsive. The first slice runs in the mount's task if KaTeX is already there, so the first paint is typeset. Formulas inside a closed `<details>` wait until it opens. A note with more than 100 formulas holds its top-level blocks with `content-visibility: auto` until they come near the viewport. A formula KaTeX rejects keeps its TeX and is [`math.error`](diagnostics.html#math-error).
+5. **`math`** fires with `main.tern`.
+6. **The fragment.** If the URL has a `#id`, its target's closed `<details>` ancestors are opened, and it is scrolled into view.
+7. **The console group** is printed: "tern: N problems".
+8. **`ready`** fires with `main.tern`, and then [`tern.ready`](#ready) resolves.
+
+After `ready`, opening a `<details>` typesets its formulas and fires `math` with it. Printing first opens every `details.t-block` and typesets what is pending. Copying a selection that holds typeset formulas copies each as its TeX, `$tex$` or `$$tex$$`.
+
+### A built page {#built-page}
+
+`tern build` writes a static page: the head, Tern's sheets, `<main class="tern">` with the emitter's HTML, the note's source in `<script type="text/tern" id="tern-source">`, and its diagnostics in `<script type="application/json" id="tern-diagnostics">`. Its tern.js tag has `data-built`. tern.js finds that attribute and skips capture, mount and the re-creation of scripts:
+
+1. **At once:** config; the head's Tern sheets take their places in the cascade; KaTeX is requested if the tag says `data-built="math"`; add-on scripts that fail to load, or throw while they run, are noted.
+2. **At `DOMContentLoaded`:**
+   1. `window.TERN.schema`;
+   2. the note's source, for `math.error` positions, and the number of file lines before it, for the panel;
+   3. the build's diagnostics, then an `addon.failed` for each add-on script that failed to load or threw, into `tern.diagnostics` and the panel;
+   4. behaviours, `render`, math for the formulas the build did not typeset, `math`, the fragment, the console group (whose first line says "a built page"), `ready`.
+
+The differences from a note:
+
+- The note's scripts are real scripts the browser runs while it parses the page. `tern` and the add-ons are already defined, `document.write` writes, and `DOMContentLoaded` listeners run. Nothing is intercepted or reported.
+- A page whose formulas were all typeset by the build loads no KaTeX.
+- A CSS add-on that fails to load is not reported; the browser's console shows it.
+- If tern.js itself fails to load, the content still shows with its styles, but the add-ons, and any note script that calls `tern`, throw.
+
+### When nothing starts {#no-start}
+
+The runtime does nothing, and `tern.ready` never settles, when:
+
+- tern.js is not a parser-inserted classic script in a loading document: `async`, `defer`, `type="module"`, or inserted by a script. With `async` or `defer` it warns;
+- the page already has a `main.tern` and the tag has no `data-built`: "tern: the page already has a main.tern; tern.js does nothing";
+- another tern.js is already on the page: the second warns and does nothing;
+- the browser ignores the `document.write`, so the note holder is never created.
+
+In each case the engine and [`tern.render`](#render-into-your-page) still work.
+
+## The AST {#ast}
+
+The AST is a tree of plain objects in the shape of [mdast](https://github.com/syntax-tree/mdast), the Markdown syntax tree of the unified ecosystem, with the extensions remark-directive and mdast-util-math define, plus a few Tern types.
+
+- **`type`** names the node. A node holds `children` (an array of nodes) or `value` (a string), or neither. A container with a verbatim body has both, its `children` empty.
+- **`position`** is on every node the parser makes: `{start, end}`, each `{line, column, offset}` ([Positions](#positions)).
+- **`attributes`** holds the `{…}` group written for the node, as flat key-value pairs ([attributes](syntax-blocks.html#attributes)). It is absent when there is none.
+- **`data.tern`** holds what the parser and the transforms derive ([data.tern](#data-tern), [The transformed AST](#transformed-ast)). The top-level fields are mdast's and its extensions', plus those of the few Tern types.
+- **JSON.** Everything is plain data: `JSON.parse(JSON.stringify(ast))` is the same tree.
+
+Here is a short note, parsed and transformed with a schema that declares `theorem` (positions left out):
+
+```tern
+## Kernel {#kernel}
+
+:::theorem[Rank–nullity]{#rn .big}
+See @kernel and $\dim V$.
+:::
+```
+
+```json
+{"type": "root", "children": [
+  {"type": "heading", "depth": 2, "children": [{"type": "text", "value": "Kernel"}],
+   "attributes": {"id": "kernel"},
+   "data": {"tern": {"idPosition": {…}}}},
+  {"type": "containerDirective", "name": "theorem", "children": [
+     {"type": "paragraph", "data": {"directiveLabel": true},
+      "children": [{"type": "text", "value": "Rank–nullity"}]},
+     {"type": "paragraph", "children": [
+       {"type": "text", "value": "See "},
+       {"type": "ref", "id": "kernel", "data": {"tern": {"resolved": true}},
+        "children": [{"type": "text", "value": "Kernel"}]},
+       {"type": "text", "value": " and "},
+       {"type": "inlineMath", "value": "\\dim V"},
+       {"type": "text", "value": "."}]}],
+   "data": {"tern": {"colons": 3, "namePosition": {…}, "idPosition": {…},
+                     "tag": "section", "slot": "div",
+                     "counter": "theorem", "number": 1, "text": "Theorem 1"}},
+   "attributes": {"id": "rn", "class": "big"}}],
+ "data": {"tern": {"diagnostics": [], "transformed": true, "footnotes": [],
+                   "ids": {"kernel": {"kind": "heading", "explicit": true, "line": 1, "column": 12},
+                           "rn": {"kind": "theorem", "explicit": true, "line": 3, "column": 26}}}}}
+```
+
+### Node types {#node-types}
+
+| Type | From | Fields | Written |
+|---|---|---|---|
+| `root` | mdast | `children`; `data.tern.meta` when the note has a top-level `:::meta` | the note |
+| `paragraph` | mdast | `children` | text |
+| `heading` | mdast | `depth` (1 to 6), `children` | `## Title` |
+| `thematicBreak` | mdast | | `---` |
+| `blockquote` | mdast | `children` | `> quote` |
+| `list` | mdast | `ordered`, `start` (a number, or `null` for bullets), `spread`, `children` | `- item`, `3. item` |
+| `listItem` | mdast | `spread`, `checked` (`null`, `true` or `false`), `children` | an item, `- [x] task` |
+| `code` | mdast | `lang` (or `null`), `meta` (the info junk, or `null`), `value` | a fence |
+| `html` | mdast | `value` | raw HTML, a block, an `=html` fence or one inline tag |
+| `math` | mdast-util-math | `value` | `$$ … $$` |
+| `table` | GFM | `align` (one entry per column: `'left'`, `'center'`, `'right'` or `null`), `children` | a pipe table |
+| `tableRow` | GFM | `children` | a row |
+| `tableCell` | GFM | `children` | a cell |
+| `footnoteDefinition` | GFM | `identifier`, `label`, `children` | `[^n]: text` |
+| `containerDirective` | remark-directive | `name`, `children`; for a verbatim body, `value`, and `children` is empty | `:::name … :::` |
+| `leafDirective` | remark-directive | `name`, `children` | `::name[content]` |
+| `cell` | Tern | `children` | a `+++` segment of a container |
+| `attributes` | Tern | `value`, the line's text | an attribute line that binds to nothing |
+| `text` | mdast | `value` | text and soft line breaks |
+| `emphasis` | mdast | `children` | `*em*` |
+| `strong` | mdast | `children` | `**strong**` |
+| `delete` | GFM | `children` | `~~gone~~` |
+| `mark` | Tern | `children` | `==key==` |
+| `inlineCode` | mdast | `value` | a code span |
+| `inlineMath` | mdast-util-math | `value` | `$x$` or verbatim math |
+| `link` | mdast | `url`, `title` (only when written), `children` | `[text](url "title")`, an autolink |
+| `image` | mdast | `url`, `alt` (plain text), `title` (only when written) | `![alt](url)` |
+| `break` | mdast | | `\` at the end of a line |
+| `span` | Tern | `attributes`, `children` | `[text]{.class}` |
+| `textDirective` | remark-directive | `name`, `children` | `:name[content]` |
+| `ref` | Tern | `id`; `children` after the transforms | `@id` |
+| `footnoteReference` | GFM | `identifier`, `label` | `[^n]` |
+
+Any node may also have `attributes`, `data` and `position`. The rest of this section shows each family as `tern.parse` returns it, with positions left out.
+
+**Containers.** A container's title is its first child: a paragraph with `data.directiveLabel: true`, holding the bracket content. `data.tern.colons` is the length of its colon run, and `data.tern.namePosition` is where its name is written.
+
+```json
+// :::theorem[Rank–nullity]{#rn .big}
+// Body.
+// :::
+{"type": "containerDirective", "name": "theorem", "children": [
+   {"type": "paragraph", "data": {"directiveLabel": true},
+    "children": [{"type": "text", "value": "Rank–nullity"}]},
+   {"type": "paragraph", "children": [{"type": "text", "value": "Body."}]}],
+ "data": {"tern": {"colons": 3, "namePosition": {…}, "idPosition": {…}}},
+ "attributes": {"id": "rn", "class": "big"}}
+```
+
+**Cells.** A container with `+++` lines holds `cell` nodes. The content before the first `+++` is an implicit first cell.
+
+```json
+// :::row
+// Left.
+// +++ {.muted}
+// Right.
+// :::
+{"type": "containerDirective", "name": "row", "children": [
+   {"type": "cell",
+    "children": [{"type": "paragraph", "children": [{"type": "text", "value": "Left."}]}]},
+   {"type": "cell",
+    "children": [{"type": "paragraph", "children": [{"type": "text", "value": "Right."}]}],
+    "attributes": {"class": "muted"}}],
+ "data": {"tern": {"colons": 3, "namePosition": {…}}}}
+```
+
+**Verbatim bodies.** `:::meta`, `:::macros`, `:::script`, `:::style`, `:::html`, a container with `{raw}` and one whose schema entry has `body: 'raw'` keep their body as `value`, with empty `children`:
+
+```json
+// :::mermaid{raw}
+// a --> b
+// :::
+{"type": "containerDirective", "name": "mermaid", "children": [],
+ "data": {"tern": {"colons": 3, "namePosition": {…}}},
+ "attributes": {"raw": ""}, "value": "a --> b"}
+```
+
+**Leaves and inline elements.** The bracket content is the children. A bare key such as `controls` has the value `''`.
+
+```json
+// ::video[Clip]{src=a.mp4 controls}
+{"type": "leafDirective", "name": "video", "children": [{"type": "text", "value": "Clip"}],
+ "attributes": {"src": "a.mp4", "controls": ""},
+ "data": {"tern": {"namePosition": {…}}}}
+
+// :kbd[Ctrl]{.big}
+{"type": "textDirective", "name": "kbd", "children": [{"type": "text", "value": "Ctrl"}],
+ "attributes": {"class": "big"}}
+
+// [warm]{.hl lang=en}
+{"type": "span", "children": [{"type": "text", "value": "warm"}],
+ "attributes": {"class": "hl", "lang": "en"}}
+```
+
+**Fences.** `lang` drops the `=` of `=FORMAT`; an `=html` fence is an `html` node instead. `meta` is what follows the language that is neither a title nor a group, and is reported with `fence.info-junk`. A title is kept as inline nodes in `data.tern.title`, and reserved keys such as `lines` stay in `attributes` until the transforms.
+
+```json
+// ```js [Fibonacci]{#lst-fib lines}
+// fib();
+// ```
+{"type": "code", "lang": "js", "meta": null, "value": "fib();",
+ "attributes": {"id": "lst-fib", "lines": ""},
+ "data": {"tern": {"idPosition": {…}, "title": [{"type": "text", "value": "Fibonacci"}]}}}
+```
+
+**Math.** Display math is `math`; the `#id` of its `$$` closer is in `attributes`. Inline and verbatim math are `inlineMath`, and a strong group glued after one is its `attributes`.
+
+```json
+// $$
+// a^2
+// $$ {#eq-a}
+{"type": "math", "value": "a^2", "attributes": {"id": "eq-a"},
+ "data": {"tern": {"idPosition": {…}}}}
+
+// $x${#e-x}
+{"type": "inlineMath", "value": "x", "attributes": {"id": "e-x"},
+ "data": {"tern": {"idPosition": {…}}}}
+```
+
+**Tables.** `align.length` is the number of columns. The delimiter row is not a node. A row holds the cells it has: a short row has fewer, and a row with extra cells keeps them (and gets `table.extra-cell`).
+
+```json
+// | Key | Action |
+// |:--|--:|
+// | `:w` | write |
+{"type": "table", "align": ["left", "right"], "children": [
+   {"type": "tableRow", "children": [
+     {"type": "tableCell", "children": [{"type": "text", "value": "Key"}]},
+     {"type": "tableCell", "children": [{"type": "text", "value": "Action"}]}]},
+   {"type": "tableRow", "children": [
+     {"type": "tableCell", "children": [{"type": "inlineCode", "value": ":w"}]},
+     {"type": "tableCell", "children": [{"type": "text", "value": "write"}]}]}]}
+```
+
+**Lists.** `start` is `null` for a bullet list. `spread` is set on the list and on each item; `checked` is `null` except on task items.
+
+```json
+// 3. alpha
+// 4. [x] beta
+{"type": "list", "ordered": true, "start": 3, "spread": false, "children": [
+   {"type": "listItem", "spread": false, "checked": null,
+    "children": [{"type": "paragraph", "children": [{"type": "text", "value": "alpha"}]}]},
+   {"type": "listItem", "spread": false, "checked": true,
+    "children": [{"type": "paragraph", "children": [{"type": "text", "value": "beta"}]}]}]}
+```
+
+**Footnotes.** `identifier` is the label folded and lower-cased, for matching; `label` is as written. A definition stays where it is written.
+
+```json
+// Text.[^n]
+//
+// [^n]: Note.
+{"type": "root", "children": [
+   {"type": "paragraph", "children": [
+     {"type": "text", "value": "Text."},
+     {"type": "footnoteReference", "identifier": "n", "label": "n"}]},
+   {"type": "footnoteDefinition", "identifier": "n", "label": "n",
+    "children": [{"type": "paragraph", "children": [{"type": "text", "value": "Note."}]}]}]}
+```
+
+**References, links and images.** A `ref` has no children until the `refs` transform. A link's `url` is normalised. An image has no children: `alt` is the plain text of its brackets, and the bracket content itself is in `data.tern.caption`, for an implicit figure.
+
+```json
+// @kernel{ref=title}
+{"type": "ref", "id": "kernel", "attributes": {"ref": "title"}}
+
+// [text](https://x.y "T"){.c}
+{"type": "link", "url": "https://x.y", "title": "T", "attributes": {"class": "c"},
+ "children": [{"type": "text", "value": "text"}]}
+
+// ![An *osprey*](osprey.jpg){width=70%}
+{"type": "image", "url": "osprey.jpg", "alt": "An osprey", "attributes": {"width": "70%"},
+ "data": {"tern": {"caption": [{"type": "text", "value": "An "},
+                               {"type": "emphasis", "children": [{"type": "text", "value": "osprey"}]}]}}}
+```
+
+**Raw HTML.** A block is one `html` node whose `data.tern.kind` says which kind ([raw HTML](syntax-blocks.html#raw-html)). Inline, each tag or comment is its own node of kind `inline`, between text nodes.
+
+```json
+// <!-- note -->
+//
+// a <b>b</b>
+{"type": "root", "children": [
+   {"type": "html", "value": "<!-- note -->", "data": {"tern": {"kind": "comment"}}},
+   {"type": "paragraph", "children": [
+     {"type": "text", "value": "a "},
+     {"type": "html", "value": "<b>", "data": {"tern": {"kind": "inline"}}},
+     {"type": "text", "value": "b"},
+     {"type": "html", "value": "</b>", "data": {"tern": {"kind": "inline"}}}]}]}
+```
+
+**Text.** Text and soft line breaks merge into one `text` node; a hard break is a `break` node. An entity is a `text` node of its own: `value` is the decoded character, and `data.tern.entity` the spelling, which the emitter writes back.
+
+```json
+// a &amp; b
+{"type": "paragraph", "children": [
+   {"type": "text", "value": "a "},
+   {"type": "text", "value": "&", "data": {"tern": {"entity": "&amp;"}}},
+   {"type": "text", "value": " b"}]}
+```
+
+**An orphan attribute line** is an `attributes` node, always with [`attributes.orphan`](diagnostics.html#attributes-orphan):
+
+```json
+// Para.
+//
+// {#lost}
+{"type": "attributes", "value": "{#lost}"}
+```
+
+### data.tern from the parser {#data-tern}
+
+The parser records under `data.tern` what it knows that mdast has no field for. Every field is optional: it is present only on the nodes it concerns.
+
+| Field | On | Value |
+|---|---|---|
+| `meta` | `root` | the top-level `:::meta` keys, as `{key: string}` with no prototype. Absent when the note has none |
+| `colons` | `containerDirective` | the length of the opener's colon run |
+| `namePosition` | `containerDirective`, `leafDirective` | the position of the name after the colons |
+| `idPosition` | any node with an author's id | the position of the `#id` or `id=…` item that set it |
+| `tagPosition` | any node with a `tag=` key, block or inline | the position of the key, for `tag.not-allowed` |
+| `refPosition` | any node but a `ref` with a `ref=` key | the position of the key, for `attr.malformed`: `ref=` applies only to a reference |
+| `rawPosition` | any node but a `containerDirective` with a `raw` key | the position of the key: `raw` applies only to a container |
+| `colsPosition` | any node with a `cols=` key, except a container, leaf or inline element; and a core container (`:::macros` …) with one | the position of the key: `cols=` applies only to a container, leaf or inline element |
+| `junk` | `paragraph` | `true` on the paragraph holding a container opener's junk ([`block.opener-junk`](diagnostics.html#block-opener-junk)); it follows the title |
+| `title` | `code` | a titled fence's title, as inline nodes |
+| `kind` | `html` | `'comment'`, `'rawtext'`, `'oneline'`, `'generic'` or `'fence'` for a block; `'inline'` for a tag in text |
+| `unclosed` | `html`, `math` | `true` on an unclosed comment or raw-text block, and on an unclosed `$$`. Each is shown as source |
+| `source` | `math` | for an unclosed `$$`, the text shown as source |
+| `headerless` | `table` | `true` on a table that starts with its delimiter row |
+| `entity` | `text` | an entity's spelling, such as `'&nbsp;'`; `value` is the decoded text |
+| `caption` | `image` | the bracket content, as inline nodes |
+
+Each `…Position` field is a position `{start, end}` spanning the key's name (`tag`, `ref`, `raw`, `cols`).
+
+```js
+tern.parse('[s]{ref=title}').ast.children[0].children[0].data.tern.refPosition;
+// → { start: { line: 1, column: 5, offset: 4 }, end: { line: 1, column: 8, offset: 7 } }
+```
+
+One more field sits on `data` itself, as in remark-directive: `data.directiveLabel: true` marks a container's title paragraph.
+
+Two things are not marked: a fence that runs to the end unclosed, and a generic raw HTML block that does. Their diagnostics, [`block.unclosed-fence`](diagnostics.html#block-unclosed-fence) and [`html.unclosed`](diagnostics.html#html-unclosed), say so.
+
+```js
+const { ast } = tern.parse('$$\nx\n\ntext');
+ast.children[0];
+// → { type: 'math', value: 'x', data: { tern: { unclosed: true, source: '$$\nx' } }, position: {…} }
+```
+
+### The transformed AST {#transformed-ast}
+
+The transforms write what the emitter reads; the emitter reads nothing else. This is the contract between them, and what `tern parse --transformed` prints. The parser's `data.tern` fields stay where they are, except on the nodes that an implicit figure or a table merge rebuilds.
+
+#### The root
+
+| Field | Value |
+|---|---|
+| `data.tern.ids` | the id registry: `{id: {kind, explicit, line, column}}` |
+| `data.tern.diagnostics` | the transforms' diagnostics, sorted |
+| `data.tern.footnotes` | the identifiers of the footnote definitions, in output order: the referenced ones by number, then the unused ones in document order |
+| `data.tern.meta` | `:::meta`, plus the title fallback when it applies (created for it when there was no `:::meta`) |
+| `data.tern.transformed` | `true`, set by the first run |
+
+In `ids`, `kind` is a named element's name (`theorem`), else the node type (`heading`, `math`, `code`, `span`, `footnoteDefinition` …). `explicit` is false for a heading slug and for a generated footnote id. `line` and `column` say where the id is written: the `#` or `id=` item; for a slug, the heading; for a footnote id, the definition's or the reference's `[`. `ids` is built the first time it is read, so the emitter, which never reads it, never pays for it; any reader, `JSON.stringify` included, sees a plain object.
+
+#### Attributes and ids
+
+After the transforms, a node's `attributes` is exactly what its element gets, besides Tern's own classes and `data-t`. When nothing is left, `attributes` is deleted.
+
+- **Reserved keys** leave `attributes`. `{raw}` becomes `data.tern.raw: true`, `cols` becomes `data.tern.cols`, a reference's `ref=` becomes `data.tern.ref`, and `tag` is used to resolve the element. A fence's `lines`, `start` and `hl` become [fence fields](#fences).
+- **A reserved key where it does not apply** is dropped with a diagnostic at the key: `ref=` off a reference, `raw` off a container, `cols=` off a container, leaf or inline element (or on a core container), and `tag=` on a reserved or core name get `attr.malformed`; `tag=` on anything but a container, leaf or inline element gets `tag.not-allowed`.
+- **Ids.** An invalid id is removed, and so is each later duplicate: the first element keeps it. A heading that loses its id gets its slug instead. A slug is written as `attributes.id`, first.
+- **Tern's own ids**, `tern-style`, `tern-color-scheme`, `tern-source` and `tern-diagnostics`, name elements Tern puts in the page around the note. They are taken before the note's: an id an author writes with one of them is dropped with `id.duplicate`, and a heading slug that would be one takes `-2` (`tern-style-2`), silently. They are not listed in `data.tern.ids`.
+- **Core containers.** `:::macros`, `:::script`, `:::style` and `:::html` keep their id, classes and other keys, and their element gets them. `:::meta` emits nothing, so its id, classes and keys get `attr.malformed` and are dropped, and its id is not registered.
+- **Schema defaults.** The schema's `attrs` go under the author's attributes, never as an id, and its `class` comes before the author's classes.
+- **Images.** An `alt=` attribute stays in `attributes` and wins over `alt`.
+
+The registry holds every id of every kind. The ids an author wrote come first, with the generated footnote ids, in document order; heading slugs come after them and take `-2`, `-3` … when theirs is taken. So a slug never takes an id from an element the author named:
+
+```tern {.live schema=demo}
+## Kernel
+
+:::definition{#kernel}
+The kernel of $f$ is the set of vectors it sends to $0$.
+:::
+
+See @kernel: the reference goes to the definition, and the heading's slug became `kernel-2`.
+```
+
+#### Named elements
+
+Containers, leaves and inline elements, a merged `:::table`, and an implicit figure:
+
+| Field | Value |
+|---|---|
+| `data.tern.tag` | the element the name resolves to ([resolving a name](elements.html#names)). The core containers `meta`, `macros`, `script`, `style` and `html` get none |
+| `data.tern.slot` | the title element: `div`, `span` (for a schema `title: 'inline'`), `summary`, `figcaption`, `caption` or `legend`. Present on a container that emits a title or a label |
+| `data.tern.end` | the end mark from the schema, on a container |
+| `data.tern.cols` | the value of `--t-cols`, on a container with cells and on any node with a valid `cols` key. The element then gets the class `t-cols` |
+| `data.tern.raw` | `true` when the container had `{raw}` |
+| `data.tern.depth` | a toc leaf's `{depth=…}`, taken out of `attributes` |
+| `data.tern.implicit` | `true` on a figure made from an image paragraph |
+
+- **The title** is the leading `directiveLabel` paragraph. A schema `titleDefault` fills it, or is inserted as one, when no title is written.
+- **Leaves and inline elements** are counted and labelled like containers, but get no slot. The emitter writes their `text` as `<span class="t-label">` at the start of the element, followed by a space when content follows; a void element (`img`, `hr` …) gets none, and a labelled toc leaf has it before its list.
+- **A merged `:::table`** is a `containerDirective` whose `tag` is `table`. Its body is its title paragraph and exactly one `table` node; the container holds the combined attributes, and the inner table has none.
+- **An implicit figure** is the `containerDirective` named `figure` that `:::figure[…]{#id}` would give. Its title paragraph holds the image's bracket content, and its image has `alt: ''`, keeping any `alt=` attribute.
+
+```tern {.live schema=demo}
+:::table[Phases]{#tbl-phases}
+| Phase | Exit |
+|---|---|
+| P0 | every rule has a case |
+:::
+
+See @tbl-phases.
+```
+
+#### Numbering and labels
+
+| Field | Value |
+|---|---|
+| `data.tern.counter` | the counter's name, from the schema; `equation` for display math |
+| `data.tern.number` | the number in that counter, in document order |
+| `data.tern.text` | the label: `Theorem 1`, `Proof` (labelled, not counted), `(1)` for an equation, `Listing 1`. Counted without a label, it is the number. A schema `label` function returns the whole text |
+
+Display math is numbered only when it has an id, and an unclosed `$$` never is. A titled fence is a listing, numbered with the schema's `code` entry. Numbering is document-wide: `within` is not applied.
+
+```tern {.live schema=demo}
+## Kernel {#kernel}
+
+:::theorem[Rank–nullity]{#rn}
+For a linear map $f$, see @kernel.
+:::
+
+$$
+\dim V = \dim\ker f + \operatorname{rank} f
+$$ {#eq-rn}
+
+By @rn and @eq-rn.
+```
+
+#### Fences {#fences}
+
+| Field | Value |
+|---|---|
+| `data.tern.lines` | `true` when the fence asks for line numbers |
+| `data.tern.start` | the first line number, when `start=` is an integer |
+| `data.tern.hl` | the highlighted line numbers, ascending, clipped to the fence, counted from `start` |
+| `data.tern.hlText` | `hl=` as written, for `data-hl` |
+| `data.tern.slot` | on a titled fence, the element of the listing's caption: `figcaption`, unless the schema's `code` entry sets `title` |
+
+````tern {.live}
+```js {lines start=10 hl=11}
+let a = 1;
+let b = 2;
+```
+````
+
+#### References and fragment links
+
+- **A reference** gets `data.tern.resolved`. When it resolves, its `children` are its text, built from the target's `ref` template or the [default text](elements.html#references), and `data.tern.ref` holds a `ref=` choice. When it does not, it has no children, is written as its literal `@id`, and gets [`ref.dangling`](diagnostics.html#ref-dangling).
+- **Copied text.** The text a reference or a toc entry copies from its target has no positions and no ids. Links are unwrapped, footnote references are left out, and a reference inside the copy becomes its target's plain text (its `ref=` is ignored there), so a link never nests in a link.
+- **A fragment link** `[text](#id)` gets `data.tern.resolved`; when it is false, the link stays a link and gets `ref.dangling` at its `[`.
+
+#### Footnotes
+
+| Node | Fields under `data.tern` |
+|---|---|
+| `footnoteReference` | `resolved`; when resolved, `number`, `id` (`fnref-a`, then `fnref-a-2` …) and `target` (`fn-a`). No `id` when an earlier element holds it |
+| `footnoteDefinition`, referenced | `number`, `id` (`fn-a`) and `backref` (`fnref-a`). No `id` when an earlier element holds it |
+| `footnoteDefinition`, unused | `id` only; listed after the referenced ones, with [`footnote.unused`](diagnostics.html#footnote-unused) |
+| `footnoteDefinition`, duplicate | `dropped: true`; the first definition of a label wins |
+
+Ids use the label as written, so `[^Note]` gives `fn-Note`.
+
+```tern {.live}
+Footnotes are numbered by first reference[^b], here[^a], and a second use[^b] gets its own id.
+
+[^a]: Defined first, referenced second.
+[^b]: Defined second, referenced first.
+```
+
+#### Table of contents
+
+A leaf whose schema entry has `transform: 'toc'` gets `data.tern.toc`: one entry `{depth, id, children}` per heading in its range, in document order, where `children` is a copy of the heading's inline content. The emitter nests the entries into lists. The range is the leaf's `depth`, else the schema's, else `2-3`; a single `N` runs from the range's lower bound to `N`.
+
+```tern {.live schema=demo}
+::toc
+
+## One
+
+### One point one
+
+## Two
+```
+
+### Positions {#positions}
+
+Every node the parser makes has a `position`, in [unist](https://github.com/syntax-tree/unist)'s shape:
+
+```js
+const { ast } = tern.parse('Hi *you*.');
+ast.children[0].children[1].position;
+// → { start: { line: 1, column: 4, offset: 3 }, end: { line: 1, column: 9, offset: 8 } }
+```
+
+- **`line`** is 1-based, counted in the note: line 1 is the line right after the tern.js line.
+- **`column`** is 1-based, in UTF-16 code units, the unit of JavaScript strings and of the language server. A character outside the BMP, such as an emoji or `𝔽`, counts two. A tab counts one: tab stops matter only for which list item a line belongs to.
+- **`offset`** is 0-based, in UTF-16 code units, into the normalised source: `\r\n` counts as one `\n`, and a BOM is not counted.
+- **`end`** is exclusive: the position just after the node.
+
+```js
+tern.parse('😀 *you*').ast.children[0].children[1].position;
+// → { start: { line: 1, column: 4, offset: 3 }, end: { line: 1, column: 9, offset: 8 } }
+tern.parse('one\r\ntwo *x*').ast.children[0].children[1].position;
+// → { start: { line: 2, column: 5, offset: 8 }, end: { line: 2, column: 8, offset: 11 } }
+tern.parse('\t*x*').ast.children[0].children[0].position;
+// → { start: { line: 1, column: 2, offset: 1 }, end: { line: 1, column: 5, offset: 4 } }
+```
+
+**Extents** follow mdast-util-from-markdown wherever it has an equivalent ([lexical conventions](syntax-blocks.html#lexical)):
+
+- the root runs from the start of the source to its very end, after the final line break;
+- a `break` includes its line ending;
+- a container's title paragraph spans its brackets;
+- a node's attribute group is part of its position, and a block with an attribute line starts at that line;
+- a `tableCell` spans its trimmed content;
+- a `cell` runs from its `+++` line, or for the first cell from its first content line, to its last content line.
+
+```js
+tern.parse('Hi *you*.').ast.position;
+// → { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 9 } }
+tern.parse('Hi *you*.\n').ast.position;
+// → { start: { line: 1, column: 1, offset: 0 }, end: { line: 2, column: 1, offset: 10 } }
+```
+
+**Diagnostics** carry positions of the same kind, and each code says where it points ([Positions in diagnostics](diagnostics.html#positions)). Runtime diagnostics about the head or the tern.js line are at line 0, column 0.
+
+```tern {.live expect="block.unclosed ref.dangling"}
+:::note
+See @nowhere.
+```
+
+**Note lines and file lines.** The AST counts lines in the note. The file has the head before it: with the canonical one-line head, file line = note line + 1, and in general file line = note line + the number of lines up to and including the tern.js line. Each tool says which it uses:
+
+| Where | Lines |
+|---|---|
+| `tern.parse`, `tern.check`, `tern.outline`, `tern.diagnostics`, `data-pos` | note lines |
+| messages ("opened on line 12") | note lines |
+| `tern check` output | file lines; `--json` gives both, as `position` and `filePosition` |
+| the panel | both: "line 2:5 (file line 3)" |
+| the language server | file lines: 0-based in LSP ranges, 1-based in the `tern/outline` notification |
+
+The runtime counts the file line of the tern.js tag from what the HTML parser kept of the head. It is exact for the canonical first line and for line breaks between head elements. But the HTML parser drops the line break after `<!doctype html>`, `<html …>` and `<head>`, so a head that puts them on lines of their own gives file lines that are too low, by one for each.
+
+**`data-pos`.** The emitter writes the start of a node as `data-pos="line:col"` on fences, math, named elements and cells ([`tern.emit`](#emit)). It is how a browser maps an element back to its note line: the runtime reads the nearest one to position `math.error`.

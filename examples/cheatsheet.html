@@ -1,0 +1,99 @@
+<!doctype html><meta charset="utf-8">
+<script>
+  // This note's vocabulary (window.TERN.schema): the three callouts get their
+  // labels from it. :kbd needs no entry (kbd is an HTML element), and :::row
+  // needs none either: a name HTML does not know becomes div.row.
+  window.TERN = {schema: {
+    block: {
+      note: {tag: 'aside', label: 'Note'},
+      tip: {tag: 'aside', label: 'Tip'},
+      warning: {tag: 'aside', label: 'Warning'},
+    },
+  }};
+</script>
+<script src="../tern.js"></script>
+
+:::meta
+title: Neovim cheat sheet
+lang: en
+:::
+
+# Neovim cheat sheet
+
+:::note
+This example is a cheat sheet. It shows keys with `:kbd[…]`, highlight and strikethrough,
+a three-column grid of tables (`:::row{cols=3}` with `+++` between the cells), callouts,
+code spans that hold pipes and backticks, and a nested task list. The page is wider than
+a note's default, through the `--t-width` variable in the styles at the end. Part of
+[Tern's documentation](../index.html).
+:::
+
+Keys are shown as :kbd[Ctrl]+:kbd[w]. ==Highlighted== entries are new in 0.11;
+~~struck~~ ones were removed.
+
+:::row{cols=3 .wide}
+### Motion
+
+| Keys | Action |
+|---|---|
+| :kbd[h] :kbd[j] :kbd[k] :kbd[l] | left, down, up, right |
+| :kbd[w] / :kbd[b] | next / previous word |
+| :kbd[gg] / :kbd[G] | top / bottom |
+| :kbd[Ctrl]+:kbd[d] | half page down |
+| :kbd[%] | matching bracket |
+| :kbd[\`]:kbd[a] | jump to mark `a` |
++++
+### Editing
+
+| Keys | Action |
+|---|---|
+| :kbd[dd] | delete line |
+| :kbd[ciw] | change inner word |
+| :kbd[>>] | indent |
+| :kbd[.] | repeat last change |
+| :kbd[u] / :kbd[Ctrl]+:kbd[r] | undo / redo |
+| ~~:kbd[Ctrl]+:kbd[s]~~ | ~~save~~ (write `:w`) |
++++
+### Windows and the command line
+
+| Keys | Action |
+|---|---|
+| :kbd[Ctrl]+:kbd[w] :kbd[\|] | ==maximise the window's width== |
+| `:w` | write |
+| `:%s/a/b/g` | replace all |
+| `:'<,'>!sort | uniq` | filter the selection |
+| `:g/^$/d` | delete blank lines |
+:::
+
+:::tip[Counts go first]
+Any motion takes a count: `3dd`, `5j`. ==The count comes first==, not ~~last~~.
+:::
+
+:::warning
+`:q!` discards changes. Prefer `:x` (write if changed, then quit).
+:::
+
+## Pipes and backticks in code
+
+A shell filter in a sentence: `sort | uniq -c`. A backtick itself: `` ` ``, and a span that
+contains one: ``a`b``. In a table cell `` `a|b` `` and $|x|$ keep their pipes; a literal pipe
+anywhere else is `\|`, and a backtick inside :kbd[…] is `` \` ``.
+
+## Learning path
+
+- [x] Motions: `hjkl`, `w`, `b`, `e`
+- [ ] Operators + motions
+  - [x] `d`, `c`, `y`
+  - [ ] Text objects: `iw`, `i(`, `it`
+    1. inner vs around (`i` vs `a`)
+    2. counts
+- [ ] Registers: `"ayy`, `"ap`
+
+<style>
+  :root { --t-width: 68rem; }
+  [data-t="note"], [data-t="tip"], [data-t="warning"] { background: var(--t-soft); border-inline-start: 4px solid var(--t-link); padding: .7rem 1rem; border-radius: 4px; }
+  [data-t="warning"] { border-inline-start-color: var(--t-warn); }
+  [data-t="note"] { font-size: .92em; }
+  .row .t-cell h3 { margin-block-start: 0; }
+  .row table { font-size: .9em; }
+</style>

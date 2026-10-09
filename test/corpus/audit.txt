@@ -1,0 +1,1974 @@
+# Audit reproductions
+
+Every reproduction from the 2026-10-06 audit of the 0.1 implementation
+(`design/audit/findings.json`, tag `v0.1-legacy`) that concerns parsing or
+rendering of note source, re-expressed in the new syntax with the output and
+diagnostics the documentation requires. Each case's prose names the finding it comes
+from. Runtime, editor, CSS and documentation findings are not here: they belong
+to test/smoke.js, the editor tests and the docs.
+
+## audit/html-block-after-pre
+
+spec: syntax-blocks#raw-html elements#raw-html-scoping syntax-blocks#r1
+
+From html-block-end-regex-leak: a `<pre>` block followed by a `<div>` block swallowed the rest of the note; each raw block now owns its end condition.
+
+````tern
+<pre>
+x
+</pre>
+
+<div>
+y
+</div>
+
+# after
+
+*md*
+````
+
+````html
+<pre>
+x
+</pre>
+<div>
+y
+</div>
+<h1 id="after">after</h1>
+<p><em>md</em></p>
+````
+
+## audit/html-block-after-script
+
+spec: syntax-blocks#raw-html elements#raw-html-scoping
+
+From html-block-end-regex-leak: a `<script>` block then a `<p>` block; `<p>` is the one-line kind and the heading after it is parsed.
+
+````tern
+<script>
+let n = 1;
+</script>
+<p>hi</p>
+
+## After
+````
+
+````html
+<script>
+let n = 1;
+</script>
+<p>hi</p>
+<h2 id="after">After</h2>
+````
+
+## audit/html-comment-then-custom-element
+
+spec: syntax-blocks#raw-html elements#raw-html-scoping
+
+From html-block-end-regex-leak: a comment block, then a custom-element block in the same scope; the custom element ends at its own closing tag.
+
+````tern
+<!-- note -->
+
+# Plot
+
+<my-plot data="a.csv">
+</my-plot>
+
+# After
+````
+
+````html
+<!-- note -->
+<h1 id="plot">Plot</h1>
+<my-plot data="a.csv">
+</my-plot>
+<h1 id="after">After</h1>
+````
+
+## audit/html-style-then-div-wrapper
+
+spec: syntax-blocks#raw-html elements#raw-html-scoping
+
+From html-block-end-regex-leak: the documented pattern (a `<style>` block, then a `<div>` wrapper) no longer swallows the note. The wrapper's body is raw HTML, shown as written, and the heading after it is a heading. The body's first line holds Tern syntax (`*`, `$`), so it gets `html.wrapper` even with no blank line before it; the `<style>` block, a raw-text kind, never does.
+
+````tern
+<style>
+.box { border: 1px solid; }
+</style>
+
+<div class="box">
+This paragraph is **parsed**, and so is $x^2$.
+</div>
+
+## Second heading
+
+Final paragraph with *emphasis*.
+````
+
+````html
+<style>
+.box { border: 1px solid; }
+</style>
+<div class="box">
+This paragraph is **parsed**, and so is $x^2$.
+</div>
+<h2 id="second-heading">Second heading</h2>
+<p>Final paragraph with <em>emphasis</em>.</p>
+````
+
+````diagnostics
+6:1 warning html.wrapper
+````
+
+## audit/html-one-line-style-then-div
+
+spec: syntax-blocks#raw-html
+
+From html-block-end-regex-leak: a one-line `<style>…</style>` block ends on its own line, so the `<div>` after it is an ordinary generic block.
+
+````tern
+<style>p{color:red}</style>
+<div>
+y
+</div>
+
+**after**
+````
+
+````html
+<style>p{color:red}</style>
+<div>
+y
+</div>
+<p><strong>after</strong></p>
+````
+
+## audit/html-textarea-then-figure
+
+spec: syntax-blocks#raw-html
+
+From html-block-end-regex-leak: a `<textarea>` block then a `<figure>` block; the figure is depth-counted to its own `</figure>`.
+
+````tern
+<textarea name="t">
+a
+</textarea>
+<figure>
+<img src="x.png" alt="">
+</figure>
+
+**after**
+````
+
+````html
+<textarea name="t">
+a
+</textarea>
+<figure>
+<img src="x.png" alt="">
+</figure>
+<p><strong>after</strong></p>
+````
+
+## audit/comment-line-then-div
+
+spec: syntax-blocks#raw-html syntax-blocks#r7
+
+From r2-1/editor-comment-insertion-triggers-html-leak: the comment an editor's `gcc` or `<!-- prettier-ignore -->` inserts on the note's first line no longer makes a later `<div>` swallow the note; the markdown-in-div habit gets `html.wrapper` instead.
+
+````tern
+<!-- prettier-ignore -->
+
+# Title
+
+<div class="wrapper">
+
+Inside.
+
+</div>
+
+## After the div
+
+- item one
+````
+
+````html
+<!-- prettier-ignore -->
+<h1 id="title">Title</h1>
+<div class="wrapper">
+
+Inside.
+
+</div>
+<h2 id="after-the-div">After the div</h2>
+<ul>
+<li>item one</li>
+</ul>
+````
+
+````diagnostics
+7:1 warning html.wrapper
+````
+
+## audit/emphasis-unclosed-mixed-openers
+
+spec: syntax-inline#emphasis syntax-inline#algorithm
+
+From exponential-emphasis-hang: the pathological shapes, small. Unclosed mixed-width `*` openers are literal, `**a*` runs resolve by CommonMark's delimiter algorithm, and `_` is never a delimiter. The large versions are in test/perf.js.
+
+````tern
+*a **b *a **b *a **b
+
+In Python, *args collects positional arguments and **kwargs collects keyword arguments.
+
+**a***a***a*
+
+_a __b _a __b _a __b
+````
+
+````html
+<p>*a **b *a **b *a **b</p>
+<p>In Python, *args collects positional arguments and **kwargs collects keyword arguments.</p>
+<p><strong>a</strong><em>a</em>*<em>a</em></p>
+<p>_a __b _a __b _a __b</p>
+````
+
+## audit/unclosed-openers-literal
+
+spec: syntax-inline#algorithm syntax-inline#inline-math syntax-inline#strike-highlight syntax-inline#span syntax-inline#inline-element
+
+From quadratic-unclosed-delimiters and test-coverage-gaps: openers that never close stay literal. Only an unclosed inline element is reported, once per opener; prices make no noise. The large versions are in test/perf.js.
+
+````tern
+*word *word *word
+
+[a [a [a
+
+~~a ~~a ~~a
+
+==a ==a ==a
+
+$x $x $x
+
+costs $5 and $10 costs $5 and $10
+
+`abc and ``def
+
+:a[:a[:a[
+````
+
+````html
+<p>*word *word *word</p>
+<p>[a [a [a</p>
+<p>~~a ~~a ~~a</p>
+<p>==a ==a ==a</p>
+<p>$x $x $x</p>
+<p>costs $5 and $10 costs $5 and $10</p>
+<p>`abc and ``def</p>
+<p>:a[:a[:a[</p>
+````
+
+````diagnostics
+15:3 warning inline.unclosed
+15:6 warning inline.unclosed
+15:9 warning inline.unclosed
+````
+
+## audit/fence-info-with-backtick
+
+spec: syntax-blocks#fence syntax-inline#code-span
+
+From quadratic-unclosed-delimiters (the fence-opener regex took 3 s on a 50,000-character line with a stray backtick): a backtick in a backtick fence's info makes the line a paragraph.
+
+````tern
+```a`b`
+````
+
+````html
+<p>```a<code>b</code></p>
+````
+
+## audit/glued-quote-markers-paragraph
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+From uncaught-parser-exceptions-blank-page: `>` repeated without spaces overflowed the stack; `>` followed by another `>` does not open a quote, so it is one paragraph.
+
+````tern
+>>>>>>>>>> x
+````
+
+````html
+<p>&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt; x</p>
+````
+
+## audit/deep-quote-nesting-limit
+
+spec: syntax-blocks#line-algorithm syntax-blocks#blockquote syntax-blocks#r7
+
+From uncaught-parser-exceptions-blank-page: 100 nested quotes stop at the depth cap with one `nesting.limit` instead of a blank page; the rest of the line is paragraph text. The exact cap is the `container/depth-64` seed's business.
+
+````tern js
+'> '.repeat(100) + 'x'
+````
+
+````json diagnostics
+[{"code": "nesting.limit", "severity": "error", "position": {"start": {"line": 1}}}]
+````
+
+## audit/nested-inline-elements
+
+spec: syntax-inline#inline-element syntax-inline#algorithm
+
+From uncaught-parser-exceptions-blank-page: nested `:a[` elements recursed per level; they nest through the bracket stack. The 5,000-deep version is in test/perf.js.
+
+````tern
+:a[:a[:a[x]]]
+````
+
+````html
+<p><span class="a" data-t="a"><span class="a" data-t="a"><span class="a" data-t="a">x</span></span></span></p>
+````
+
+## audit/price-then-formula
+
+spec: syntax-inline#inline-math
+
+From dollar-price-swallows-prose: a price no longer opens a span that runs to the next formula, across lines or into a code span; the first dollar decides and a whitespace-preceded candidate aborts.
+
+````tern
+costs $5 and $x$
+
+I paid $5 for it.
+The formula $E=mc^2$ is famous.
+
+pay $5 (20%) then $x$ later
+
+a $5 bill, then `code $x$`
+````
+
+````html
+<p>costs $5 and <span class="t-math">x</span></p>
+<p>I paid $5 for it.
+The formula <span class="t-math">E=mc^2</span> is famous.</p>
+<p>pay $5 (20%) then <span class="t-math">x</span> later</p>
+<p>a $5 bill, then <code>code $x$</code></p>
+````
+
+## audit/table-price
+
+spec: syntax-blocks#tables syntax-inline#inline-math syntax-inline#algorithm
+
+From table-dollar-toggle-breaks-rows: `| Coffee | $3 |` collapsed the row into one cell; rows are split by the same atom scanner as inline text, and `$3` is not math.
+
+````tern
+| Item | Price |
+|---|---|
+| Coffee | $3 |
+| Tea | $2 |
+````
+
+````html
+<table>
+<thead>
+<tr><th>Item</th><th>Price</th></tr>
+</thead>
+<tbody>
+<tr><td>Coffee</td><td>$3</td></tr>
+<tr><td>Tea</td><td>$2</td></tr>
+</tbody>
+</table>
+````
+
+## audit/table-price-in-header
+
+spec: syntax-blocks#tables syntax-inline#inline-math
+
+From table-dollar-toggle-breaks-rows: `Cost ($)` in the header turned the table into one column; `$)` cannot open math, so the header has two cells.
+
+````tern
+| Cost ($) | n |
+|---|---|
+| 1 | 2 |
+````
+
+````html
+<table>
+<thead>
+<tr><th>Cost ($)</th><th>n</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>2</td></tr>
+</tbody>
+</table>
+````
+
+## audit/table-prices-and-math
+
+spec: syntax-blocks#tables syntax-inline#inline-math syntax-inline#algorithm
+
+From table-dollar-toggle-breaks-rows: two prices, a price beside a formula, and a shell variable each keep the row's cells.
+
+````tern
+| cost | val |
+|---|---|
+| $5 | $10 |
+| $5 | $x$ |
+| $HOME | home dir |
+````
+
+````html
+<table>
+<thead>
+<tr><th>cost</th><th>val</th></tr>
+</thead>
+<tbody>
+<tr><td>$5</td><td>$10</td></tr>
+<tr><td>$5</td><td><span class="t-math">x</span></td></tr>
+<tr><td>$HOME</td><td>home dir</td></tr>
+</tbody>
+</table>
+````
+
+## audit/table-interrupts-paragraph
+
+spec: syntax-blocks#tables syntax-blocks#paragraph syntax-blocks#line-algorithm
+
+From table-cannot-interrupt-paragraph: a header row plus delimiter row directly under a text line starts a table instead of joining the paragraph.
+
+````tern
+Some text
+| a | b |
+|---|---|
+| 1 | 2 |
+````
+
+````html
+<p>Some text</p>
+<table>
+<thead>
+<tr><th>a</th><th>b</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>2</td></tr>
+</tbody>
+</table>
+````
+
+## audit/unicode-slug
+
+spec: syntax-blocks#slugs syntax-blocks#character-classes
+
+From ascii-only-slugs-and-ids: accented, Cyrillic and CJK headings became `berblick`, `section`, `section-2`; slugs keep letters from any script, and only a heading with no letter falls back to `section`.
+
+````tern
+# Überblick
+# 日本語
+# 数学 1
+# ñandú
+# Введение
+# Café
+# Cafe
+# 第一章
+# 第二章
+# —
+````
+
+````html
+<h1 id="überblick">Überblick</h1>
+<h1 id="日本語">日本語</h1>
+<h1 id="数学-1">数学 1</h1>
+<h1 id="ñandú">ñandú</h1>
+<h1 id="введение">Введение</h1>
+<h1 id="café">Café</h1>
+<h1 id="cafe">Cafe</h1>
+<h1 id="第一章">第一章</h1>
+<h1 id="第二章">第二章</h1>
+<h1 id="section">—</h1>
+````
+
+## audit/unicode-explicit-ids-and-refs
+
+spec: syntax-blocks#character-classes syntax-blocks#attribute-grammar syntax-blocks#heading syntax-inline#reference elements#references
+
+From ascii-only-slugs-and-ids: `{#über}` stayed visible, `#über` emitted `ber=""`, `{#fïg}` emitted `id="f" g=""` and `@thé` linked to `#th`; IDENT is Unicode everywhere. A reference's `href` fragment is the id as written, not percent-encoded.
+
+````tern
+## Übersicht {#über}
+
+## Intro {#intro-é}
+
+:::idea{#thé}
+x
+:::
+
+::fig[x]{#fïg}
+
+See @über, @intro-é and @thé.
+````
+
+````html
+<h2 id="über">Übersicht</h2>
+<h2 id="intro-é">Intro</h2>
+<div id="thé" class="t-block idea" data-t="idea"><p>x</p></div>
+<div id="fïg" class="fig" data-t="fig">x</div>
+<p>See <a class="t-ref" href="#über">Übersicht</a>, <a class="t-ref" href="#intro-é">Intro</a> and <a class="t-ref" href="#thé">thé</a>.</p>
+````
+
+## audit/slug-yields-to-earlier-ids
+
+spec: elements#ids syntax-blocks#slugs elements#references
+
+From id-collisions-across-kinds: block, equation and span ids were never registered, so a later heading got the same id. One registry in document order: a slug that meets an earlier id of any kind gets `-2`, silently, and the references reach the earlier element.
+
+````tern
+:::thm{#intro}
+x
+:::
+
+$$ e = 1 $$ {#energy}
+
+[kernel]{#kernel}
+
+# Intro
+
+# Energy
+
+# Kernel
+
+See @intro, @energy and @kernel.
+````
+
+````html
+<div id="intro" class="t-block thm" data-t="thm"><p>x</p></div>
+<div class="t-eq" id="energy"><span class="t-math" data-display>e = 1</span><span class="t-eqno">(1)</span></div>
+<p><span id="kernel">kernel</span></p>
+<h1 id="intro-2">Intro</h1>
+<h1 id="energy-2">Energy</h1>
+<h1 id="kernel-2">Kernel</h1>
+<p>See <a class="t-ref" href="#intro">intro</a>, <a class="t-ref" href="#energy">(1)</a> and <a class="t-ref" href="#kernel">kernel</a>.</p>
+````
+
+## audit/duplicate-id-explicit-after-slug
+
+spec: elements#ids elements#references
+
+From id-collisions-across-kinds: `## Kernel` then `:::definition[Kernel] #kernel` gave two `id="kernel"` and no warning. Ids an author wrote are registered before heading slugs, so the definition keeps `kernel`, the earlier heading's slug yields to `kernel-2` silently, and `@kernel` reaches the definition ("Definition 1").
+
+````tern
+## Kernel
+
+:::definition[Kernel]{#kernel}
+The set mapped to zero.
+:::
+
+See @kernel.
+````
+
+````html
+<h2 id="kernel-2">Kernel</h2>
+<section id="kernel" class="t-block definition" data-t="definition"><div class="t-title"><span class="t-label">Definition 1</span> Kernel</div>
+<p>The set mapped to zero.</p>
+</section>
+<p>See <a class="t-ref" href="#kernel">Definition 1</a>.</p>
+````
+
+````diagnostics
+````
+
+````json transformed
+{"type": "root", "children": [
+  {"type": "heading"},
+  {"type": "containerDirective", "name": "definition"},
+  {"type": "paragraph", "children": [
+    {"type": "text", "value": "See "},
+    {"type": "ref", "id": "kernel", "children": [{"type": "text", "value": "Definition 1"}]},
+    {"type": "text", "value": "."}
+  ]}
+]}
+````
+
+## audit/duplicate-explicit-id
+
+spec: elements#ids elements#references
+
+From id-collisions-across-kinds: two blocks with `#dup` were both emitted and `@dup` went to whichever the browser found first, silently. An explicit duplicate keeps the first; the later element drops its `id` attribute, `id.duplicate` is reported at both places, at the `#` of each `#dup`, and `@dup` reaches the first.
+
+````tern
+:::thm[First]{#dup}
+A.
+:::
+
+:::thm[Second]{#dup}
+B.
+:::
+
+See @dup.
+````
+
+````html
+<div id="dup" class="t-block thm" data-t="thm"><div class="t-title">First</div>
+<p>A.</p>
+</div>
+<div class="t-block thm" data-t="thm"><div class="t-title">Second</div>
+<p>B.</p>
+</div>
+<p>See <a class="t-ref" href="#dup">First</a>.</p>
+````
+
+````diagnostics
+1:15 warning id.duplicate
+5:16 warning id.duplicate
+````
+
+````json transformed
+{"type": "root", "children": [
+  {"type": "containerDirective", "name": "thm"},
+  {"type": "containerDirective", "name": "thm"},
+  {"type": "paragraph", "children": [
+    {"type": "text", "value": "See "},
+    {"type": "ref", "id": "dup", "children": [{"type": "text", "value": "First"}]},
+    {"type": "text", "value": "."}
+  ]}
+]}
+````
+
+## audit/digit-first-id-unreferenceable
+
+spec: elements#ids syntax-inline#reference syntax-blocks#character-classes
+options: schema=none
+
+From digit-first-ids-unreferenceable: `#2024-plan` was accepted but `@2024-plan` could never reach it. A digit-first id can only be given through `id=`. It is a valid HTML id that is not an IDENT, so it is kept and gets `ref.unreferenceable` (never also `id.invalid`, which is for empty or spaced values), at the first letter of `id=`; `@2024-plan` is plain text.
+
+````tern
+:::note{id=2024-plan}
+x
+:::
+
+see @2024-plan
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "containerDirective", "name": "note", "attributes": {"id": "2024-plan"}},
+  {"type": "paragraph", "children": [{"type": "text", "value": "see @2024-plan"}]}
+]}
+````
+
+````html
+<div id="2024-plan" class="t-block note" data-t="note"><p>x</p></div>
+<p>see @2024-plan</p>
+````
+
+````diagnostics
+1:9 warning ref.unreferenceable
+````
+
+## audit/digit-first-id-on-display-math
+
+spec: syntax-blocks#display-math syntax-blocks#finding-the-group syntax-inline#reference
+
+From digit-first-ids-unreferenceable: `$$x$$ #1` numbered an equation that `@1` could not reach. `{#1}` is not an attribute group (`#` needs an IDENT), so after the closer it is junk: `math.closer-tail`, a paragraph after an unnumbered equation, and `@1` is text.
+
+````tern
+$$
+x
+$$ {#1}
+
+see @1
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>x</span></div>
+<p>{#1}</p>
+<p>see @1</p>
+````
+
+````diagnostics
+3:4 warning math.closer-tail
+````
+
+## audit/digit-first-heading-id
+
+spec: syntax-blocks#heading syntax-blocks#positions syntax-inline#reference
+
+From digit-first-ids-unreferenceable: `# Plan {#2024-plan}` used a digit-first id. The group does not parse, so it stays heading text with `attr.malformed`, and the slug comes from the whole text. The first bad column is the first character the grammar rejects: the `2` after `#`, which cannot start an IDENT.
+
+````tern
+# Plan {#2024-plan}
+
+see @2024-plan
+````
+
+````html
+<h1 id="plan-2024-plan">Plan {#2024-plan}</h1>
+<p>see @2024-plan</p>
+````
+
+````diagnostics
+1:10 warning attr.malformed
+````
+
+## audit/unclosed-display-math-keeps-heading
+
+spec: syntax-blocks#display-math diagnostics#three-mistakes syntax-blocks#r7
+
+From unclosed-display-math-eats-sections: the audit's exact input. The blank line ends the unclosed `$$` with `math.unclosed`; its source is shown in `.t-eq.t-error`, the heading and prose survive, and the next equation is an equation.
+
+````tern
+$$
+E = mc^2
+
+# Results
+
+Some prose here.
+
+$$
+y = x
+$$
+
+after
+````
+
+````html
+<div class="t-eq t-error">$$
+E = mc^2</div>
+<h1 id="results">Results</h1>
+<p>Some prose here.</p>
+<div class="t-eq"><span class="t-math" data-display>y = x</span></div>
+<p>after</p>
+````
+
+````diagnostics
+1:1 error math.unclosed
+````
+
+## audit/unclosed-display-math-heading-terminates
+
+spec: syntax-blocks#display-math syntax-blocks#line-algorithm
+
+From unclosed-display-math-eats-sections: with no blank line, the heading line itself is a terminator and is reprocessed; the following one-line equation is untouched.
+
+````tern
+The energy is
+$$
+E = mc^2
+## Results
+$$ y = x $$
+after
+````
+
+````html
+<p>The energy is</p>
+<div class="t-eq t-error">$$
+E = mc^2</div>
+<h2 id="results">Results</h2>
+<div class="t-eq"><span class="t-math" data-display>y = x</span></div>
+<p>after</p>
+````
+
+````diagnostics
+2:1 error math.unclosed
+````
+
+## audit/unclosed-display-math-at-end
+
+spec: syntax-blocks#display-math syntax-blocks#r7
+
+From silent-authoring-errors-no-diagnostics: an unclosed `$$` at the end of the note degraded to a paragraph silently; it is now shown as source with `math.unclosed`.
+
+````tern
+$$
+\int_0^1 f(x) dx
+= F(1) - F(0)
+````
+
+````html
+<div class="t-eq t-error">$$
+\int_0^1 f(x) dx
+= F(1) - F(0)</div>
+````
+
+````diagnostics
+1:1 error math.unclosed
+````
+
+## audit/closer-inside-pre-in-container
+
+spec: syntax-blocks#line-algorithm syntax-blocks#raw-html syntax-blocks#closer
+options: schema=none
+
+From closer-scan-ignores-raw-html: a `:::` line inside a `<pre>` inside a container closed the container and put `</div>` inside the `<pre>`. The raw-text block is a verbatim leaf, so the line is content.
+
+````tern
+:::note
+<pre>
+:::
+</pre>
+meant to be inside
+:::
+````
+
+````html
+<div class="t-block note" data-t="note"><pre>
+:::
+</pre>
+<p>meant to be inside</p>
+</div>
+````
+
+## audit/closer-inside-script-in-container
+
+spec: syntax-blocks#line-algorithm syntax-blocks#raw-html syntax-blocks#closer
+options: schema=none
+
+From closer-scan-ignores-raw-html: a `:::` line inside a template literal in a `<script>` closed the container and broke the script.
+
+````tern
+:::note
+<script>
+var s = `
+:::
+`;
+</script>
+:::
+````
+
+````html
+<div class="t-block note" data-t="note"><script>
+var s = `
+:::
+`;
+</script>
+</div>
+````
+
+## audit/closer-inside-comment-in-container
+
+spec: syntax-blocks#line-algorithm syntax-blocks#raw-html syntax-blocks#closer
+options: schema=none
+
+From closer-scan-ignores-raw-html: a `:::` line inside a comment closed the container mid-comment.
+
+````tern
+:::note
+<!--
+:::
+-->
+inside
+:::
+````
+
+````html
+<div class="t-block note" data-t="note"><!--
+:::
+-->
+<p>inside</p>
+</div>
+````
+
+## audit/opener-inside-pre-in-container
+
+spec: syntax-blocks#line-algorithm syntax-blocks#raw-html syntax-blocks#container
+options: schema=none
+
+From closer-scan-ignores-raw-html: an opener line inside a `<pre>` counted as nesting, so the real closer was swallowed and the container ran to the end of its parent.
+
+````tern
+:::note
+<pre>
+:::example
+</pre>
+:::
+
+after paragraph
+````
+
+````html
+<div class="t-block note" data-t="note"><pre>
+:::example
+</pre>
+</div>
+<p>after paragraph</p>
+````
+
+## audit/cell-separator-inside-pre
+
+spec: syntax-blocks#cells syntax-blocks#raw-html
+options: schema=none
+
+From closer-scan-ignores-raw-html: `+++` inside a `<pre>` split the element across two cells; it is code, and the container has no cells.
+
+````tern
+:::row
+<pre>
+a
++++
+b
+</pre>
+:::
+````
+
+````html
+<div class="t-block row" data-t="row"><pre>
+a
++++
+b
+</pre>
+</div>
+````
+
+## audit/closer-cuts-unclosed-div-in-container
+
+spec: syntax-blocks#raw-html syntax-blocks#closer syntax-inline#residual-html-soup syntax-blocks#r7
+options: schema=none
+
+From closer-scan-ignores-raw-html (the "wider than claimed" `<div>` reproduction; a blank line is added before the last `:::`). A generic block left open is cut by the `:::` line, which then closes the container: loud HTML soup, not a silent early close.
+
+````tern
+:::note
+<div>
+:::
+</div>
+inside
+
+:::
+````
+
+````html
+<div class="t-block note" data-t="note">
+<div>
+</div>
+</div>
+<p>inside</p>
+<p>:::</p>
+````
+
+````diagnostics
+2:1 error html.unclosed
+4:1 info html.stray-closer
+7:1 warning block.stray-closer
+````
+
+## audit/raw-container-mermaid
+
+spec: syntax-blocks#raw-attribute syntax-blocks#merging-and-emission
+options: schema=none
+
+From parser-closed-no-verbatim-container: a `:::mermaid` body lost its `*`, `_` and indentation. With `{raw}` the body is one verbatim text node, emitted escaped.
+
+````tern
+:::mermaid{raw}
+graph LR
+A[Start] --> B{x*y*z} --> C
+  D --> E_1 _x_
+:::
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "containerDirective", "name": "mermaid", "value": "graph LR\nA[Start] --> B{x*y*z} --> C\n  D --> E_1 _x_"}
+]}
+````
+
+````html
+<div class="t-block mermaid" data-t="mermaid">graph LR
+A[Start] --&gt; B{x*y*z} --&gt; C
+  D --&gt; E_1 _x_</div>
+````
+
+## audit/no-phantom-ids-in-raw
+
+spec: syntax-blocks#raw-html elements#ids elements#references
+
+From three-implementations-drift: the editor indexed a heading inside a comment (`setup`, shifting the real one to `setup-2`) and an equation id inside a `<pre>`. Raw HTML is opaque: the real heading is `setup`, and `@eq1` is dangling.
+
+````tern
+# Intro
+
+<!--
+# Setup
+old draft, see @setup
+-->
+
+# Setup
+
+<pre>
+# not a heading
+$$x$$ {#eq1}
+:::fake
+</pre>
+
+See @setup and @eq1.
+````
+
+````html
+<h1 id="intro">Intro</h1>
+<!--
+# Setup
+old draft, see @setup
+-->
+<h1 id="setup">Setup</h1>
+<pre>
+# not a heading
+$$x$$ {#eq1}
+:::fake
+</pre>
+<p>See <a class="t-ref" href="#setup">Setup</a> and @eq1.</p>
+````
+
+````diagnostics
+16:16 warning ref.dangling
+````
+
+## audit/drift-leaf-and-block-ids
+
+spec: syntax-blocks#leaf elements#ids syntax-inline#reference
+
+From three-implementations-drift: `:: toc` was a paragraph in the browser and a leaf in the editor; a block id and a later heading shared `foo`; `@a::b` was read two ways. Now: `:: toc` is a paragraph with `block.spaced-name`, the heading is `foo-2`, and `@a::b` is the reference `a` then text.
+
+````tern
+:::theorem[Main result]{#foo}
+x
+:::
+
+# Foo
+
+:: toc
+
+See @foo, @foo-2 and @a::b.
+
+## A {#a}
+````
+
+````html
+<section id="foo" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Main result</div>
+<p>x</p>
+</section>
+<h1 id="foo-2">Foo</h1>
+<p>:: toc</p>
+<p>See <a class="t-ref" href="#foo">Theorem 1</a>, <a class="t-ref" href="#foo-2">Foo</a> and <a class="t-ref" href="#a">A</a>::b.</p>
+<h2 id="a">A</h2>
+````
+
+````diagnostics
+7:1 warning block.spaced-name
+````
+
+## audit/ref-shows-number
+
+spec: elements#references elements#numbering syntax-inline#reference syntax-blocks#display-math
+
+From refs-cannot-show-numbers: `@id` to an untitled theorem rendered the raw id and to a titled one its title. References now show the label and number (theorem and lemma share a counter), equations `(n)`, headings their text, and `ref=` chooses.
+
+````tern
+:::theorem{#thm-1}
+A.
+:::
+
+:::theorem[Titled]{#thm-2}
+B.
+:::
+
+:::lemma{#lem-c}
+C.
+:::
+
+$$ a $$ {#e1}
+
+$$ b $$ {#e2}
+
+## Section one
+
+See @thm-1, @thm-2, @lem-c, @e1, @e2 and @section-one.
+
+Also @thm-2{ref=full}, number @thm-2{ref=number}, and @thm-typo.
+````
+
+````html
+<section id="thm-1" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div>
+<p>A.</p>
+</section>
+<section id="thm-2" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 2</span> Titled</div>
+<p>B.</p>
+</section>
+<section id="lem-c" class="t-block lemma" data-t="lemma"><div class="t-title"><span class="t-label">Lemma 3</span></div>
+<p>C.</p>
+</section>
+<div class="t-eq" id="e1"><span class="t-math" data-display>a</span><span class="t-eqno">(1)</span></div>
+<div class="t-eq" id="e2"><span class="t-math" data-display>b</span><span class="t-eqno">(2)</span></div>
+<h2 id="section-one">Section one</h2>
+<p>See <a class="t-ref" href="#thm-1">Theorem 1</a>, <a class="t-ref" href="#thm-2">Theorem 2</a>, <a class="t-ref" href="#lem-c">Lemma 3</a>, <a class="t-ref" href="#e1">(1)</a>, <a class="t-ref" href="#e2">(2)</a> and <a class="t-ref" href="#section-one">Section one</a>.</p>
+<p>Also <a class="t-ref" href="#thm-2">Theorem 2 (Titled)</a>, number <a class="t-ref" href="#thm-2">2</a>, and @thm-typo.</p>
+````
+
+````diagnostics
+21:55 warning ref.dangling
+````
+
+## audit/ref-text-keeps-math
+
+spec: elements#references syntax-inline#reference elements#title-slots
+
+From textcontent-copies-raw-tex-into-refs-toc-title: reference text was copied from `textContent`, so math became raw TeX and `**bold**` plain. A reference to a heading carries the heading's inline content, and `ref=title` the title's, math and markup included.
+
+````tern
+## Energy $E = mc^2$ {#energy}
+
+:::theorem[Bound on $\sum_i x_i$ is **bold**]{#t}
+Body.
+:::
+
+See @energy, @t and @t{ref=title}.
+````
+
+````html
+<h2 id="energy">Energy <span class="t-math">E = mc^2</span></h2>
+<section id="t" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Bound on <span class="t-math">\sum_i x_i</span> is <strong>bold</strong></div>
+<p>Body.</p>
+</section>
+<p>See <a class="t-ref" href="#energy">Energy <span class="t-math">E = mc^2</span></a>, <a class="t-ref" href="#t">Theorem 1</a> and <a class="t-ref" href="#t">Bound on <span class="t-math">\sum_i x_i</span> is <strong>bold</strong></a>.</p>
+````
+
+## audit/ref-not-in-atoms
+
+spec: syntax-inline#algorithm syntax-inline#reference syntax-inline#raw-inline-html
+
+From lsp-refs-matched-in-code-math-attributes: the editor renamed `@thm` inside code, math, an attribute and a comment. References never occur inside atoms: the line has exactly one reference, so a rename has exactly one edit.
+
+````tern
+## Theorem {#thm}
+
+By @thm. In code: `@thm` and `use @thm here`. In math: $x_{@thm}$. In a <span title="@thm">tag</span>. <!-- @thm --> Also CSS `@page` and email a@thm.
+````
+
+````html
+<h2 id="thm">Theorem</h2>
+<p>By <a class="t-ref" href="#thm">Theorem</a>. In code: <code>@thm</code> and <code>use @thm here</code>. In math: <span class="t-math">x_{@thm}</span>. In a <span title="@thm">tag</span>. <!-- @thm --> Also CSS <code>@page</code> and email a@thm.</p>
+````
+
+## audit/unclosed-container-reports
+
+spec: syntax-blocks#closer diagnostics#three-mistakes syntax-blocks#r7
+
+From silent-authoring-errors-no-diagnostics: a container left open swallowed the heading after it with no message. The body still runs to the end of the note, but the opener is reported.
+
+````tern
+:::theorem[Never closed]{#open}
+body
+
+## Swallowed heading
+
+para
+````
+
+````html
+<section id="open" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Never closed</div>
+<p>body</p>
+<h2 id="swallowed-heading">Swallowed heading</h2>
+<p>para</p>
+</section>
+````
+
+````diagnostics
+1:1 error block.unclosed
+````
+
+## audit/closer-count-mismatch-info
+
+spec: syntax-blocks#closer syntax-inline#reference
+
+From silent-authoring-errors-no-diagnostics: `::::warning` closed by `:::` swallowed the rest of the note in the browser while the editor showed it closed. A bare closer closes the innermost block whatever its count, with a hint; the dangling `@nowhere` is reported.
+
+````tern
+::::warning
+text
+:::
+# Heading after
+para @nowhere
+````
+
+````html
+<div class="t-block warning" data-t="warning"><div class="t-title"><span class="t-label">Warning</span></div>
+<p>text</p>
+</div>
+<h1 id="heading-after">Heading after</h1>
+<p>para @nowhere</p>
+````
+
+````diagnostics
+3:1 info block.closer-count
+5:6 warning ref.dangling
+````
+
+## audit/dangling-refs-and-mentions
+
+spec: syntax-inline#reference syntax-inline#residual-mentions
+
+From silent-authoring-errors-no-diagnostics: a misspelled reference and a mention were plain text with no message; both are `ref.dangling`, and the email is not a reference.
+
+````tern
+By @rank-nulity (typo) the result follows. Email me at a@b.c, ping @alice.
+````
+
+````html
+<p>By @rank-nulity (typo) the result follows. Email me at a@b.c, ping @alice.</p>
+````
+
+````diagnostics
+1:4 warning ref.dangling
+1:68 warning ref.dangling
+````
+
+## audit/misspelled-name-strict
+
+spec: elements#names diagnostics#name-unknown
+options: strict
+
+From silent-authoring-errors-no-diagnostics: `:::theorm` rendered as an anonymous block with no message. With `schema.strict` an unknown name gets `name.unknown`; the element is still the `div` fallback.
+
+````tern
+:::theorm[Rank]
+x
+:::
+````
+
+````html
+<div class="t-block theorm" data-t="theorm"><div class="t-title">Rank</div>
+<p>x</p>
+</div>
+````
+
+````diagnostics
+1:4 info name.unknown
+````
+
+## audit/leaf-prose
+
+spec: syntax-blocks#leaf syntax-blocks#r7
+
+From leaf-syntax-and-fixed-delimiters: any line starting `::word` became an empty element and its words empty attributes. A leaf must fill the line; anything else is a paragraph with `leaf.demoted`.
+
+````tern
+::marker is the list bullet
+
+::std::vector<int> v;
+````
+
+````html
+<p>::marker is the list bullet</p>
+<p>::std::vector&lt;int&gt; v;</p>
+````
+
+````diagnostics
+1:1 info leaf.demoted
+3:1 info leaf.demoted
+````
+
+## audit/bare-double-colon-line
+
+spec: syntax-blocks#leaf syntax-blocks#closer
+options: schema=none
+
+From leaf-syntax-and-fixed-delimiters: a bare `::` line became a stray paragraph inside the still-open container, silently. `::` alone is paragraph text (here it continues "body"), and the container left open is reported.
+
+````tern
+:::note
+body
+::
+
+next para
+````
+
+````html
+<div class="t-block note" data-t="note">
+<p>body
+::</p>
+<p>next para</p>
+</div>
+````
+
+````diagnostics
+1:1 error block.unclosed
+````
+
+## audit/spaced-leaf-name
+
+spec: syntax-blocks#leaf syntax-blocks#container
+
+From leaf-syntax-and-fixed-delimiters: `:: name` was a paragraph while `::: name` opened a block. Both spaced forms are now paragraph text with `block.spaced-name`.
+
+````tern
+:: name[x]
+````
+
+````html
+<p>:: name[x]</p>
+````
+
+````diagnostics
+1:1 warning block.spaced-name
+````
+
+## audit/spaced-container-name
+
+spec: syntax-blocks#container syntax-blocks#closer
+
+From leaf-syntax-and-fixed-delimiters: the audit's `::: name[x]` ⏎ `body` ⏎ `:::`, which opened a container. The spaced opener matches no block row, so it is an ordinary paragraph line that `body` continues; the closer then has nothing to close, and a closer-shaped line that falls back to text interrupts the paragraph and forms its own.
+
+````tern
+::: name[x]
+body
+:::
+````
+
+````html
+<p>::: name[x]
+body</p>
+<p>:::</p>
+````
+
+````diagnostics
+1:1 warning block.spaced-name
+3:1 warning block.stray-closer
+````
+
+## audit/latex-habits
+
+spec: syntax-inline#latex-delimiters syntax-inline#latex-linebreak syntax-inline#inline-math syntax-inline#emphasis syntax-inline#strike-highlight syntax-inline#autolinks syntax-inline#residuals
+
+From latex-habit-footguns and leaf-syntax-and-fixed-delimiters: `\(…\)` is an escape (with one hint per note, at the first paired delimiter), a trailing `\\` is a literal backslash with a hint, `a==b and c==d` is not a highlight, `$100 ($USD)` is not math, and `_` inside a bare URL is not emphasis.
+
+````tern
+Let \(x\) be real and \[x^2 \ge 0\].
+
+\(y\) starts a line.
+
+line one \\
+line two
+
+if a==b and c==d then
+
+Pay $100 ($USD) now.
+
+see https://x.com/_private_/docs
+````
+
+````html
+<p>Let (x) be real and [x^2 \ge 0].</p>
+<p>(y) starts a line.</p>
+<p>line one \
+line two</p>
+<p>if a==b and c==d then</p>
+<p>Pay $100 ($USD) now.</p>
+<p>see <a href="https://x.com/_private_/docs">https://x.com/_private_/docs</a></p>
+````
+
+````diagnostics
+1:5 info latex.delimiters
+5:10 info latex.linebreak
+````
+
+## audit/literal-escapes
+
+spec: syntax-inline#escapes syntax-inline#escape
+
+From leaf-syntax-and-fixed-delimiters: there is no per-note switch for `::`, `$`, `@` or `:`, so their escapes are the literal spelling; escaped, none of them warns.
+
+````tern
+\::marker is the list bullet
+
+Costs \$5 and \$10, ping \@alice, type \:kbd[x].
+````
+
+````html
+<p>::marker is the list bullet</p>
+<p>Costs $5 and $10, ping @alice, type :kbd[x].</p>
+````
+
+## audit/reserved-names
+
+spec: elements#reserved syntax-blocks#reserved
+
+From leaf-syntax-and-fixed-delimiters: `:::tern` picked up the page's own `.tern` rules and `:t-math[…]` was sent to KaTeX. The names `tern` and `t-*` are reserved: checked before the custom-element rule (so `t-math` is not a custom element), they fall back to `div`/`span` without the reserved name as a class, with `name.reserved` at the name. The output contract's `data-t` is kept.
+
+````tern
+:::tern
+x
+:::
+
+:t-math[\frac12]
+````
+
+````html
+<div class="t-block" data-t="tern"><p>x</p></div>
+<p><span data-t="t-math">\frac12</span></p>
+````
+
+````diagnostics
+1:4 warning name.reserved
+5:2 warning name.reserved
+````
+
+## audit/data-t-key-reserved
+
+spec: syntax-blocks#reserved elements#output-contract
+options: schema=none
+
+From attribute-grammar-fails-silently: `data-t="zzz"` emitted a second `data-t` and hijacked dispatch. The key is reserved, reported and dropped.
+
+````tern
+:::callout{data-t="zzz"}
+b
+:::
+````
+
+````html
+<div class="t-block callout" data-t="callout"><p>b</p></div>
+````
+
+````diagnostics
+1:12 warning name.reserved
+````
+
+## audit/attrs-single-quotes
+
+spec: syntax-blocks#attribute-grammar syntax-blocks#finding-the-group
+options: schema=none
+
+From attribute-grammar-fails-silently: `j='z w'` split into the junk attributes `j="'z"` and `w=""`. Single-quoted values are values.
+
+````tern
+:::a{k="x y" j='z w' m=p}
+b
+:::
+````
+
+````html
+<div class="t-block a" data-t="a" k="x y" j="z w" m="p"><p>b</p></div>
+````
+
+## audit/attrs-brace-in-quoted-value
+
+spec: syntax-blocks#finding-the-group syntax-inline#inline-element
+
+From attribute-grammar-fails-silently: an inline group ended at the first `}` even inside quotes, leaking `"}` into the text. The candidate ends at the first unquoted `}`.
+
+````tern
+:a[b]{k="}"}
+````
+
+````html
+<p><span class="a" data-t="a" k="}">b</span></p>
+````
+
+## audit/attrs-class-and-id-keys-merge
+
+spec: syntax-blocks#merging-and-emission
+options: schema=none
+
+From attribute-grammar-fails-silently: `class="z"` produced a second `class` attribute and the browser dropped it. `class=` and `id=` merge with `.` and `#`: classes accumulate in source order, the last id wins.
+
+````tern
+:::a{.x class="z" #p id=q}
+b
+:::
+````
+
+````html
+<div id="q" class="t-block a x z" data-t="a"><p>b</p></div>
+````
+
+## audit/opener-unclosed-title
+
+spec: syntax-blocks#container syntax-blocks#r7
+options: schema=none
+
+From attribute-grammar-fails-silently: `:::a[t` turned the unclosed title into a stray `t=""` attribute. The block opens, the rest of the line is shown as the junk paragraph, and the error is at the `[`.
+
+````tern
+:::a[t
+b
+:::
+````
+
+````html
+<div class="t-block a" data-t="a">
+<p class="t-error">[t</p>
+<p>b</p>
+</div>
+````
+
+````diagnostics
+1:5 error block.opener-junk
+````
+
+## audit/end-keyword-closes
+
+spec: syntax-blocks#container syntax-blocks#closer
+options: schema=none
+
+From attribute-grammar-fails-silently: `::: end` opened a phantom container that swallowed the rest of the parent. `:::end` acts as a bare closer, with `name.reserved`.
+
+````tern
+:::x
+b
+:::end
+
+after
+````
+
+````html
+<div class="t-block x" data-t="x"><p>b</p></div>
+<p>after</p>
+````
+
+````diagnostics
+3:4 warning name.reserved
+````
+
+## audit/spaced-end-is-text
+
+spec: syntax-blocks#container syntax-blocks#paragraph syntax-blocks#closer
+options: schema=none
+
+From attribute-grammar-fails-silently: the audit's exact `:::x` ⏎ `b` ⏎ `::: end` ⏎ ⏎ `after`. The spaced line opens nothing: it continues the paragraph, and `:::x` is reported as unclosed instead of being silently nested. A line that never matched a block row carries its diagnostic wherever it appears, continuation lines included, so `block.spaced-name` still fires.
+
+````tern
+:::x
+b
+::: end
+
+after
+````
+
+````html
+<div class="t-block x" data-t="x">
+<p>b
+::: end</p>
+<p>after</p>
+</div>
+````
+
+````diagnostics
+1:1 error block.unclosed
+3:1 warning block.spaced-name
+````
+
+## audit/code-span-spaces
+
+spec: syntax-inline#code-span
+options: escaped
+
+From codespan-trim-strips-all-whitespace: code spans were `trim()`med. One space is stripped from each side only when both sides have one and the content is not all spaces; tabs are kept.
+
+````tern
+`  a  ` and ` a` and `a ` and `   ` and ` a ` and `\ta\t`
+````
+
+````json ast
+{"type": "root", "children": [{"type": "paragraph", "children": [
+  {"type": "inlineCode", "value": " a "},
+  {"type": "text", "value": " and "},
+  {"type": "inlineCode", "value": " a"},
+  {"type": "text", "value": " and "},
+  {"type": "inlineCode", "value": "a "},
+  {"type": "text", "value": " and "},
+  {"type": "inlineCode", "value": "   "},
+  {"type": "text", "value": " and "},
+  {"type": "inlineCode", "value": "a"},
+  {"type": "text", "value": " and "},
+  {"type": "inlineCode", "value": "\ta\t"}
+]}]}
+````
+
+````html
+<p><code> a </code> and <code> a</code> and <code>a </code> and <code>   </code> and <code>a</code> and <code>	a	</code></p>
+````
+
+## audit/hard-break-backslash-only
+
+spec: syntax-inline#hard-break syntax-blocks#r3 syntax-blocks#lines
+options: escaped
+
+From r2-1/trailing-whitespace-trimming-removes-hard-breaks: editors deleted two-space hard breaks. Trailing spaces mean nothing (lines are right-trimmed); the one hard break is a trailing `\`.
+
+````tern
+line one\u0020\u0020
+line two\\
+line three
+````
+
+````html
+<p>line one
+line two<br>
+line three</p>
+````
+
+## audit/autowrap-opener
+
+spec: syntax-blocks#container syntax-inline#reference publishing#auto-wrap syntax-blocks#r7
+
+From r2-1/textwidth-autowrap-breaks-one-line-constructs: `textwidth=60` wrapped a long opener (here inside its title, where Vim breaks the braced form). The block opens with the junk shown in red and `block.opener-junk`; the attributes on the next line are plain text, so the reference to the lost id is dangling.
+
+````tern
+:::theorem[Rank-nullity for linear maps between
+spaces]{#rank-nullity .important}
+The statement.
+:::
+
+See @rank-nullity for the statement.
+````
+
+````html
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div>
+<p class="t-error">[Rank-nullity for linear maps between</p>
+<p>spaces]{#rank-nullity .important}
+The statement.</p>
+</section>
+<p>See @rank-nullity for the statement.</p>
+````
+
+````diagnostics
+1:11 error block.opener-junk
+6:5 warning ref.dangling
+````
+
+## audit/autowrap-table-header
+
+spec: syntax-blocks#tables publishing#auto-wrap
+
+From r2-1/textwidth-autowrap-breaks-one-line-constructs: a header row wrapped mid-cell. Without a delimiter row under the first line no table starts; the delimiter-shaped line is flagged with the "rows start with `|`" hint.
+
+````tern
+| Space | Dimension of the space | Comment about the
+dimension |
+|---|---|---|
+| V | n | fine |
+````
+
+````html
+<p>| Space | Dimension of the space | Comment about the
+dimension |
+|---|---|---|
+| V | n | fine |</p>
+````
+
+````diagnostics
+3:1 warning table.stray-delimiter "table rows start with"
+````
+
+## audit/autowrap-display-math-id
+
+spec: syntax-blocks#display-math syntax-blocks#attribute-line publishing#auto-wrap
+
+From r2-1/textwidth-autowrap-breaks-one-line-constructs: a `$$ … $$ {#id}` one-liner wrapped before its group. The equation is complete and unnumbered; the group alone on the next line is an attribute line with no block after it.
+
+````tern
+$$ \int_0^1 f(x)\,dx = \sum_{k=1}^{n} c_k e_k $$
+{#eq-long}
+
+See @eq-long.
+````
+
+````html
+<div class="t-eq"><span class="t-math" data-display>\int_0^1 f(x)\,dx = \sum_{k=1}^{n} c_k e_k</span></div>
+<p>{#eq-long}</p>
+<p>See @eq-long.</p>
+````
+
+````diagnostics
+2:1 warning attributes.orphan
+4:5 warning ref.dangling
+````
+
+## audit/autowrap-leaf
+
+spec: syntax-blocks#leaf syntax-inline#span publishing#auto-wrap
+
+From r2-1/textwidth-autowrap-breaks-one-line-constructs: a wrapped `::leaf[…]{…}` became a div with garbage attributes. The first line no longer fills a leaf, so the two lines are a paragraph with `leaf.demoted`; the bracket and its glued group across the soft break are a bare span.
+
+````tern
+::note[A leaf whose content is rather long so that it
+wraps]{.cls key=value}
+````
+
+````html
+<p>::note<span class="cls" key="value">A leaf whose content is rather long so that it
+wraps</span></p>
+````
+
+````diagnostics
+1:1 info leaf.demoted
+````
+
+## audit/figure-and-table-captions
+
+spec: elements#figures elements#table-caption elements#references elements#raw-html-scoping
+
+From no-figure-table-captions: `![cap](x.png){#fig1 width=50%}` was literal, and a raw `<figure>` was referenced by its bare id. An image with an id is a numbered figure, `:::table[…]` captions and numbers a table, and raw HTML is opaque, so `@fig-a` is dangling.
+
+````tern
+![cap](x.png){#fig1 width=50%}
+
+:::table[Table caption]{#tbl-1}
+| a | b |
+|---|---|
+| 1 | 2 |
+:::
+
+<figure id="fig-a"><img src="y.png" alt=""><figcaption>Raw</figcaption></figure>
+
+See @fig1, @tbl-1 and @fig-a.
+````
+
+````html
+<figure id="fig1" class="t-block figure" data-t="figure"><img src="x.png" alt="" width="50%"><figcaption class="t-title"><span class="t-label">Figure 1</span> cap</figcaption></figure>
+<table id="tbl-1" class="t-block table" data-t="table"><caption class="t-title"><span class="t-label">Table 1</span> Table caption</caption>
+<thead>
+<tr><th>a</th><th>b</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>2</td></tr>
+</tbody>
+</table>
+<figure id="fig-a"><img src="y.png" alt=""><figcaption>Raw</figcaption></figure>
+<p>See <a class="t-ref" href="#fig1">Figure 1</a>, <a class="t-ref" href="#tbl-1">Table 1</a> and @fig-a.</p>
+````
+
+````diagnostics
+11:23 warning ref.dangling
+````
+
+## audit/table-attrs-before-not-after
+
+spec: syntax-blocks#attribute-line syntax-blocks#tables
+
+From no-figure-table-captions: a `{#tbl1}` line after a table stayed literal. Attributes go on a line before the table; after it, the line ends the table and has nothing to attach to.
+
+````tern
+{#tbl1}
+| a |
+|---|
+| 1 |
+
+| b |
+|---|
+| 2 |
+{#tbl2}
+````
+
+````html
+<table id="tbl1"><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<table><thead><tr><th>b</th></tr></thead><tbody><tr><td>2</td></tr></tbody></table>
+<p>{#tbl2}</p>
+````
+
+````diagnostics
+9:1 warning attributes.orphan
+````
+
+## audit/footnote-and-citation
+
+spec: syntax-blocks#footnote-definition syntax-inline#footnote-reference syntax-inline#reference elements#references
+
+From no-footnotes-citations: `[^1]` was literal text. Footnotes are core; a citation is a reference to a titled block, here inside literal brackets.
+
+````tern
+Text[^1] here, as shown in [@knuth84].
+
+[^1]: The note.
+
+:::bib[Knuth, TAOCP, 1984]{#knuth84}
+:::
+````
+
+````html
+<p>Text<sup class="t-fnref"><a id="fnref-1" href="#fn-1">1</a></sup> here, as shown in [<a class="t-ref" href="#knuth84">Knuth, TAOCP, 1984</a>].</p>
+<div id="knuth84" class="t-block bib" data-t="bib"><div class="t-title">Knuth, TAOCP, 1984</div></div>
+<section class="t-footnotes"><ol><li id="fn-1"><p>The note. <a class="t-fnback" href="#fnref-1">↩</a></p></li></ol></section>
+````
+
+## audit/task-checkbox-disabled
+
+spec: syntax-blocks#lists
+
+From study-state-not-persisted and accessibility-gaps: task checkboxes were live, unlabelled inputs whose ticks were lost on reload. They are `disabled`, as on GitHub; the source is the state.
+
+````tern
+- [x] done task
+- [ ] open task
+````
+
+````html
+<ul>
+<li class="t-task"><input type="checkbox" checked disabled> done task</li>
+<li class="t-task"><input type="checkbox" disabled> open task</li>
+</ul>
+````
+
+## audit/titled-callout-keeps-label
+
+spec: elements#title-slots elements#output-contract
+
+From r2-4/titled-callout-colour-only (also r2-3/std-labels-missing-from-copied-text, accessibility-gaps): a title replaced the kind word, so `:::tip[Shortcut]` and `:::warning[Shortcut]` differed only by colour, and labels were CSS-only. The label is real text, before the title.
+
+````tern
+:::tip[Shortcut]
+Use `dd`.
+:::
+
+:::warning[Shortcut]
+Use `dd`.
+:::
+````
+
+````html
+<div class="t-block tip" data-t="tip"><div class="t-title"><span class="t-label">Tip</span> Shortcut</div>
+<p>Use <code>dd</code>.</p>
+</div>
+<div class="t-block warning" data-t="warning"><div class="t-title"><span class="t-label">Warning</span> Shortcut</div>
+<p>Use <code>dd</code>.</p>
+</div>
+````
+
+## audit/cols-block-label-is-title
+
+spec: syntax-blocks#cells elements#title-slots
+
+From r2-6/std-labels-become-grid-items-in-cols-blocks: `::before` labels became grid cells in a `cols` block. The label is a real element in the title slot, before the cells; spanning it across the grid is the stylesheet's job (smoke).
+
+````tern
+:::note{cols=2}
+Left.
++++
+Right.
+:::
+````
+
+````html
+<div class="t-block note t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="note"><div class="t-title"><span class="t-label">Note</span></div>
+<div class="t-cell"><p>Left.</p></div>
+<div class="t-cell"><p>Right.</p></div>
+</div>
+````
+
+## audit/proof-end-mark-element
+
+spec: elements#output-contract
+
+From r2-6/proof-end-mark-overprints-last-block: the `∎` was a pseudo-element pulled into whatever ended the proof. It is a real `span.t-end` after the body, here after a code block; placing it is the stylesheet's job (smoke).
+
+````tern
+:::proof
+By induction:
+```python
+x = 1
+```
+:::
+````
+
+````html
+<section class="t-block proof" data-t="proof"><div class="t-title"><span class="t-label">Proof</span></div>
+<p>By induction:</p>
+<pre data-t="code"><code class="language-python">x = 1</code></pre>
+<span class="t-end" aria-hidden="true">∎</span>
+</section>
+````
+
+## audit/toc-without-headings
+
+spec: syntax-blocks#leaf elements#numbering
+
+From r2-6/toc-empty-box-without-headings: `::toc` with no headings drew an empty box. A toc with no entries emits nothing at all, and no diagnostic applies.
+
+````tern
+::toc
+
+Just a paragraph.
+````
+
+````html
+<p>Just a paragraph.</p>
+````
+
+````diagnostics
+````
+
+## audit/macros-block-and-no-include
+
+spec: syntax-blocks#macros syntax-blocks#leaf syntax-inline#reference
+
+From shared-macros-undocumented-no-include: macros are a `:::macros` block, and notes are single files: `::include[…]` is an inert leaf and a reference to another file's id is dangling.
+
+````tern
+:::macros
+\gdef\R{\mathbb{R}}
+:::
+
+$x \in \R$
+
+::include[shared/preamble.html]
+
+See @thm-from-other-file.
+````
+
+````html
+<div class="t-macros" hidden>\gdef\R{\mathbb{R}}</div>
+<p><span class="t-math">x \in \R</span></p>
+<div class="include" data-t="include">shared/preamble.html</div>
+<p>See @thm-from-other-file.</p>
+````
+
+````diagnostics
+9:5 warning ref.dangling
+````
+
+## audit/meta-in-body-is-text
+
+spec: elements#meta-block syntax-inline#raw-inline-html syntax-blocks#raw-html
+
+From rewrite-discards-head-no-metadata-config (also accessibility-gaps, r2-4/rtl-math-mirrored): a `<meta>` in the body was wrapped in `<p>` and there was no way to set lang or dir. Metadata goes in `:::meta`, which emits nothing in the body and fills `root.data.tern.meta`, a plain `{key: string}` object. A `<meta>` tag in the note is escaped text with `html.inline-escaped`: an escaped start tag with a lower-case, non-phrasing name.
+
+````tern
+<meta name="description" content="Kernel and image">
+
+:::meta
+description: Kernel and image
+lang: ar
+dir: rtl
+:::
+
+# Heading one
+````
+
+````json ast
+{"type": "root", "data": {"tern": {"meta": {"description": "Kernel and image", "lang": "ar", "dir": "rtl"}}}}
+````
+
+````html
+<p>&lt;meta name="description" content="Kernel and image"&gt;</p>
+<h1 id="heading-one">Heading one</h1>
+````
+
+````diagnostics
+1:1 info html.inline-escaped
+````
+
+## audit/crlf-bom-nul
+
+spec: syntax-blocks#normalisation
+options: escaped
+
+From test-coverage-gaps (no CRLF/BOM case existed): a leading BOM is dropped, CRLF and CR become LF, NUL becomes U+FFFD.
+
+````tern
+\uFEFF# Title\r\n\r\nLine one\rLine\0two
+````
+
+````html
+<h1 id="title">Title</h1>
+<p>Line one
+Line�two</p>
+````

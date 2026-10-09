@@ -1,0 +1,1052 @@
+# Containers and closers
+
+Containers (opener grammar, titles, failure modes, reserved verbatim names), closers, the depth limit of the line algorithm, and the first two of "the three most likely mistakes". Names outside the fixture schema (`box`, `idea`, `outer`, `inner`, `sidebar`, `d`) render as `div.t-block NAME`.
+
+## container/unknown-name
+
+spec: syntax-blocks#container elements#output-contract syntax-blocks#r6
+
+A name with no schema entry and no allowlist match becomes `div.t-block NAME`, with its title as a `div.t-title` first child (the second container example).
+
+````tern
+:::idea[Key idea]{#k}
+Body.
+:::
+````
+
+````html
+<div id="k" class="t-block idea" data-t="idea">
+<div class="t-title">Key idea</div>
+<p>Body.</p>
+</div>
+````
+
+## container/schema-theorem
+
+spec: syntax-blocks#container elements#output-contract
+
+The first container example, with the fixture schema: a `<section>` whose title starts with the real-text label.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn .big}
+If $V$ is finite-dimensional then …
+:::
+````
+
+````html
+<section id="thm-rn" class="t-block theorem big" data-t="theorem">
+<div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div>
+<p>If <span class="t-math">V</span> is finite-dimensional then …</p>
+</section>
+````
+
+## container/opener-spaces-between-parts
+
+spec: syntax-blocks#container
+
+The opener grammar allows spaces between the name, the title and the group (`NAME ws* [title] ws* ATTRS?`); only the name must be glued to the colons.
+
+````tern
+:::box [T] {.c}
+Text.
+:::
+````
+
+````html
+<div class="t-block box c" data-t="box">
+<div class="t-title">T</div>
+<p>Text.</p>
+</div>
+````
+
+## container/title-nested-brackets
+
+spec: syntax-blocks#container
+
+Brackets nest inside a title, so balanced inner brackets do not end it.
+
+````tern
+:::box[See [this] and f[x]]
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-title">See [this] and f[x]</div>
+<p>Text.</p>
+</div>
+````
+
+## container/title-math-atom
+
+spec: syntax-blocks#container
+
+The container-title example: math spans are atoms in a title, so `[See $f[x]$]` works.
+
+````tern
+:::box[See $f[x]$]
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-title">See <span class="t-math">f[x]</span></div>
+<p>Text.</p>
+</div>
+````
+
+## container/title-code-protects-bracket
+
+spec: syntax-blocks#container syntax-inline#algorithm
+
+A code span is an atom, so an unbalanced `]` inside it does not end the title.
+
+````tern
+:::box[Use `a]b` here]
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-title">Use <code>a]b</code> here</div>
+<p>Text.</p>
+</div>
+````
+
+## container/title-escaped-bracket
+
+spec: syntax-blocks#container
+
+`\]` escapes a closing bracket inside a title.
+
+````tern
+:::box[a \] b]
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-title">a ] b</div>
+<p>Text.</p>
+</div>
+````
+
+## container/title-nested-unbalanced
+
+spec: syntax-blocks#container syntax-blocks#r7
+
+Because brackets nest, `[a [b]` leaves the outer `[` unclosed: the block opens and everything from that `[` is the junk paragraph.
+
+````tern
+:::box[a [b]
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p class="t-error">[a [b]</p>
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+1:7 error block.opener-junk
+````
+
+## container/empty-title
+
+spec: syntax-blocks#container elements#title-slots
+
+An empty title `[]` emits no title element, as if there were no brackets; a labelled name still gets its label.
+
+````tern
+:::box[]
+One.
+:::
+
+:::note[]
+Two.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>One.</p>
+</div>
+<div class="t-block note" data-t="note">
+<div class="t-title"><span class="t-label">Note</span></div>
+<p>Two.</p>
+</div>
+````
+
+````diagnostics
+````
+
+## container/colon-count-cosmetic
+
+spec: syntax-blocks#container syntax-blocks#closer
+
+Any colon count of 3 or more opens a container; a closer with the same count closes it without comment.
+
+````tern
+::::::box[T]
+Text.
+::::::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-title">T</div>
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+````
+
+## container/colon-count-info
+
+spec: syntax-blocks#closer syntax-blocks#container
+
+A bare closer always closes the innermost container; a colon count that differs from that container's opener only earns an info pointing at the named closer.
+
+````tern
+::::outer
+Before.
+:::inner
+Inside.
+::::
+After.
+::::
+````
+
+````html
+<div class="t-block outer" data-t="outer">
+<p>Before.</p>
+<div class="t-block inner" data-t="inner">
+<p>Inside.</p>
+</div>
+<p>After.</p>
+</div>
+````
+
+````diagnostics
+5:1 info block.closer-count ":::/outer"
+````
+
+## container/closer-count-fewer-colons
+
+spec: syntax-blocks#closer
+
+The count check runs both ways: `:::` closing a `::::` opener is also reported.
+
+````tern
+::::box
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+3:1 info block.closer-count
+````
+
+## container/named-closer-colons-ignored
+
+spec: syntax-blocks#closer
+
+`block.closer-count` belongs to bare closers; a named closer is matched by name, whatever its colon count.
+
+````tern
+:::box
+Text.
+::::/box
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+````
+
+## container/named-closer-closes-two
+
+spec: syntax-blocks#closer diagnostics#three-mistakes
+
+`:::/outer` closes the nearest `outer`; the `inner` still open inside it is closed too and reported at its own opener.
+
+````tern
+:::outer
+:::inner
+Text.
+:::/outer
+````
+
+````html
+<div class="t-block outer" data-t="outer">
+<div class="t-block inner" data-t="inner">
+<p>Text.</p>
+</div>
+</div>
+````
+
+````diagnostics
+2:1 error block.unclosed ":::/inner"
+````
+
+## container/named-closer-nearest-same-name
+
+spec: syntax-blocks#closer
+
+With two open containers of the same name, `:::/NAME` closes the nearest one.
+
+````tern
+:::box
+:::box
+Inner.
+:::/box
+Outer.
+:::/box
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-block box" data-t="box">
+<p>Inner.</p>
+</div>
+<p>Outer.</p>
+</div>
+````
+
+## container/closer-mismatch
+
+spec: syntax-blocks#closer
+
+A named closer whose name is not open is an error naming what is open, and the line becomes paragraph text; the container stays open for the next closer.
+
+````tern
+:::sidebar
+Text.
+
+:::/proof
+:::
+````
+
+````html
+<div class="t-block sidebar" data-t="sidebar">
+<p>Text.</p>
+<p>:::/proof</p>
+</div>
+````
+
+````diagnostics
+4:1 error block.closer-mismatch "sidebar"
+````
+
+## container/named-closer-nothing-open
+
+spec: syntax-blocks#closer
+
+`:::/NAME` with nothing open is a mismatch (not a stray closer, which is the bare form's diagnostic).
+
+````tern
+:::/proof
+````
+
+````html
+<p>:::/proof</p>
+````
+
+````diagnostics
+1:1 error block.closer-mismatch
+````
+
+## container/closer-name-case
+
+spec: syntax-blocks#closer syntax-blocks#container syntax-blocks#character-classes
+
+Names are case-sensitive: `:::/box` does not close `:::Box`. It is a mismatch, a closer-shaped line that interrupts the paragraph and becomes a paragraph of its own, and `Box` stays open to the end of the note.
+
+````tern
+:::Box
+Text.
+:::/box
+````
+
+````html
+<div class="t-block Box" data-t="Box">
+<p>Text.</p>
+<p>:::/box</p>
+</div>
+````
+
+````diagnostics
+3:1 error block.closer-mismatch "Box"
+1:1 error block.unclosed ":::/Box"
+````
+
+## container/stray-closer
+
+spec: syntax-blocks#closer
+
+A bare closer with nothing open is paragraph text with a warning.
+
+````tern
+Text.
+
+:::
+````
+
+````html
+<p>Text.</p>
+<p>:::</p>
+````
+
+````diagnostics
+3:1 warning block.stray-closer
+````
+
+## container/stray-closer-after-paragraph-line
+
+spec: syntax-blocks#closer syntax-blocks#line-algorithm
+
+A closer interrupts a paragraph (row 2) even when it is stray: the closer-shaped line that falls back to text forms a paragraph of its own. The same holds for `:::/NAME` mismatches and orphan `+++` lines.
+
+````tern
+Text.
+:::
+````
+
+````html
+<p>Text.</p>
+<p>:::</p>
+````
+
+````diagnostics
+2:1 warning block.stray-closer
+````
+
+## container/anonymous-rejected
+
+spec: syntax-blocks#container syntax-blocks#line-algorithm
+
+`:::{.x}` has no name, so it opens nothing: the line is paragraph text (with a hint naming `:::div{.x}`), the next line continues that paragraph, and the would-be closer is then stray.
+
+````tern
+:::{.x}
+Text.
+
+:::
+````
+
+````html
+<p>:::{.x}
+Text.</p>
+<p>:::</p>
+````
+
+````diagnostics
+1:1 warning block.bad-opener ":::div{.x}"
+4:1 warning block.stray-closer
+````
+
+## container/digit-name-rejected
+
+spec: syntax-blocks#container syntax-blocks#character-classes
+
+A NAME starts with a letter, so `:::123` is not an opener.
+
+````tern
+:::123
+````
+
+````html
+<p>:::123</p>
+````
+
+````diagnostics
+1:1 warning block.bad-opener
+````
+
+## container/bad-opener-forms
+
+spec: syntax-blocks#container syntax-blocks#closer
+
+`block.bad-opener` covers `:::` followed by anything other than a NAME, `/NAME` or the end of the line: a bare `/`, a NAME that does not start with a letter, punctuation, and a named closer with text after it. Each line is paragraph text.
+
+````tern
+:::/
+
+:::_x
+
+:::!
+
+:::/box extra
+````
+
+````html
+<p>:::/</p>
+<p>:::_x</p>
+<p>:::!</p>
+<p>:::/box extra</p>
+````
+
+````diagnostics
+1:1 warning block.bad-opener
+3:1 warning block.bad-opener
+5:1 warning block.bad-opener
+7:1 warning block.bad-opener
+````
+
+## container/spaced-name
+
+spec: syntax-blocks#container
+
+A space between the colons and the name makes the line paragraph text, with a hint giving the glued spelling.
+
+````tern
+::: note
+````
+
+````html
+<p>::: note</p>
+````
+
+````diagnostics
+1:1 warning block.spaced-name ":::note"
+````
+
+## container/opener-junk-visible
+
+spec: syntax-blocks#container diagnostics#three-mistakes syntax-blocks#r7
+
+The first likely mistake, braceless attributes: the block still opens, the junk is shown as the body's first child in a `t-error` paragraph, and the error sits at column 15 with a hint putting the attributes in braces.
+
+````tern
+:::theorem[T] #rn .big
+Body.
+:::
+````
+
+````html
+<section class="t-block theorem" data-t="theorem">
+<div class="t-title"><span class="t-label">Theorem 1</span> T</div>
+<p class="t-error">#rn .big</p>
+<p>Body.</p>
+</section>
+````
+
+````diagnostics
+1:15 error block.opener-junk "{#rn .big}"
+````
+
+## container/opener-junk-title-without-brackets
+
+spec: syntax-blocks#container
+
+A title written without brackets is junk; the hint puts it in brackets. The note keeps its label.
+
+````tern
+:::note Danger
+Body.
+:::
+````
+
+````html
+<div class="t-block note" data-t="note">
+<div class="t-title"><span class="t-label">Note</span></div>
+<p class="t-error">Danger</p>
+<p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:9 error block.opener-junk "[Danger]"
+````
+
+## container/opener-junk-after-title
+
+spec: syntax-blocks#container diagnostics#block-opener-junk
+
+Junk after an opener that already has a title is not a title to put in brackets: the hint says the text is not part of the opener, to remove it or put it in the title or the body.
+
+````tern
+:::note[Danger]{.big} extra
+Body.
+:::
+````
+
+````html
+<div class="t-block note big" data-t="note"><div class="t-title"><span class="t-label">Note</span> Danger</div><p class="t-error">extra</p>
+<p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:23 error block.opener-junk "put it in the title or the body"
+````
+
+## container/opener-junk-unclosed-bracket
+
+spec: syntax-blocks#container
+
+An unclosed `[` opens the block; the rest of the line from the `[` is the junk paragraph.
+
+````tern
+:::note[Danger
+Body.
+:::
+````
+
+````html
+<div class="t-block note" data-t="note">
+<div class="t-title"><span class="t-label">Note</span></div>
+<p class="t-error">[Danger</p>
+<p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:8 error block.opener-junk
+````
+
+## container/opener-junk-after-attrs
+
+spec: syntax-blocks#container
+
+The opener keeps everything that matches its grammar; only text after the group is junk.
+
+````tern
+:::box{.c} extra
+Body.
+:::
+````
+
+````html
+<div class="t-block box c" data-t="box">
+<p class="t-error">extra</p>
+<p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:12 error block.opener-junk
+````
+
+## container/opener-malformed-group
+
+spec: syntax-blocks#container syntax-blocks#positions
+
+An unparsable group on an opener is junk: the block opens, the junk paragraph runs from the `{`, and the error is `block.opener-junk` at the `{`, with no `attr.malformed`.
+
+````tern
+:::box{.a, .b}
+Body.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p class="t-error">{.a, .b}</p>
+<p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:7 error block.opener-junk
+````
+
+## container/opener-junk-not-inline-parsed
+
+spec: syntax-blocks#container syntax-blocks#r7
+
+Opener junk is shown as escaped text, not parsed as inline content: `*x*` stays as written and `<b>` is escaped.
+
+````tern
+:::box[T] *x* <b>
+Body.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-title">T</div>
+<p class="t-error">*x* &lt;b&gt;</p>
+<p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:11 error block.opener-junk
+````
+
+## container/end-keyword
+
+spec: syntax-blocks#container elements#reserved
+
+`:::end` is not a container: it acts as a bare closer, with a `name.reserved` warning at the name.
+
+````tern
+:::box
+Text.
+:::end
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+3:4 warning name.reserved
+````
+
+## container/reserved-style
+
+spec: syntax-blocks#container elements#reserved
+
+`:::style` is reserved: its body is verbatim (not CSS, not Tern) and is shown as `pre.t-error`, with a hint naming the HTML spelling.
+
+````tern
+:::style
+p { color: red }
+:::
+````
+
+````html
+<pre class="t-error">p { color: red }</pre>
+````
+
+````diagnostics
+1:4 warning name.reserved "<style>"
+````
+
+## container/reserved-script
+
+spec: syntax-blocks#container elements#reserved
+
+`:::script` gets the same treatment: the verbatim body is escaped, and a `#` line in it is not a heading.
+
+````tern
+:::script
+if (a < b) run();
+# not a heading
+:::
+````
+
+````html
+<pre class="t-error">if (a &lt; b) run();
+# not a heading</pre>
+````
+
+````diagnostics
+1:4 warning name.reserved "<script>"
+````
+
+## container/reserved-html
+
+spec: syntax-blocks#container elements#reserved
+
+`:::html` is reserved; its body is shown escaped, and the hint names the `=html` fence.
+
+````tern
+:::html
+<b>x</b>
+:::
+````
+
+````html
+<pre class="t-error">&lt;b&gt;x&lt;/b&gt;</pre>
+````
+
+````diagnostics
+1:4 warning name.reserved "=html"
+````
+
+## container/depth-64
+
+spec: syntax-blocks#line-algorithm syntax-blocks#container
+
+The 65th nested opener would make the stack deeper than 64, so it is paragraph text inside the 64th container, with `nesting.limit` at it; the 64 closers then close the 64 containers.
+
+````tern js
+':::d\n'.repeat(65) + ':::\n'.repeat(64)
+````
+
+````diagnostics
+65:1 error nesting.limit
+````
+
+## container/depth-64-allowed
+
+spec: syntax-blocks#line-algorithm syntax-blocks#container
+
+Exactly 64 nested containers are within the limit.
+
+````tern js
+':::d\n'.repeat(64) + 'deep\n' + ':::\n'.repeat(64)
+````
+
+````diagnostics
+````
+
+## container/depth-counts-quotes
+
+spec: syntax-blocks#line-algorithm
+
+The depth limit counts containers, list items and quotes on one stack: a quote opened inside 64 containers is the 65th level.
+
+````tern js
+':::d\n'.repeat(64) + '> q\n' + ':::\n'.repeat(64)
+````
+
+````diagnostics
+65:1 error nesting.limit
+````
+
+## container/depth-counts-footnote-definition
+
+spec: syntax-blocks#line-algorithm syntax-blocks#footnote-definition
+
+Footnote definitions count toward the depth too: inside 63 containers a definition is level 64, so a quote in its body would be the 65th level and is refused at its `>`.
+
+````tern js
+'See [^a].\n' + ':::d\n'.repeat(63) + '[^a]: x\n\n  > q\n' + ':::\n'.repeat(63)
+````
+
+````diagnostics
+67:3 error nesting.limit
+````
+
+## container/unclosed-at-end
+
+spec: syntax-blocks#closer
+
+A container still open at the end of the note gets `block.unclosed` at its opener, with a hint naming both closers; its body runs to the end.
+
+````tern
+:::box
+Text.
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+1:1 error block.unclosed ":::/box"
+````
+
+## container/forgotten-closer-under-named-outer
+
+spec: diagnostics#three-mistakes syntax-blocks#closer
+
+The second likely mistake, a forgotten closer: with a named outer closer, the error lands on the forgotten inner `:::proof`, not on the section.
+
+````tern
+:::section
+:::proof
+Text.
+:::/section
+````
+
+````diagnostics
+2:1 error block.unclosed ":::/proof"
+````
+
+## container/unclosed-at-parent-end
+
+spec: syntax-blocks#closer syntax-blocks#line-algorithm
+
+A container inside a quote is closed, as unclosed, when the quote ends; the diagnostic is at the opener's column inside the quote.
+
+````tern
+> :::box
+> Text.
+
+After.
+````
+
+````html
+<blockquote>
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+</blockquote>
+<p>After.</p>
+````
+
+````diagnostics
+1:3 error block.unclosed
+````
+
+## container/list-item-closer-hint
+
+spec: syntax-blocks#closer syntax-blocks#line-algorithm syntax-blocks#r2
+
+A closer left at a lower column than the list item's content ends the item (it is not lazy: a closer interrupts a paragraph), so the container is unclosed, with the hint to indent the closer; the closer itself is then stray.
+
+````tern
+- :::box
+  Text.
+:::
+````
+
+````html
+<ul>
+<li>
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+</li>
+</ul>
+<p>:::</p>
+````
+
+````diagnostics
+1:3 error block.unclosed "indent the closer"
+3:1 warning block.stray-closer
+````
+
+## container/inside-list-item
+
+spec: syntax-blocks#closer syntax-blocks#lists
+
+A closer indented to the item's content column closes the container inside the item.
+
+````tern
+- :::box
+  Text.
+  :::
+- Next.
+````
+
+````html
+<ul>
+<li>
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+</li>
+<li>Next.</li>
+</ul>
+````
+
+## container/closer-ends-list-inside
+
+spec: syntax-blocks#closer
+
+A closer ends the list open inside the container and then closes the container.
+
+````tern
+:::box
+- item
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<ul>
+<li>item</li>
+</ul>
+</div>
+````
+
+## container/closer-inside-fence
+
+spec: syntax-blocks#closer syntax-blocks#fence
+
+A fence is verbatim, so a closer inside it is code and does not close the container.
+
+````tern
+:::box
+```
+:::
+```
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<pre data-t="code"><code>:::</code></pre>
+</div>
+````
+
+## container/opener-interrupts-paragraph
+
+spec: syntax-blocks#container syntax-blocks#line-algorithm
+
+A line starting `:::word` always opens a block, even directly under a paragraph line.
+
+````tern
+Some text
+:::box
+Inside.
+:::
+````
+
+````html
+<p>Some text</p>
+<div class="t-block box" data-t="box">
+<p>Inside.</p>
+</div>
+````
+
+## container/indented-body
+
+spec: syntax-blocks#container syntax-blocks#r2
+
+Container bodies, openers and closers may be indented freely; leading whitespace is ignored when a line is classified.
+
+````tern
+:::box
+    ## Inside
+    Four spaces in.
+  :::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<h2 id="inside">Inside</h2>
+<p>Four spaces in.</p>
+</div>
+````
+
+## container/closer-scope-inside-quote
+
+spec: syntax-blocks#closer syntax-blocks#blockquote
+
+A closer inside a quote sees only the containers opened inside the quote: `> :::` inside `:::note` is a stray closer, paragraph text in the quote, and the note closes at the next line.
+
+````tern
+:::note
+> quoted
+> :::
+:::
+````
+
+````json ast
+{"children": [{"type": "containerDirective", "name": "note", "children": [{"type": "blockquote", "children": [
+  {"type": "paragraph", "children": [{"type": "text", "value": "quoted"}]},
+  {"type": "paragraph", "children": [{"type": "text", "value": ":::"}]}]}]}]}
+````
+
+````diagnostics
+3:3 warning block.stray-closer
+````

@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><script src="/tern.js"></script>
+
+# Smoke: note scripts run in order
+
+<script>window.order = ['inline1'];</script>
+<script src="/gen/big.js"></script>
+<script src="{{CDN}}/cdn.js"></script>
+<script>window.order.push('inline2');</script>
+
+{#sentinel}
+The sentinel paragraph, after the scripts.

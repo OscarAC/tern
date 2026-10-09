@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="A stylised osprey in flight above grey water">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d9b8"/>
+      <stop offset="1" stop-color="#cfe0ec"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#sky)"/>
+  <circle cx="500" cy="250" r="46" fill="#f3b27a"/>
+  <path d="M0 262 Q80 250 160 262 T320 262 T480 262 T640 262 V360 H0Z" fill="#6f8796"/>
+  <path d="M0 290 Q80 280 160 290 T320 290 T480 290 T640 290 V360 H0Z" fill="#5a7181"/>
+  <g transform="translate(300 130)" fill="#3b3f46">
+    <path d="M0 0 C-40 -40 -100 -50 -170 -20 C-110 -30 -60 -10 -20 18Z"/>
+    <path d="M0 0 C40 -40 100 -50 170 -20 C110 -30 60 -10 20 18Z"/>
+    <ellipse cx="0" cy="10" rx="16" ry="34" fill="#f2f0ea"/>
+    <circle cx="0" cy="-22" r="12" fill="#f2f0ea"/>
+    <path d="M-12 -24 H12 L8 -18 H-8Z"/>
+    <path d="M0 -14 L5 -6 L0 -8Z"/>
+    <path d="M-10 40 L0 62 L10 40Z"/>
+  </g>
+</svg>

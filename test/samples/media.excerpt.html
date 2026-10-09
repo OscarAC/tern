@@ -1,0 +1,35 @@
+<h1 id="field-notes-the-estuary">Field notes: the estuary</h1>
+<figure id="fig-osprey" class="t-block figure" data-t="figure">
+<img src="img/osprey.jpg" alt="An osprey in flight above grey water" width="70%">
+<figcaption class="t-title"><span class="t-label">Figure 1</span> Osprey over the estuary, 06:40.</figcaption>
+</figure>
+<figure id="fig-crop" class="t-block figure wide" data-t="figure">
+<img src="img/osprey-crop.jpg" alt="Close crop of an osprey's head" width="320">
+<figcaption class="t-title"><span class="t-label">Figure 2</span> The same bird, cropped to the head.</figcaption>
+</figure>
+<p>Compare <a class="t-ref" href="#fig-osprey">Figure 1</a> with <a class="t-ref" href="#fig-crop">Figure 2</a>. An image without an id stays an image, even alone:</p>
+<p><img src="img/feather.svg" alt="A feather, drawn in ink" width="48"></p>
+<h2 id="video">Video</h2>
+<figure id="fig-tide" class="t-block figure" data-t="figure">
+<video class="video" data-t="video" src="media/tide.mp4" controls muted width="640" poster="img/osprey.jpg"></video>
+<figcaption class="t-title"><span class="t-label">Figure 3</span> Time-lapse of the ebb tide, 40 s at 8× speed.</figcaption>
+</figure>
+<h2 id="embedded-map">Embedded map</h2>
+<iframe class="iframe" data-t="iframe" src="https://www.openstreetmap.org/export/embed.html?bbox=-3.2,55.95,-3.1,56.0" width="640" height="360" loading="lazy" title="Estuary map"></iframe>
+<h2 id="tide-clock-a-web-component">Tide clock (a web component)</h2>
+<tide-clock class="tide-clock" data-t="tide-clock" station="leith" units="m"></tide-clock>
+<script type="module" src="components/tide-clock.js"></script>
+<h2 id="tide-curve-a-plot-drawn-by-a-script">Tide curve (a plot drawn by a script)</h2>
+<figure id="fig-curve" class="t-block figure" data-t="figure">
+<div id="tide-plot" class="plot" data-t="plot"></div>
+<figcaption class="t-title"><span class="t-label">Figure 4</span> Two tide cycles at Leith, in metres above chart datum.</figcaption>
+</figure>
+<script>
+  const el = document.getElementById('tide-plot');
+  … (verbatim, including the column-0 lines of the template literal; re-created and run in order after mount)
+</script>
+<p>See <a class="t-ref" href="#fig-curve">Figure 4</a>: the second high water is the higher one.</p>
+<style>
+  .plot { max-width: 640px; color: var(--t-link); }
+  @media (prefers-color-scheme: dark) { …</style>
+

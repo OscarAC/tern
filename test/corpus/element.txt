@@ -1,0 +1,1174 @@
+# Element mapping and output contract
+
+How a name becomes an element, the allowlists, the output contract and the title
+slots, with the reserved names and `schema.strict`. The fixture schema
+is on unless a case says `schema=none`.
+
+Names are case-sensitive everywhere (schema lookup, the
+allowlists, the reserved list and the custom-element rule are all lower-case,
+so `:::Aside` is an unknown name); the reserved list is checked before the
+custom-element rule, and a reserved name falls back to `div` or `span`
+without the reserved name as a class (`data-t` still names it); `name.unknown`
+(only with `strict`) is for step-5 fallbacks alone.
+
+## element/fallback-container-div
+
+spec: syntax-blocks#r6 elements#names
+
+A container name with no schema entry, no allowlist entry and no hyphen is a `div` carrying the name as its class (step 5).
+
+````tern
+:::idea[Key idea]{#k}
+Body.
+:::
+````
+
+````html
+<div id="k" class="t-block idea" data-t="idea"><div class="t-title">Key idea</div><p>Body.</p></div>
+````
+
+## element/fallback-leaf-div
+
+spec: syntax-blocks#r6 elements#names elements#output-contract
+
+An unknown leaf name is a `div` with the name as its class and its bracket content inside.
+
+````tern
+::callout[Read *me*]
+````
+
+````html
+<div class="callout" data-t="callout">Read <em>me</em></div>
+````
+
+## element/fallback-inline-span
+
+spec: syntax-blocks#r6 elements#names elements#output-contract
+
+An unknown inline name is a `span` with the name as its class.
+
+````tern
+An :idea[inline] one.
+````
+
+````html
+<p>An <span class="idea" data-t="idea">inline</span> one.</p>
+````
+
+## element/schema-tag
+
+spec: elements#names elements#title-slots
+
+The schema entry's `tag` chooses the element (step 2): the fixture schema's `theorem` is a `<section>` with a counted label.
+
+````tern
+:::theorem[Rank–nullity]
+If $V$ is finite-dimensional.
+:::
+````
+
+````html
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div><p>If <span class="t-math">V</span> is finite-dimensional.</p></section>
+````
+
+## element/schema-tag-absent-without-schema
+
+spec: syntax-blocks#r6 elements#names
+options: schema=none
+
+Without a schema, `theorem` is just an unknown name: a `div`, no label, no number.
+
+````tern
+:::theorem[Rank–nullity]
+Body.
+:::
+````
+
+````html
+<div class="t-block theorem" data-t="theorem"><div class="t-title">Rank–nullity</div><p>Body.</p></div>
+````
+
+## element/tag-override
+
+spec: elements#names syntax-blocks#merging-and-emission
+
+`{tag=x}` is step 1: the element becomes `x`, the key is consumed (never emitted) and recorded under `data.tern`.
+
+````tern
+:::box{tag=aside}
+Aside text.
+:::
+````
+
+````html
+<aside class="t-block box" data-t="box"><p>Aside text.</p></aside>
+````
+
+````json transformed
+{"children":[{"type":"containerDirective","name":"box","data":{"tern":{"tag":"aside"}}}]}
+````
+
+## element/tag-override-beats-schema
+
+spec: elements#names
+
+`{tag=…}` wins over the schema's `tag`; the schema still supplies the label and counter.
+
+````tern
+:::theorem{tag=article}
+Body.
+:::
+````
+
+````html
+<article class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div><p>Body.</p></article>
+````
+
+## element/tag-not-allowed-container
+
+spec: elements#names elements#allowlists syntax-blocks#r7
+
+`span` is not in the container allowlist, so `{tag=span}` on a container gets `tag.not-allowed` at the key and the fallback element.
+
+````tern
+:::box{tag=span}
+Kept.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Kept.</p></div>
+````
+
+````diagnostics
+1:8 warning tag.not-allowed
+````
+
+## element/tag-not-allowed-leaf-table
+
+spec: elements#allowlists elements#names
+
+The leaf allowlist is the container list without `table`, so `{tag=table}` on a leaf is refused.
+
+````tern
+::grid{tag=table}
+````
+
+````html
+<div class="grid" data-t="grid"></div>
+````
+
+````diagnostics
+1:8 warning tag.not-allowed
+````
+
+## element/tag-not-allowed-inline-flow
+
+spec: elements#allowlists elements#names syntax-blocks#r7
+
+An inline element may only become a phrasing tag; `{tag=div}` is refused and the element stays a `span`.
+
+````tern
+A :x[y]{tag=div} b.
+````
+
+````html
+<p>A <span class="x" data-t="x">y</span> b.</p>
+````
+
+````diagnostics
+1:9 warning tag.not-allowed
+````
+
+## element/tag-not-allowed-inline-a-img-br
+
+spec: elements#allowlists
+
+`a`, `img` and `br` are left out of the inline allowlist on purpose, so `tag=` cannot produce them.
+
+````tern
+:p1[x]{tag=a}
+:p2[x]{tag=img}
+:p3[x]{tag=br}
+````
+
+````html
+<p><span class="p1" data-t="p1">x</span>
+<span class="p2" data-t="p2">x</span>
+<span class="p3" data-t="p3">x</span></p>
+````
+
+````diagnostics
+1:8 warning tag.not-allowed
+2:8 warning tag.not-allowed
+3:8 warning tag.not-allowed
+````
+
+## element/tag-allowed-inline
+
+spec: elements#names elements#allowlists
+
+`{tag=kbd}` is in the inline allowlist; the element keeps its own name as class and `data-t`.
+
+````tern
+Press :key[Esc]{tag=kbd}.
+````
+
+````html
+<p>Press <kbd class="key" data-t="key">Esc</kbd>.</p>
+````
+
+## element/tag-allowed-leaf-void
+
+spec: elements#names elements#allowlists elements#output-contract
+options: schema=none
+
+`{tag=img}` on a leaf gives a void element: attributes, no content.
+
+````tern
+::pic{tag=img src=cat.png alt="A cat"}
+````
+
+````html
+<img class="pic" data-t="pic" src="cat.png" alt="A cat">
+````
+
+## element/custom-container
+
+spec: elements#names elements#title-slots
+
+A valid custom-element name becomes that element at container level (step 3); its title is the default `div.t-title`.
+
+````tern
+:::tide-panel[Leith]{station=leith}
+High water at 06:40.
+:::
+````
+
+````html
+<tide-panel class="t-block tide-panel" data-t="tide-panel" station="leith"><div class="t-title">Leith</div><p>High water at 06:40.</p></tide-panel>
+````
+
+## element/custom-inline
+
+spec: elements#names
+
+A custom-element name becomes that element at the inline level too.
+
+````tern
+Now :tide-chip[3 m] above datum.
+````
+
+````html
+<p>Now <tide-chip class="tide-chip" data-t="tide-chip">3 m</tide-chip> above datum.</p>
+````
+
+## element/custom-reserved-html-name
+
+spec: elements#names
+
+`font-face` has a hyphen but is one of HTML's reserved custom-element names, so it falls through to `div`.
+
+````tern
+:::font-face
+Body.
+:::
+````
+
+````html
+<div class="t-block font-face" data-t="font-face"><p>Body.</p></div>
+````
+
+## element/custom-upper-case-is-not-custom
+
+spec: elements#names syntax-blocks#character-classes
+
+Names are case-sensitive and a custom-element name must be lower-case, so `Tide-Panel` is a step-5 `div` whose class keeps the name as written.
+
+````tern
+:::Tide-Panel
+Body.
+:::
+````
+
+````html
+<div class="t-block Tide-Panel" data-t="Tide-Panel"><p>Body.</p></div>
+````
+
+## element/name-case-sensitive
+
+spec: elements#names elements#allowlists syntax-inline#inline-element syntax-blocks#container
+
+Names are case-sensitive and the schema, the allowlists and the reserved list are lower-case: `:::Aside` is not the `aside` element, `:KBD[x]` is not `kbd`, and `:::Theorem` does not find the fixture's `theorem`. All three are step-5 fallbacks, silently.
+
+````tern
+:::Aside
+Press :KBD[x].
+:::
+
+:::Theorem
+Body.
+:::
+````
+
+````html
+<div class="t-block Aside" data-t="Aside"><p>Press <span class="KBD" data-t="KBD">x</span>.</p></div>
+<div class="t-block Theorem" data-t="Theorem"><p>Body.</p></div>
+````
+
+````diagnostics
+````
+
+## element/name-case-sensitive-strict
+
+spec: elements#names diagnostics#name-unknown
+options: strict
+
+With `schema.strict`, each upper-case name that falls through to `div` or `span` gets `name.unknown` (I) at the name.
+
+````tern
+:::Aside
+Press :KBD[x].
+:::
+
+:::Theorem
+Body.
+:::
+````
+
+````html
+<div class="t-block Aside" data-t="Aside"><p>Press <span class="KBD" data-t="KBD">x</span>.</p></div>
+<div class="t-block Theorem" data-t="Theorem"><p>Body.</p></div>
+````
+
+````diagnostics
+1:4 info name.unknown
+2:8 info name.unknown
+5:4 info name.unknown
+````
+
+## element/reserved-name-case
+
+spec: elements#reserved syntax-blocks#container syntax-blocks#raw-body
+
+The reserved list is lower-case too, so `:::Script` is not reserved: it is an ordinary container, a step-5 `div.Script` whose body is parsed as Tern, with no diagnostic.
+
+````tern
+:::Script
+if (a < b) run();
+:::
+````
+
+````html
+<div class="t-block Script" data-t="Script"><p>if (a &lt; b) run();</p></div>
+````
+
+````diagnostics
+````
+
+## element/allowlist-container
+
+spec: elements#allowlists elements#names
+
+A name in the container allowlist becomes that element (step 4).
+
+````tern
+:::section[Background]
+Body.
+:::
+
+:::search
+Body.
+:::
+````
+
+````html
+<section class="t-block section" data-t="section"><div class="t-title">Background</div><p>Body.</p></section>
+<search class="t-block search" data-t="search"><p>Body.</p></search>
+````
+
+## element/allowlist-container-rejects-leaf-only
+
+spec: elements#allowlists
+
+`video` and `p` are leaf-only names; as containers they are `div`s.
+
+````tern
+:::video
+Not a video.
+:::
+
+:::p
+Not a paragraph.
+:::
+````
+
+````html
+<div class="t-block video" data-t="video"><p>Not a video.</p></div>
+<div class="t-block p" data-t="p"><p>Not a paragraph.</p></div>
+````
+
+## element/allowlist-leaf-p
+
+spec: elements#allowlists elements#output-contract
+
+`p` is in the leaf allowlist: the leaf is a `<p>` holding its inline content.
+
+````tern
+::p[Hello *there*]{.lead}
+````
+
+````html
+<p class="p lead" data-t="p">Hello <em>there</em></p>
+````
+
+## element/allowlist-leaf-void-hr
+
+spec: elements#allowlists elements#output-contract
+
+A void element from the leaf allowlist has no content; author classes follow the name.
+
+````tern
+::hr{.thin}
+````
+
+````html
+<hr class="hr thin" data-t="hr">
+````
+
+## element/allowlist-leaf-embedded
+
+spec: elements#allowlists elements#output-contract
+
+Embedded elements are reachable as leaves, so media needs no raw HTML; a non-void one is emitted with an end tag.
+
+````tern
+::iframe{src="https://example.com/embed" width=560}
+````
+
+````html
+<iframe class="iframe" data-t="iframe" src="https://example.com/embed" width="560"></iframe>
+````
+
+## element/allowlist-leaf-rejects-table
+
+spec: elements#allowlists
+options: schema=none
+
+`table` is not in the leaf allowlist, so `::table` is a `div`.
+
+````tern
+::table[Not a table]
+````
+
+````html
+<div class="table" data-t="table">Not a table</div>
+````
+
+## element/allowlist-leaf-rejects-span
+
+spec: elements#allowlists
+
+`span` is phrasing, not in the leaf allowlist; `::span` is a `div`.
+
+````tern
+::span[Text]
+````
+
+````html
+<div class="span" data-t="span">Text</div>
+````
+
+## element/allowlist-inline-phrasing
+
+spec: elements#allowlists elements#output-contract
+
+Names in the inline allowlist become those phrasing elements.
+
+````tern
+Press :kbd[Ctrl] to :mark[read] :sub[this].
+````
+
+````html
+<p>Press <kbd class="kbd" data-t="kbd">Ctrl</kbd> to <mark class="mark" data-t="mark">read</mark> <sub class="sub" data-t="sub">this</sub>.</p>
+````
+
+## element/allowlist-inline-flow-is-span
+
+spec: elements#allowlists syntax-blocks#r6
+
+A flow name at the inline level is a `span`, so it can never split a paragraph.
+
+````tern
+A :section[short] note.
+````
+
+````html
+<p>A <span class="section" data-t="section">short</span> note.</p>
+````
+
+## element/allowlist-inline-a-img-br-are-spans
+
+spec: elements#allowlists
+
+`:a[…]`, `:img[…]` and `:br[…]` are not elements: links, images and `\` already spell them, so these are `span`s.
+
+````tern
+See :a[x], :img[y] and :br[z].
+````
+
+````html
+<p>See <span class="a" data-t="a">x</span>, <span class="img" data-t="img">y</span> and <span class="br" data-t="br">z</span>.</p>
+````
+
+## element/level-aware-same-name
+
+spec: elements#allowlists elements#names syntax-blocks#r6
+options: schema=none
+
+The same name maps per level: `details` is an element as a container and as a leaf, and a `span` inline.
+
+````tern
+:::details[More]
+Hidden.
+:::
+
+::details[Inline body]
+
+A :details[span] here.
+````
+
+````html
+<details class="t-block details" data-t="details"><summary class="t-title">More</summary><p>Hidden.</p></details>
+<details class="details" data-t="details">Inline body</details>
+<p>A <span class="details" data-t="details">span</span> here.</p>
+````
+
+## element/output-contract-container-attrs
+
+spec: elements#output-contract syntax-blocks#merging-and-emission
+
+A container is `TAG id class="t-block NAME …classes" data-t="NAME" …attributes`, then the title slot and the body.
+
+````tern
+:::aside[Aside]{#a .wide .muted data-x=1 hidden}
+Body.
+:::
+````
+
+````html
+<aside id="a" class="t-block aside wide muted" data-t="aside" data-x="1" hidden><div class="t-title">Aside</div><p>Body.</p></aside>
+````
+
+## element/output-contract-leaf-attrs
+
+spec: elements#output-contract syntax-blocks#leaf
+
+A leaf is `TAG id class="NAME …" data-t="NAME" …`; a bare key is a boolean attribute.
+
+````tern
+::video{#v .wide src=tide.mp4 controls}
+````
+
+````html
+<video id="v" class="video wide" data-t="video" src="tide.mp4" controls></video>
+````
+
+## element/output-contract-inline-attrs
+
+spec: elements#output-contract syntax-inline#inline-element
+
+An inline element is `TAG id class="NAME …" data-t="NAME" …` around its content.
+
+````tern
+Hold :kbd[Ctrl]{#k .big title="Control"} down.
+````
+
+````html
+<p>Hold <kbd id="k" class="kbd big" data-t="kbd" title="Control">Ctrl</kbd> down.</p>
+````
+
+## element/output-contract-bare-span
+
+spec: elements#output-contract syntax-inline#span
+
+A bare span carries only its attributes, with no `data-t` and no name class.
+
+````tern
+A [term]{.c #k data-x=1} here.
+````
+
+````html
+<p>A <span id="k" class="c" data-x="1">term</span> here.</p>
+````
+
+## element/output-contract-end-mark
+
+spec: elements#output-contract elements#title-slots
+
+A schema `end` mark is a `span.t-end`, the container's last child, hidden from assistive technology with `aria-hidden="true"`; the label is created without a written title.
+
+````tern
+:::proof
+Trivial.
+:::
+````
+
+````html
+<section class="t-block proof" data-t="proof"><div class="t-title"><span class="t-label">Proof</span></div><p>Trivial.</p><span class="t-end" aria-hidden="true">∎</span></section>
+````
+
+## element/output-contract-no-title-no-slot
+
+spec: elements#output-contract elements#title-slots
+
+A container with neither a title nor a label has no title element.
+
+````tern
+:::box
+Body.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Body.</p></div>
+````
+
+## element/title-slot-details
+
+spec: elements#title-slots
+
+A `details` title is a `summary.t-title`, first child.
+
+````tern
+:::details[More]{open}
+Hidden.
+:::
+````
+
+````html
+<details class="t-block details" data-t="details" open><summary class="t-title">More</summary><p>Hidden.</p></details>
+````
+
+## element/title-slot-figure-last
+
+spec: elements#title-slots
+options: schema=none
+
+A `figure` title is a `figcaption.t-title`, last child.
+
+````tern
+:::figure[Caption]
+Body.
+:::
+````
+
+````html
+<figure class="t-block figure" data-t="figure"><p>Body.</p><figcaption class="t-title">Caption</figcaption></figure>
+````
+
+## element/title-slot-fieldset-legend
+
+spec: elements#title-slots
+
+A `fieldset` title is a `legend.t-title`, first child.
+
+````tern
+:::fieldset[Shipping]
+Body.
+:::
+````
+
+````html
+<fieldset class="t-block fieldset" data-t="fieldset"><legend class="t-title">Shipping</legend><p>Body.</p></fieldset>
+````
+
+## element/title-slot-table-caption
+
+spec: elements#title-slots elements#table-caption
+options: schema=none
+
+A `table` title is a `caption.t-title`, first child (through the caption merge; no schema, so no label).
+
+````tern
+:::table[Keys]
+| Key |
+|---|
+| w |
+:::
+````
+
+````html
+<table class="t-block table" data-t="table"><caption class="t-title">Keys</caption><thead><tr><th>Key</th></tr></thead><tbody><tr><td>w</td></tr></tbody></table>
+````
+
+## element/title-slot-follows-tag-override
+
+spec: elements#title-slots elements#names
+
+The slot follows the resolved tag, not the name: `{tag=details}` makes the title a `summary`.
+
+````tern
+:::box[More]{tag=details}
+Hidden.
+:::
+````
+
+````html
+<details class="t-block box" data-t="box"><summary class="t-title">More</summary><p>Hidden.</p></details>
+````
+
+## element/title-slot-schema-tag
+
+spec: elements#title-slots elements#names
+
+The fixture schema's `recall` has `tag: 'details'`, so its title is a `summary`.
+
+````tern
+:::recall[The kernel]
+A subspace.
+:::
+````
+
+````html
+<details class="t-block recall" data-t="recall"><summary class="t-title">The kernel</summary><p>A subspace.</p></details>
+````
+
+## element/label-without-title
+
+spec: elements#title-slots
+
+A labelled name gets its label in a title element even with no written title.
+
+````tern
+:::note
+Mind the gap.
+:::
+````
+
+````html
+<div class="t-block note" data-t="note"><div class="t-title"><span class="t-label">Note</span></div><p>Mind the gap.</p></div>
+````
+
+## element/label-with-title
+
+spec: elements#title-slots
+
+The label comes first in the title element, then a space and the title.
+
+````tern
+:::caution[Hot]
+Do not touch.
+:::
+````
+
+````html
+<div class="t-block caution" data-t="caution"><div class="t-title"><span class="t-label">Caution</span> Hot</div><p>Do not touch.</p></div>
+````
+
+## element/reserved-container-main
+
+spec: elements#reserved syntax-blocks#r7
+
+`main` is reserved and never produced: `name.reserved` at the name, and the container falls back to a `div` without `main` as a class.
+
+````tern
+:::main
+Body.
+:::
+````
+
+````html
+<div class="t-block" data-t="main"><p>Body.</p></div>
+````
+
+````diagnostics
+1:4 warning name.reserved
+````
+
+## element/reserved-leaf-link
+
+spec: elements#reserved
+
+`link` is reserved at the leaf level too: a `div` with no name class, keeping the author's attributes.
+
+````tern
+::link{rel=icon href=icon.png}
+````
+
+````html
+<div data-t="link" rel="icon" href="icon.png"></div>
+````
+
+````diagnostics
+1:3 warning name.reserved
+````
+
+## element/reserved-inline-title
+
+spec: elements#reserved
+
+`title` is reserved at the inline level: a `span` without `title` as a class.
+
+````tern
+A :title[x] b.
+````
+
+````html
+<p>A <span data-t="title">x</span> b.</p>
+````
+
+````diagnostics
+1:4 warning name.reserved
+````
+
+## element/reserved-tern
+
+spec: elements#reserved syntax-blocks#reserved
+
+`tern` is reserved as an element name, so it cannot become `class="tern"` and hijack `main.tern`: the fallback `div` has only `t-block`.
+
+````tern
+:::tern
+Body.
+:::
+````
+
+````html
+<div class="t-block" data-t="tern"><p>Body.</p></div>
+````
+
+````diagnostics
+1:4 warning name.reserved
+````
+
+## element/reserved-t-prefix
+
+spec: elements#reserved
+
+`t-*` names are reserved even though `t-box` has the shape of a custom-element name: the reserved list is checked before the custom-element rule, so this is a `div`, not `<t-box>`, and has no `t-box` class.
+
+````tern
+:::t-box
+Body.
+:::
+````
+
+````html
+<div class="t-block" data-t="t-box"><p>Body.</p></div>
+````
+
+````diagnostics
+1:4 warning name.reserved
+````
+
+## element/reserved-inline-end
+
+spec: elements#reserved
+
+`end` is reserved at every level; only `:::end` has the closer meaning. Inline it is a `span` without the `end` class.
+
+````tern
+An :end[x] here.
+````
+
+````html
+<p>An <span data-t="end">x</span> here.</p>
+````
+
+````diagnostics
+1:5 warning name.reserved
+````
+
+## element/reserved-leaf-meta
+
+spec: elements#reserved elements#meta-block
+
+Only `:::meta` is a core block; `meta` as a leaf name is reserved, and the leaf is a `div` without the `meta` class.
+
+````tern
+::meta[x]
+````
+
+````html
+<div data-t="meta">x</div>
+````
+
+````diagnostics
+1:3 warning name.reserved
+````
+
+## element/strict-unknown-container
+
+spec: elements#names diagnostics#name-unknown
+options: strict
+
+With `schema.strict`, a container name that falls through to `div` gets `name.unknown` (info) at the name.
+
+````tern
+:::idea
+Body.
+:::
+````
+
+````html
+<div class="t-block idea" data-t="idea"><p>Body.</p></div>
+````
+
+````diagnostics
+1:4 info name.unknown
+````
+
+## element/strict-unknown-inline
+
+spec: elements#names
+options: strict
+
+With `schema.strict`, an inline name that falls through to `span` gets `name.unknown`.
+
+````tern
+See :zz[y].
+````
+
+````html
+<p>See <span class="zz" data-t="zz">y</span>.</p>
+````
+
+````diagnostics
+1:6 info name.unknown
+````
+
+## element/strict-schema-name-known
+
+spec: elements#names
+options: strict
+
+A name with a schema entry is known under `schema.strict`.
+
+````tern
+:::theorem
+Body.
+:::
+````
+
+````diagnostics
+````
+
+## element/strict-schema-name-without-tag
+
+spec: elements#names
+options: strict
+
+A name with a schema entry but no `tag` (`note`, a callout with only a label) is known under `schema.strict`: it falls back to a `div` at step 5, but `name.unknown` is only for a name with no schema entry.
+
+````tern
+:::note
+Body.
+:::
+````
+
+````html
+<div class="t-block note" data-t="note"><div class="t-title"><span class="t-label">Note</span></div><p>Body.</p>
+</div>
+````
+
+````diagnostics
+````
+
+## element/strict-allowlisted-name-known
+
+spec: elements#names elements#allowlists
+options: strict
+
+An allowlisted name is a real element, so it is known under `schema.strict`: `name.unknown` applies only to step-5 fallbacks.
+
+````tern
+:::aside
+Body.
+:::
+````
+
+````diagnostics
+````
+
+## element/strict-custom-name-known
+
+spec: elements#names
+options: strict
+
+A custom-element name resolves at step 3, so it is known under `schema.strict` too.
+
+````tern
+:::tide-panel
+Body.
+:::
+````
+
+````html
+<tide-panel class="t-block tide-panel" data-t="tide-panel"><p>Body.</p></tide-panel>
+````
+
+````diagnostics
+````
+
+## element/tag-not-allowed-falls-to-schema
+
+spec: elements#names elements#allowlists
+
+A refused `{tag=…}` falls through to the next step: here the schema's `tag`, so the theorem is still a `<section>` with its label.
+
+````tern
+:::theorem{tag=span}
+Body.
+:::
+````
+
+````html
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div><p>Body.</p></section>
+````
+
+````diagnostics
+1:12 warning tag.not-allowed
+````
+
+## element/tag-reserved
+
+spec: elements#reserved diagnostics#name-reserved
+
+`{tag=main}` asks for a reserved element: `name.reserved` (not `tag.not-allowed`) at the key, and the request is ignored, so `box` falls through to its `div`.
+
+````tern
+:::box{tag=main}
+Body.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Body.</p></div>
+````
+
+````diagnostics
+1:8 warning name.reserved
+````
+
+## element/tag-on-reserved-or-core-name
+
+spec: elements#reserved syntax-blocks#reserved syntax-blocks#r7
+
+`tag=` cannot choose the element of a reserved name, which always falls back (`:::main` is a `div`), nor of a core block, which has its own output (`:::macros`). Rather than being ignored silently, it gets `attr.malformed` at the key, saying where it applies. A reserved value (`tag=main`) keeps its own `name.reserved` instead.
+
+````tern
+:::main{tag=section}
+Body.
+:::
+
+:::macros{tag=div}
+\newcommand{\R}{\mathbb{R}}
+:::
+
+:::main{tag=main}
+Body.
+:::
+````
+
+````html
+<div class="t-block" data-t="main"><p>Body.</p>
+</div>
+<div class="t-macros" hidden>\newcommand{\R}{\mathbb{R}}</div>
+<div class="t-block" data-t="main"><p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:4 warning name.reserved
+1:9 warning attr.malformed "and `main` is"
+5:11 warning attr.malformed "which has its own output"
+9:4 warning name.reserved
+9:9 warning name.reserved
+````
+
+## element/schema-tag-reserved
+
+spec: elements#reserved diagnostics#name-reserved
+options: schema=extended
+
+A schema `tag` naming a reserved element (`frame: {tag: 'main'}`) gets `name.reserved` at the element's name, as `{tag=main}` does at its key, and resolution falls through (step 2): `frame` is a `div`.
+
+````tern
+:::frame
+Body.
+:::
+````
+
+````html
+<div class="t-block frame" data-t="frame"><p>Body.</p>
+</div>
+````
+
+````diagnostics
+1:4 warning name.reserved "the schema gives"
+````
+
+## element/toc-nested
+
+spec: elements#output-contract syntax-blocks#leaf
+
+The fixture's `toc` leaf is a `nav` filled by the toc transform with `ol > li > a` entries, a nested `ol` for a deeper level.
+
+````tern
+::toc
+
+## Intro
+### Scope
+## Results
+````
+
+````html
+<nav class="toc" data-t="toc"><ol><li><a href="#intro">Intro</a><ol><li><a href="#scope">Scope</a></li></ol></li><li><a href="#results">Results</a></li></ol></nav>
+<h2 id="intro">Intro</h2>
+<h3 id="scope">Scope</h3>
+<h2 id="results">Results</h2>
+````
+
+````diagnostics
+````
+
+## element/toc-empty
+
+spec: elements#output-contract syntax-blocks#leaf
+
+A toc with no headings to list emits nothing at all, not an empty `nav`.
+
+````tern
+::toc
+
+Text.
+````
+
+````html
+<p>Text.</p>
+````
+
+````diagnostics
+````
+
+## element/tag-custom-name-refused
+
+spec: elements#names elements#allowlists
+
+`{tag=x}` accepts only the level's allowlist (step 1), so a custom-element name gets `tag.not-allowed` and the next rule decides; a custom element comes only from the name itself (step 3).
+`tag=` names only allowlisted elements, so it cannot name a custom element; write the custom element as the name.
+
+````tern
+:::box{tag=tide-panel}
+Body.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Body.</p></div>
+````
+
+````diagnostics
+1:8 warning tag.not-allowed
+````

@@ -1,0 +1,432 @@
+# Lexical conventions (indentation and trailing whitespace included)
+
+The source, normalisation, lines, columns and character classes. Most cases
+use `options: escaped` so that CR, NUL, BOM, tabs and trailing whitespace are
+visible in this file and survive editors that trim.
+
+## lexical/crlf
+
+spec: syntax-blocks#normalisation
+options: escaped noeol
+
+`\r\n` becomes `\n`, so offsets count one character per line break in the normalised source.
+
+````tern
+# One\r\n# Two\r\n
+````
+
+````html
+<h1 id="one">One</h1>
+<h1 id="two">Two</h1>
+````
+
+````json ast
+{"type":"root","children":[
+ {"type":"heading","depth":1,"position":{"start":{"line":1,"column":1,"offset":0}}},
+ {"type":"heading","depth":1,"position":{"start":{"line":2,"column":1,"offset":6}}}]}
+````
+
+## lexical/cr-alone
+
+spec: syntax-blocks#normalisation
+options: escaped noeol
+
+A lone `\r` is a line break too: these are two headings, not one heading with a CR in its text.
+
+````tern
+# One\r# Two\r
+````
+
+````html
+<h1 id="one">One</h1>
+<h1 id="two">Two</h1>
+````
+
+````json ast
+{"type":"root","children":[
+ {"type":"heading","depth":1,"position":{"start":{"line":1,"column":1,"offset":0}}},
+ {"type":"heading","depth":1,"position":{"start":{"line":2,"column":1,"offset":6}}}]}
+````
+
+## lexical/cr-cr-lf
+
+spec: syntax-blocks#normalisation
+options: escaped noeol
+
+`\r\r\n` is a CR followed by a CRLF, so two line breaks: a blank line separates the paragraphs.
+
+````tern
+One\r\r\nTwo\r\n
+````
+
+````html
+<p>One</p>
+<p>Two</p>
+````
+
+## lexical/bom-dropped
+
+spec: syntax-blocks#normalisation
+options: escaped
+
+A leading BOM is dropped before anything else, so the heading starts at column 1, offset 0.
+
+````tern
+\uFEFF# Title
+````
+
+````html
+<h1 id="title">Title</h1>
+````
+
+````json ast
+{"type":"root","children":[
+ {"type":"heading","depth":1,"position":{"start":{"line":1,"column":1,"offset":0}},
+  "children":[{"type":"text","value":"Title"}]}]}
+````
+
+## lexical/nul-replaced
+
+spec: syntax-blocks#normalisation
+options: escaped
+
+NUL becomes U+FFFD.
+
+````tern
+a\0b
+````
+
+````html
+<p>a�b</p>
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","value":"a�b"}]}]}
+````
+
+## lexical/nul-in-fence
+
+spec: syntax-blocks#normalisation syntax-blocks#lines
+options: escaped
+
+Normalisation applies to the whole source before any block sees it, so a NUL inside a verbatim body is replaced too.
+
+````tern
+```
+a\0b
+```
+````
+
+````html
+<pre data-t="code"><code>a�b</code></pre>
+````
+
+## lexical/no-final-newline
+
+spec: syntax-blocks#lines syntax-blocks#line-algorithm
+options: noeol
+
+The last line needs no line break; the note's end closes the paragraph.
+
+````tern
+# Title
+Last line
+````
+
+````html
+<h1 id="title">Title</h1>
+<p>Last line</p>
+````
+
+## lexical/empty-note
+
+spec: syntax-blocks#note-start syntax-blocks#line-algorithm
+options: noeol
+
+An empty note renders nothing and reports nothing.
+
+````tern
+````
+
+````html
+````
+
+````diagnostics
+````
+
+## lexical/positions-relative-to-note
+
+spec: syntax-blocks#note-start syntax-blocks#front-matter
+
+The note starts after the tern.js line: the head's lines do not count, so the first note line is line 1.
+
+````html head
+<!doctype html>
+<meta charset="utf-8">
+<title>Linear maps</title>
+````
+
+````tern
+---
+author: me
+---
+````
+
+````html
+<hr>
+<p>author: me</p>
+<hr>
+````
+
+````diagnostics
+1:1 info doc.frontmatter
+````
+
+## lexical/trailing-spaces-not-hard-break
+
+spec: syntax-blocks#r3 syntax-blocks#lines syntax-blocks#paragraph
+options: escaped
+
+Two trailing spaces are not a hard break: lines are right-trimmed before anything else looks at them.
+
+````tern
+first\u0020\u0020
+second
+````
+
+````html
+<p>first
+second</p>
+````
+
+## lexical/trailing-whitespace-after-heading-group
+
+spec: syntax-blocks#r3 syntax-blocks#lines syntax-blocks#heading
+options: escaped
+
+Trailing whitespace is trimmed first, so the group is still at the end of the heading line.
+
+````tern
+## Kernel {#kernel} \t
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+````
+
+## lexical/trailing-whitespace-after-backslash
+
+spec: syntax-blocks#r3 syntax-blocks#lines syntax-inline#hard-break
+options: escaped
+
+After trimming, the `\` is the last character of the line, so it is still a hard break.
+
+````tern
+first\\\u0020\u0020
+second
+````
+
+````html
+<p>first<br>second</p>
+````
+
+## lexical/closer-trailing-whitespace
+
+spec: syntax-blocks#r3 syntax-blocks#lines syntax-blocks#closer
+options: escaped schema=none
+
+A closer followed by trailing whitespace is still "`:::` and nothing else" after trimming.
+
+````tern
+:::box
+text
+::: \t
+````
+
+````html
+<div class="t-block box" data-t="box"><p>text</p></div>
+````
+
+## lexical/verbatim-keeps-trailing-whitespace
+
+spec: syntax-blocks#r3 syntax-blocks#lines
+options: escaped
+
+Lines fed to a verbatim body are kept as written, trailing spaces included.
+
+````tern
+```
+code\u0020\u0020
+```
+````
+
+````json ast
+{"type":"root","children":[{"type":"code","value":"code  "}]}
+````
+
+````html
+<pre data-t="code"><code>code  </code></pre>
+````
+
+## lexical/fence-closer-trailing-whitespace
+
+spec: syntax-blocks#r3 syntax-blocks#lines syntax-blocks#fence
+options: escaped
+
+A closing fence followed by trailing spaces still closes the fence: fence, `$$` and raw-body closers are tested on the right-trimmed line, as CommonMark does, although content lines are kept byte for byte.
+
+````tern
+```
+code
+```\u0020\u0020
+after
+````
+
+````html
+<pre data-t="code"><code>code</code></pre>
+<p>after</p>
+````
+
+## lexical/tab-stop-list-membership
+
+spec: syntax-blocks#columns syntax-blocks#r2 syntax-blocks#lists
+options: escaped
+
+A tab advances to column 4, which reaches the item's content column (2), so `b` belongs to the item and the list is loose.
+
+````tern
+- a
+
+\tb
+````
+
+````html
+<ul><li><p>a</p><p>b</p></li></ul>
+````
+
+## lexical/tab-stop-not-fixed-width
+
+spec: syntax-blocks#columns syntax-blocks#r2 syntax-blocks#lists
+options: escaped
+
+Two spaces then a tab reach column 4 (the next multiple of 4), not 6; the content column of `1.   a` is 5, so `b` is outside the item.
+
+````tern
+1.   a
+
+  \tb
+````
+
+````html
+<ol><li>a</li></ol>
+<p>b</p>
+````
+
+## lexical/position-tab-is-one-column
+
+spec: syntax-blocks#columns
+options: escaped
+
+Tab stops decide membership, not positions: in a diagnostic a tab is one column (and one offset unit).
+
+````tern
+\tpress:kbd[S] now
+````
+
+````html
+<p>press:kbd[S] now</p>
+````
+
+````json diagnostics
+[{"code":"inline.glued","severity":"info","position":{"start":{"line":1,"column":7,"offset":6}}}]
+````
+
+## lexical/position-utf16-astral
+
+spec: syntax-blocks#columns
+options: escaped
+
+Columns count UTF-16 code units, so a character outside the BMP takes two columns.
+
+````tern
+\u{1F600} press:kbd[S]
+````
+
+````html
+<p>😀 press:kbd[S]</p>
+````
+
+````json diagnostics
+[{"code":"inline.glued","severity":"info","position":{"start":{"line":1,"column":9,"offset":8}}}]
+````
+
+## lexical/ident-unicode
+
+spec: syntax-blocks#character-classes syntax-blocks#heading
+
+IDENT starts with any letter or `_` and continues with letters, digits, `_` and `-`, in any script; explicit ids are kept as written.
+
+````tern
+## Size {#größe}
+## Private {#_x}
+## Mixed {#日本-2}
+````
+
+````html
+<h2 id="größe">Size</h2>
+<h2 id="_x">Private</h2>
+<h2 id="日本-2">Mixed</h2>
+````
+
+## lexical/ident-no-colon-or-dot
+
+spec: syntax-blocks#character-classes syntax-blocks#finding-the-group syntax-blocks#heading
+
+IDENT contains no `:` and no `.`, and items need whitespace between them, so these groups do not parse; they stay heading text with a warning at the offending character.
+
+````tern
+## T {#a:b}
+## U {#a.b}
+````
+
+````html
+<h2 id="t-a-b">T {#a:b}</h2>
+<h2 id="u-a-b">U {#a.b}</h2>
+````
+
+````diagnostics
+1:9 warning attr.malformed
+2:9 warning attr.malformed
+````
+
+## lexical/key-allows-colon
+
+spec: syntax-blocks#character-classes syntax-blocks#heading
+
+KEY, unlike IDENT, allows `:` and `.`, so `xml:lang=fr` is one attribute.
+
+````tern
+## Titre {xml:lang=fr}
+````
+
+````html
+<h2 id="titre" xml:lang="fr">Titre</h2>
+````
+
+## lexical/glued-tests-ascii-only
+
+spec: syntax-blocks#character-classes syntax-inline#strike-highlight syntax-inline#inline-element
+
+The "glued to a word" tests look at ASCII letters and digits only, so `==` and `:NAME[` work between CJK characters but not after `x`.
+
+````tern
+これは==重要==です
+漢:rt[kan]
+x==y==z
+````
+
+````html
+<p>これは<mark>重要</mark>です
+漢<rt class="rt" data-t="rt">kan</rt>
+x==y==z</p>
+````

@@ -1,0 +1,47 @@
+<!-- head after mount: <html lang="en-GB">, <title>Project plan: Q4</title>, <meta name="author" content="O. Carrera">,
+     <meta name="date" content="2026-10-07">, <meta name="description" content="Phases, workstreams and exit criteria for the Tern rewrite"> -->
+<h1 id="project-plan-q4">Project plan: Q4</h1>
+<p class="byline">O. Carrera · 7 October 2026</p>
+<aside id="side-toc" class="t-block aside sticky" data-t="aside">
+<div class="t-title">Contents</div>
+<nav class="toc" data-t="toc"><ol><li><a href="#goals">Goals</a></li><li><a href="#workstreams">Workstreams</a></li><li><a href="#risks-and-budget">Risks and budget</a></li></ol></nav>
+</aside>
+<h2 id="goals">Goals</h2>
+<div class="t-block row t-cols" style="--t-cols:minmax(0,2fr) minmax(0,1fr)" data-t="row">
+<div class="t-cell">
+<p>The engine is rewritten around one parser and one emitter. … the browser renders.
+<span class="aside" data-t="aside">Margin note: the parser design was accepted on 7 October; this plan starts the day
+after.</span></p>
+<p>Three phases ship in order; each one gates on its tests (see <a class="t-ref" href="#tbl-phases">Table 1</a>).</p>
+</div>
+<div class="t-cell muted">
+<div class="t-block note" data-t="note"><div class="t-title"><span class="t-label">Note</span> At a glance</div>
+<ul><li>3 phases</li><li>2 browsers in CI</li><li>1 syntax</li></ul></div>
+</div>
+</div>
+<h2 id="workstreams">Workstreams</h2>
+<div class="t-block grid t-cols" style="--t-cols:repeat(3,minmax(0,1fr))" data-t="grid">
+<div class="t-block card" data-t="card"><div class="t-title">Parser</div><p>Container stack, delimiter stack, positions on every node.</p></div>
+<div class="t-block card" data-t="card"><div class="t-title">Runtime</div><p>In-place mount, scripts re-created in order, KaTeX in batches.</p></div>
+<div class="t-block card" data-t="card"><div class="t-title">Editor</div><p>A stdio LSP; Neovim becomes a client.</p></div>
+</div>
+<h2 id="risks-and-budget">Risks and budget</h2>
+<details class="t-block details" data-t="details"><summary class="t-title">Risks and mitigations</summary>
+<ul><li>Emphasis drifts from CommonMark: bounded by the imported examples.</li><li>The line ceiling is reached: tighten, do not bundle.</li></ul>
+</details>
+<details class="t-block details" data-t="details" open><summary class="t-title">Budget</summary>
+<p>Roughly 5,000 lines, zero runtime dependencies.</p>
+</details>
+<div class="t-block center" data-t="center"><p><em>Schedule, by phase</em></p></div>
+<table id="tbl-phases" class="t-block table wide" data-t="table">
+<caption class="t-title"><span class="t-label">Table 1</span> Phases, owners and exit criteria</caption>
+<thead><tr><th>Phase</th><th>Scope</th><th>Exit criterion</th><th>Owner</th><th style="text-align:right">Weeks</th><th>Depends on</th></tr></thead>
+<tbody>
+<tr><td>P0</td><td>Corpus, CI, hygiene</td><td>every rule has a case</td><td>O.C.</td><td style="text-align:right">1</td><td>—</td></tr>
+…
+<tr><td>P3</td><td>Runtime</td><td>smoke green in Chromium and Firefox;<br>
+no math task over 50 ms</td><td>O.C.</td><td style="text-align:right">3</td><td>P2</td></tr>
+</tbody></table>
+<style>
+  #side-toc { …</style>
+

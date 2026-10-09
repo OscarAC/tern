@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><script>window.TERN = { lang: 'fr', schema: { strict: true, block: { theorem: { tag: 'section', counter: 'theorem', label: { de: 'Satz', fr: 'Théorème', en: 'Theorem' } } } } };</script><script src="/tern.js" data-lang="de"></script>
+:::meta
+lang: en
+:::
+
+# Smoke: the label language and strict mode, from the note
+
+The tag's data-lang (de) wins over window.TERN.lang (fr) and :::meta (en),
+so the theorem is a Satz; window.TERN.schema.strict reports the unknown name.
+
+:::theorem{#t1}
+The first result.
+:::
+
+:::nope
+An unknown name.
+:::
+
+See @t1.

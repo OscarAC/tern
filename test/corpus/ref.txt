@@ -1,0 +1,375 @@
+# References (the @-syntax)
+
+Cases for references and the `@` row of the ambiguity rules. Every reference that should resolve
+has a target; the reference-text templates and numbering are covered elsewhere.
+
+## ref/heading-target
+
+spec: syntax-inline#reference elements#references
+
+A reference to a heading renders the heading's inline content.
+
+````tern
+## Kernel {#kernel}
+
+See @kernel.
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>See <a class="t-ref" href="#kernel">Kernel</a>.</p>
+````
+
+## ref/slug-target
+
+spec: syntax-inline#reference elements#ids syntax-blocks#slugs
+
+A heading's slug is an id like any other and can be referenced.
+
+````tern
+## Rank and nullity
+
+By @rank-and-nullity.
+````
+
+````html
+<h2 id="rank-and-nullity">Rank and nullity</h2>
+<p>By <a class="t-ref" href="#rank-and-nullity">Rank and nullity</a>.</p>
+````
+
+## ref/forward
+
+spec: syntax-inline#reference elements#ids
+
+A reference may come before its target.
+
+````tern
+See @later.
+
+## Later {#later}
+````
+
+````html
+<p>See <a class="t-ref" href="#later">Later</a>.</p>
+<h2 id="later">Later</h2>
+````
+
+## ref/mention-dangling
+
+spec: syntax-inline#reference syntax-inline#ambiguity syntax-inline#residual-mentions diagnostics#ref-dangling
+
+A mention with no target stays literal text, with `ref.dangling` (W) at the `@` and the hint `\@alice`.
+
+````tern
+Thanks @alice!
+````
+
+````html
+<p>Thanks @alice!</p>
+````
+
+````diagnostics
+1:8 warning ref.dangling "\@alice"
+````
+
+## ref/mention-escaped
+
+spec: syntax-inline#reference syntax-inline#ambiguity syntax-inline#residual-mentions syntax-inline#escape
+
+`\@` is the literal spelling: no reference, no diagnostic.
+
+````tern
+Thanks \@alice!
+````
+
+````html
+<p>Thanks @alice!</p>
+````
+
+## ref/not-after-word-chars
+
+spec: syntax-inline#reference syntax-inline#ambiguity
+
+An `@` after an ASCII letter, `_`, `-`, `.`, `/` or `@` never opens, even when the id exists.
+
+````tern
+## K {#k}
+
+me@k.org, a_@k, a-@k, a.@k, a/@k and x@@k
+````
+
+````html
+<h2 id="k">K</h2>
+<p>me@k.org, a_@k, a-@k, a.@k, a/@k and x@@k</p>
+````
+
+## ref/digit-and-space-text
+
+spec: syntax-inline#reference syntax-inline#ambiguity syntax-blocks#character-classes
+
+An IDENT cannot start with a digit or a space, so `@2024` and `@ x` are text and nothing dangles.
+
+````tern
+In @2024 we met @ noon.
+````
+
+````html
+<p>In @2024 we met @ noon.</p>
+````
+
+## ref/after-punctuation
+
+spec: syntax-inline#reference
+
+After other punctuation, or a non-ASCII character, `@` opens.
+
+````tern
+## K {#k}
+
+(@k) "@k" [@k] —@k
+````
+
+````html
+<h2 id="k">K</h2>
+<p>(<a class="t-ref" href="#k">K</a>) "<a class="t-ref" href="#k">K</a>" [<a class="t-ref" href="#k">K</a>] —<a class="t-ref" href="#k">K</a></p>
+````
+
+## ref/punctuation-after
+
+spec: syntax-inline#reference syntax-blocks#character-classes
+
+IDENT has no `:` and no `'`, so a colon or a possessive after a reference stays text.
+
+````tern
+## Kernel {#kernel}
+
+See @kernel: it is closed, and @kernel's dimension.
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>See <a class="t-ref" href="#kernel">Kernel</a>: it is closed, and <a class="t-ref" href="#kernel">Kernel</a>'s dimension.</p>
+````
+
+## ref/unicode-ident
+
+spec: syntax-inline#reference syntax-blocks#character-classes
+
+IDENT is Unicode: `@résumé` is a reference to the heading with that id, and it resolves. The fragment is an id, so the `href` is emitted as written, not percent-encoded.
+
+````tern
+## Résumé {#résumé}
+
+See @résumé.
+````
+
+````html
+<h2 id="résumé">Résumé</h2>
+<p>See <a class="t-ref" href="#résumé">Résumé</a>.</p>
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "heading", "depth": 2},
+  {"type": "paragraph", "children": [
+    {"type": "text", "value": "See "},
+    {"type": "ref", "id": "résumé"},
+    {"type": "text", "value": "."}
+  ]}
+]}
+````
+
+````diagnostics
+````
+
+## ref/cjk-before
+
+spec: syntax-inline#reference syntax-blocks#character-classes
+
+The `@` test is ASCII only: a reference glued to the CJK text before it still opens.
+
+````tern
+## Kernel {#kernel}
+
+これは@kernel です
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>これは<a class="t-ref" href="#kernel">Kernel</a> です</p>
+````
+
+## ref/cjk-after-swallowed
+
+spec: syntax-inline#reference syntax-blocks#character-classes diagnostics#ref-dangling
+
+IDENT is Unicode, so CJK text glued after the id is part of it: `@kernelです` names `kernelです`, which does not exist.
+
+````tern
+## Kernel {#kernel}
+
+これは@kernelです
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>これは@kernelです</p>
+````
+
+````diagnostics
+3:4 warning ref.dangling
+````
+
+## ref/empty-group-terminates
+
+spec: syntax-inline#reference syntax-blocks#character-classes syntax-blocks#finding-the-group
+
+The fix for glued CJK text is a space or an empty group: `{}` is not an attribute group, but after a reference it is consumed as a terminator with no attributes, so `@kernel{}です` is the reference `kernel` followed by `です`.
+
+````tern
+## Kernel {#kernel}
+
+これは@kernel{}です
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>これは<a class="t-ref" href="#kernel">Kernel</a>です</p>
+````
+
+````json ast
+{"children":[
+ {"type":"heading"},
+ {"type":"paragraph","children":[
+  {"type":"text","value":"これは"},
+  {"type":"ref","id":"kernel"},
+  {"type":"text","value":"です"}]}]}
+````
+
+## ref/double-trailing-dash
+
+spec: syntax-inline#reference
+
+Every trailing `-` is given back to the text, so `@kernel--` is the reference `kernel` followed by `--`.
+
+````tern
+## Kernel {#kernel}
+
+See @kernel-- and more.
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>See <a class="t-ref" href="#kernel">Kernel</a>-- and more.</p>
+````
+
+## ref/spaced-group-text
+
+spec: syntax-inline#reference syntax-blocks#positions
+
+A group after a space is not glued to the reference: it stays text and does not select the text.
+
+````tern
+## Kernel {#kernel}
+
+See @kernel {ref=title}.
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>See <a class="t-ref" href="#kernel">Kernel</a> {ref=title}.</p>
+````
+
+## ref/attr-malformed
+
+spec: syntax-inline#reference syntax-blocks#positions diagnostics#attr-malformed
+
+A glued group that does not parse stays text after the reference, with `attr.malformed` (W) at the first bad column.
+
+````tern
+## Kernel {#kernel}
+
+@kernel{ref=title "x"}
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p><a class="t-ref" href="#kernel">Kernel</a>{ref=title "x"}</p>
+````
+
+````diagnostics
+3:19 warning attr.malformed
+````
+
+## ref/span-target
+
+spec: syntax-inline#reference elements#references elements#ids
+
+A target that is neither counted, an equation, a heading nor titled renders its id.
+
+````tern
+The [kernel]{#k} is closed; see @k.
+````
+
+````html
+<p>The <span id="k">kernel</span> is closed; see <a class="t-ref" href="#k">k</a>.</p>
+````
+
+## ref/in-code-and-math
+
+spec: syntax-inline#reference syntax-inline#algorithm
+
+References never occur inside atoms: nothing here is a reference, and nothing dangles.
+
+````tern
+`@alice` and $@alice$
+````
+
+````html
+<p><code>@alice</code> and <span class="t-math">@alice</span></p>
+````
+
+## ref/dangling-second-line
+
+spec: syntax-inline#reference syntax-blocks#paragraph diagnostics#ref-dangling
+
+The diagnostic lands on the reference's own line and column.
+
+````tern
+Hello
+cc @bob
+````
+
+````html
+<p>Hello
+cc @bob</p>
+````
+
+````diagnostics
+2:4 warning ref.dangling
+````
+
+## ref/copied-text-flattened
+
+spec: elements#references syntax-inline#reference syntax-inline#footnote-reference
+
+A reference to a heading copies its inline content into a link, so the copy is flattened: a link keeps only its text, a footnote reference is left out, and a reference becomes its own target's plain text, here the span's id `k`. The heading itself is untouched.
+
+````tern
+## See [the docs](https://x.org)[^n] and @k {#h}
+
+[t]{#k}
+
+Read @h.
+
+[^n]: A note.
+````
+
+````html
+<h2 id="h">See <a href="https://x.org">the docs</a><sup class="t-fnref"><a id="fnref-n" href="#fn-n">1</a></sup> and <a class="t-ref" href="#k">k</a></h2>
+<p><span id="k">t</span></p>
+<p>Read <a class="t-ref" href="#h">See the docs and k</a>.</p>
+<section class="t-footnotes"><ol>
+<li id="fn-n"><p>A note. <a class="t-fnback" href="#fnref-n">↩</a></p></li>
+</ol></section>
+````

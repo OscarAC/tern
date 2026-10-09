@@ -1,0 +1,113 @@
+<!doctype html><meta charset="utf-8">
+<script>
+  // This note's vocabulary (window.TERN.schema). `table` gives the captioned
+  // table its "Table 1" label and number, `toc` fills ::toc with the headings.
+  // :::row, :::grid, :::card, :::glance and :::center need no entry: unknown names become
+  // div.row, div.grid and so on, and the styles at the end give them their look.
+  window.TERN = {schema: {
+    block: {
+      note: {tag: 'aside', label: 'Note'},
+      table: {tag: 'table', counter: 'table', label: 'Table'},
+    },
+    leaf: {
+      toc: {tag: 'nav', transform: 'toc'},
+    },
+  }};
+</script>
+<script src="../tern.js"></script>
+
+:::meta
+title: Project plan: Q4
+lang: en-GB
+author: O. Carrera
+date: 2026-10-07
+description: Phases, workstreams and exit criteria for the Tern rewrite
+:::
+
+# Project plan: Q4
+
+:::note
+This example is about layout. It shows a floating aside that holds the contents, a two-column
+row with a muted second cell, a three-column grid of cards, collapsible sections, a centred
+line, an inline margin note, and a table with a numbered caption and a continued row. Only
+`note`, `table` and `toc` are declared; the rest is HTML names, plain names and CSS. Part of
+[Tern's documentation](../index.html).
+:::
+
+{.byline}
+O. Carrera · 7 October 2026
+
+:::aside[Contents]{#side-toc .sticky}
+::toc{depth=2}
+:::
+
+## Goals
+
+:::row{cols="2 1"}
+The engine is rewritten around one parser and one emitter. Every construct is positioned,
+every mistake is diagnosed, and the editor consumes the same tree the browser renders.
+:aside[Margin note: the parser design was accepted on 7 October; this plan starts the day
+after.]
+
+Three phases ship in order; each one gates on its tests (see @tbl-phases).
++++ {.muted}
+:::glance[At a glance]
+- 3 phases
+- 2 browsers in CI
+- 1 syntax
+:::
+:::/row
+
+## Workstreams
+
+:::grid{cols=3}
+:::card[Parser]
+Container stack, delimiter stack, positions on every node.
+:::
+:::card[Runtime]
+In-place mount, scripts re-created in order, KaTeX in batches.
+:::
+:::card[Editor]
+A stdio LSP; Neovim becomes a client.
+:::
+:::/grid
+
+## Risks and budget
+
+:::details[Risks and mitigations]
+- Emphasis drifts from CommonMark: bounded by the imported examples.
+- The line ceiling is reached: tighten, do not bundle.
+:::
+
+:::details[Budget]{open}
+Roughly 5,000 lines, zero runtime dependencies.
+:::
+
+:::center
+*Schedule, by phase*
+:::
+
+:::table[Phases, owners and exit criteria]{#tbl-phases .wide}
+| Phase | Scope | Exit criterion | Owner | Weeks | Depends on |
+|---|---|---|---|--:|---|
+| P0 | Corpus, CI, hygiene | every rule has a case | O.C. | 1 | — |
+| P1 | Engine | corpus green, perf at 2×, fuzz 30 s | O.C. | 4 | P0 |
+| P2 | Model and emit | both docs match the golden DOM | O.C. | 2 | P1 |
+| P3 | Runtime | smoke green in Chromium and Firefox;\
+  no math task over 50 ms | O.C. | 3 | P2 |
+:::
+
+<style>
+  [data-t="note"] { background: var(--t-soft); border-inline-start: 4px solid var(--t-link); padding: .7rem 1rem; border-radius: 4px; font-size: .92em; }
+  #side-toc { position: sticky; top: 1rem; float: right; width: 14rem; margin-left: 1rem; font-size: .9em; }
+  #side-toc ol { padding-inline-start: 1.2rem; margin: 0; }
+  .byline { color: var(--t-muted); margin-top: -1rem; }
+  .tern h2 { display: flow-root; } /* a heading's rule stops at the floating contents */
+  .t-cell.muted { color: var(--t-muted); }
+  .glance { background: var(--t-soft); padding: .6rem 1rem; border-radius: 6px; }
+  span.aside { display: block; font-size: .85em; color: var(--t-muted); border-inline-start: 2px solid var(--t-line); padding-inline-start: .6rem; margin-block: .5rem; }
+  [data-t="card"] { border: 1px solid var(--t-line); border-radius: 6px; padding: .8rem 1rem; }
+  [data-t="details"] > summary { cursor: pointer; }
+  .center { text-align: center; }
+  @media (max-width: 60rem) { #side-toc { float: none; width: auto; position: static; } }
+</style>

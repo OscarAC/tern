@@ -1,0 +1,2230 @@
+# Raw HTML: blocks, inline tags and scoping
+
+Block kinds (comment, raw text, one-line, generic) with their end conditions,
+depth counting and its tag-name boundary, what does not start a block, `html.wrapper`,
+attribute lines before raw HTML, and inline raw HTML (phrasing and custom tags,
+lower case only, `svg`/`math`/`textarea` verbatim, form controls).
+
+An unclosed comment or raw-text block is shown as `pre.t-error`;
+`html.inline-escaped` on a single upper-case letter needs its end tag;
+`html.wrapper` also fires on a line holding Tern syntax without a blank line.
+
+## html/comment-one-line
+
+spec: syntax-blocks#raw-html
+
+A comment that closes on its opening line is one `html` node of kind `comment`.
+
+````tern
+<!-- TODO: async iterators -->
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<!-- TODO: async iterators -->","data":{"tern":{"kind":"comment"}}}]}
+````
+
+````html
+<!-- TODO: async iterators -->
+````
+
+## html/comment-multi-line
+
+spec: syntax-blocks#raw-html syntax-blocks#r1
+
+A comment runs to the first line containing `-->`; headings, `:::` lines and blank lines inside it are part of it, and a comment gets no `html.wrapper`.
+
+````tern
+<!--
+# not a heading
+
+:::note
+-->
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<!--\n# not a heading\n\n:::note\n-->","data":{"tern":{"kind":"comment"}}}]}
+````
+
+````html
+<!--
+# not a heading
+
+:::note
+-->
+````
+
+## html/comment-trailing-text
+
+spec: syntax-blocks#raw-html
+
+The block ends on the line containing `-->`, and the whole of that line belongs to it, text after the `-->` included.
+
+````tern
+<!-- a --> *b*
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<!-- a --> *b*","data":{"tern":{"kind":"comment"}}}]}
+````
+
+````html
+<!-- a --> *b*
+````
+
+## html/comment-unclosed
+
+spec: syntax-blocks#raw-html diagnostics#html-unclosed
+
+A comment with no `-->` runs to the end of the note, swallowing the heading after it, with `html.unclosed` at the tag line. It is not emitted as a comment, which would hide the rest of the page, but as `pre.t-error` holding the escaped source; the node is marked `unclosed`.
+
+````tern
+<!-- draft
+## Heading
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<!-- draft\n## Heading","data":{"tern":{"kind":"comment","unclosed":true}}}]}
+````
+
+````html
+<pre class="t-error">&lt;!-- draft
+## Heading</pre>
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/comment-through-closer
+
+spec: syntax-blocks#raw-html syntax-blocks#closer syntax-inline#residual-fences
+
+A `:::` line does not end a comment (only generic blocks are cut by it), so an unclosed comment inside a container runs to the end of the note, `:::` included, and leaves the container open; the container's `block.unclosed` names the comment's line, as for an unclosed fence. The comment is shown as `pre.t-error`.
+
+````tern
+:::box
+<!-- draft
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<pre class="t-error">&lt;!-- draft
+:::</pre>
+</div>
+````
+
+````diagnostics
+2:1 error html.unclosed
+1:1 error block.unclosed "opened on line 2"
+````
+
+## html/script-containing-colons
+
+spec: syntax-blocks#raw-html syntax-blocks#r1 syntax-inline#residual-fences
+
+A `<script>` is raw text to its `</script>` line: the `:::` inside the script does not close the container, and the closer after it does.
+
+````tern
+:::box
+<script>
+const fence = `
+:::
+`;
+</script>
+:::
+````
+
+````json ast
+{"type":"root","children":[{"type":"containerDirective","name":"box","children":[{"type":"html","value":"<script>\nconst fence = `\n:::\n`;\n</script>","data":{"tern":{"kind":"rawtext"}}}]}]}
+````
+
+````html
+<div class="t-block box" data-t="box">
+<script>
+const fence = `
+:::
+`;
+</script>
+</div>
+````
+
+## html/rawtext-pre
+
+spec: syntax-blocks#raw-html
+
+A `<pre>` is raw text: its lines, a blank one and Tern-looking ones included, are kept as written, and raw text gets no `html.wrapper`.
+
+````tern
+<pre>
+*not emphasis*
+
+  # indented, kept
+</pre>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<pre>\n*not emphasis*\n\n  # indented, kept\n</pre>","data":{"tern":{"kind":"rawtext"}}}]}
+````
+
+````html
+<pre>
+*not emphasis*
+
+  # indented, kept
+</pre>
+````
+
+## html/rawtext-style-any-case
+
+spec: syntax-blocks#raw-html
+
+The raw-text opener matches in any case, and `</style>` ends the block it opened.
+
+````tern
+<STYLE>
+p { color: red }
+</style>
+after
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<STYLE>\np { color: red }\n</style>","data":{"tern":{"kind":"rawtext"}}},{"type":"paragraph"}]}
+````
+
+````html
+<STYLE>
+p { color: red }
+</style>
+<p>after</p>
+````
+
+## html/rawtext-end-tag-whitespace
+
+spec: syntax-blocks#raw-html
+options: escaped
+
+A raw-text end tag is `</NAME`, optional spaces or tabs, then `>`, in any case, as a generic closing is: `</script >` ends the script, and `</STYLE\t>` the style, instead of running on with `html.unclosed`.
+
+````tern
+<script>
+let x = 1;
+</script >
+<style>p { color: red }</STYLE\t>
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<script>\nlet x = 1;\n</script >","data":{"tern":{"kind":"rawtext"}}},{"type":"html","value":"<style>p { color: red }</STYLE\t>","data":{"tern":{"kind":"rawtext"}}},{"type":"paragraph"}]}
+````
+
+````html
+<script>
+let x = 1;
+</script >
+<style>p { color: red }</STYLE	>
+<p>After.</p>
+````
+
+````diagnostics
+````
+
+## html/rawtext-same-line
+
+spec: syntax-blocks#raw-html
+
+A raw-text element whose end tag is on its opening line is a one-line block: for every kind, an end tag on the opener line counts.
+
+````tern
+<script src="app.js"></script>
+Text after.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<script src=\"app.js\"></script>","data":{"tern":{"kind":"rawtext"}}},{"type":"paragraph"}]}
+````
+
+````html
+<script src="app.js"></script>
+<p>Text after.</p>
+````
+
+## html/rawtext-boundary-custom
+
+spec: syntax-blocks#raw-html
+
+`<pre-wrap>` is a custom element, not a `<pre`: the raw-text test needs whitespace, `>` or the end of the line after the name, so this is a generic block.
+
+````tern
+<pre-wrap>
+text
+</pre-wrap>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<pre-wrap>\ntext\n</pre-wrap>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<pre-wrap>
+text
+</pre-wrap>
+````
+
+## html/rawtext-unclosed-through-closer
+
+spec: syntax-blocks#raw-html syntax-blocks#closer syntax-inline#residual-fences
+
+An unclosed raw-text block runs through `:::` closers to the end of the note, so the container around it is unclosed too, with a hint naming the `<style>` line. The block is shown as `pre.t-error` holding its escaped source, the `:::` line included, not emitted as a stylesheet.
+
+````tern
+:::box
+<style>
+p { color: red }
+:::
+````
+
+````json ast
+{"type":"root","children":[{"type":"containerDirective","name":"box","children":[{"type":"html","value":"<style>\np { color: red }\n:::","data":{"tern":{"kind":"rawtext","unclosed":true}}}]}]}
+````
+
+````html
+<div class="t-block box" data-t="box">
+<pre class="t-error">&lt;style&gt;
+p { color: red }
+:::</pre>
+</div>
+````
+
+````diagnostics
+2:1 error html.unclosed
+1:1 error block.unclosed "opened on line 2"
+````
+
+## html/rawtext-script-closed-verbatim
+
+spec: syntax-blocks#raw-html elements#raw-html-scoping
+
+A closed `<script>` block is still emitted byte for byte (only unclosed ones become error blocks): `<` and `&` in the script are not escaped.
+
+````tern
+<script>
+if (a < b && ready) start();
+</script>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<script>\nif (a < b && ready) start();\n</script>","data":{"tern":{"kind":"rawtext"}}}]}
+````
+
+````html
+<script>
+if (a < b && ready) start();
+</script>
+````
+
+## html/rawtext-script-unclosed
+
+spec: syntax-blocks#raw-html diagnostics#html-unclosed syntax-blocks#r7
+
+A `<script>` with no `</script>` runs to the end of the note, heading included, with `html.unclosed` at its line, and is shown as `pre.t-error` holding the escaped source (`<`, `>` and `&` escaped) instead of being run as a script.
+
+````tern
+Before.
+
+<script>
+if (a < b && ready) start();
+## Not a heading
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph"},{"type":"html","value":"<script>\nif (a < b && ready) start();\n## Not a heading","data":{"tern":{"kind":"rawtext","unclosed":true}}}]}
+````
+
+````html
+<p>Before.</p>
+<pre class="t-error">&lt;script&gt;
+if (a &lt; b &amp;&amp; ready) start();
+## Not a heading</pre>
+````
+
+````diagnostics
+3:1 error html.unclosed
+````
+
+## html/rawtext-style-unclosed
+
+spec: syntax-blocks#raw-html diagnostics#html-unclosed
+
+An unclosed `<style>` at the end of the note is shown as `pre.t-error`, not applied as a stylesheet.
+
+````tern
+<style>
+.note > p { color: red }
+````
+
+````html
+<pre class="t-error">&lt;style&gt;
+.note &gt; p { color: red }</pre>
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/rawtext-textarea-unclosed
+
+spec: syntax-blocks#raw-html diagnostics#html-unclosed
+
+An unclosed `<textarea>` swallows the blank line and the heading after it (raw text ends only at its end tag), and the whole of it is shown as `pre.t-error`, blank line included.
+
+````tern
+<textarea name="answer">
+Type *here*.
+
+## Next
+````
+
+````html
+<pre class="t-error">&lt;textarea name="answer"&gt;
+Type *here*.
+
+## Next</pre>
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/rawtext-pre-unclosed
+
+spec: syntax-blocks#raw-html diagnostics#html-unclosed
+
+An unclosed `<pre>` is shown as `pre.t-error`; the source keeps its indentation and only `<`, `>` and `&` are escaped.
+
+````tern
+<pre>
+  indented & kept
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<pre>\n  indented & kept","data":{"tern":{"kind":"rawtext","unclosed":true}}}]}
+````
+
+````html
+<pre class="t-error">&lt;pre&gt;
+  indented &amp; kept</pre>
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/rawtext-self-closed-script
+
+spec: syntax-blocks#raw-html diagnostics#html-unclosed syntax-blocks#r7
+
+The kinds are tested in table order, so `<script … />` is the raw-text kind (`<script` then a space), not a self-closed one-line tag; the browser ignores the `/` too. With no `</script>` it runs to the end of the note and is shown as `pre.t-error`.
+
+````tern
+<script src="app.js" />
+Text after.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<script src=\"app.js\" />\nText after.","data":{"tern":{"kind":"rawtext","unclosed":true}}}]}
+````
+
+````html
+<pre class="t-error">&lt;script src="app.js" /&gt;
+Text after.</pre>
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/comment-unclosed-in-quote
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm syntax-blocks#blockquote diagnostics#html-unclosed
+
+An unclosed comment inside a quote ends where the quote's prefix fails (its parent end), with `html.unclosed` at the column where the remainder starts. The `pre.t-error` holds the remainders, without the `> ` prefixes; the next line is not lazy and is a paragraph.
+
+````tern
+> <!-- draft
+> *still hidden*
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"blockquote","children":[{"type":"html","value":"<!-- draft\n*still hidden*","data":{"tern":{"kind":"comment","unclosed":true}}}]},{"type":"paragraph"}]}
+````
+
+````html
+<blockquote>
+<pre class="t-error">&lt;!-- draft
+*still hidden*</pre>
+</blockquote>
+<p>After.</p>
+````
+
+````diagnostics
+1:3 error html.unclosed
+````
+
+## html/rawtext-unclosed-in-list-item
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm syntax-blocks#lists diagnostics#html-unclosed
+
+An unclosed `<pre>` inside a list item ends with the item. The `pre.t-error` holds the remainders, so each line loses the item's two columns of indentation and keeps anything deeper.
+
+````tern
+- <pre>
+  code line
+    deeper
+next
+````
+
+````html
+<ul>
+<li><pre class="t-error">&lt;pre&gt;
+code line
+  deeper</pre></li>
+</ul>
+<p>next</p>
+````
+
+````diagnostics
+1:3 error html.unclosed
+````
+
+## html/comment-short-forms
+
+spec: syntax-blocks#raw-html
+
+`<!-->` and `<!--->` end a comment on their own line, as in CommonMark 0.31, so each is a one-line comment block and nothing is unclosed.
+
+````tern
+<!-->
+Text after.
+
+<!--->
+More text.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<!-->","data":{"tern":{"kind":"comment"}}},{"type":"paragraph"},{"type":"html","value":"<!--->","data":{"tern":{"kind":"comment"}}},{"type":"paragraph"}]}
+````
+
+````diagnostics
+````
+
+## html/tag-names-any-case
+
+spec: syntax-blocks#raw-html
+
+Tag names are case-insensitive throughout: `<Script>` ends at `</SCRIPT>`, and `<DIV>` starts a generic block that `</div>` closes.
+
+````tern
+<Script>
+x = 1;
+</SCRIPT>
+<DIV class="box">
+y
+</div>
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<Script>\nx = 1;\n</SCRIPT>","data":{"tern":{"kind":"rawtext"}}},{"type":"html","value":"<DIV class=\"box\">\ny\n</div>","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"}]}
+````
+
+````html
+<Script>
+x = 1;
+</SCRIPT>
+<DIV class="box">
+y
+</div>
+<p>After.</p>
+````
+
+## html/stray-end-tag
+
+spec: syntax-blocks#raw-html diagnostics#html-stray-closer
+
+A lone end tag is a one-line block, emitted verbatim, with `html.stray-closer` (I) and a hint naming the container spelling.
+
+````tern
+Some text.
+
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph"},{"type":"html","value":"</div>","data":{"tern":{"kind":"oneline"}}}]}
+````
+
+````html
+<p>Some text.</p>
+</div>
+````
+
+````diagnostics
+3:1 info html.stray-closer ":::div"
+````
+
+## html/stray-end-tag-table
+
+spec: syntax-blocks#raw-html diagnostics#html-stray-closer
+
+A lone `</table>` is a stray one-line block like any other, but its hint points to a pipe table or a raw `<table>` block, not to `:::table`.
+
+````tern
+Some text.
+
+</table>
+````
+
+````html
+<p>Some text.</p>
+</table>
+````
+
+````diagnostics
+3:1 info html.stray-closer "pipe table"
+````
+
+## html/end-tag-phrasing-not-block
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html diagnostics#html-stray-closer
+
+The one-line `</NAME>` kind is limited to block-level and custom names, so a phrasing end tag at the start of a line continues the paragraph. With no `<span>` open, it is a stray inline end tag: verbatim, with `html.stray-closer` (I) at the tag.
+
+````tern
+Some text
+</span> and more.
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","value":"Some text\n"},{"type":"html","value":"</span>"},{"type":"text","value":" and more."}]}]}
+````
+
+````html
+<p>Some text
+</span> and more.</p>
+````
+
+````diagnostics
+2:1 info html.stray-closer
+````
+
+## html/void-block-tag
+
+spec: syntax-blocks#raw-html
+
+A void block tag (`<hr …>`, `<link …>`) is a one-line block; it is tested before the generic kind, so it is never depth-counted.
+
+````tern
+<hr class="thin">
+<link rel="stylesheet" href="extra.css">
+Text.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<hr class=\"thin\">","data":{"tern":{"kind":"oneline"}}},{"type":"html","value":"<link rel=\"stylesheet\" href=\"extra.css\">","data":{"tern":{"kind":"oneline"}}},{"type":"paragraph"}]}
+````
+
+````html
+<hr class="thin">
+<link rel="stylesheet" href="extra.css">
+<p>Text.</p>
+````
+
+## html/self-closed-block-tag
+
+spec: syntax-blocks#raw-html
+
+A self-closed block-level or custom tag is a one-line block.
+
+````tern
+<my-widget data-src="a.json"/>
+<div class="spacer" />
+Text.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<my-widget data-src=\"a.json\"/>","data":{"tern":{"kind":"oneline"}}},{"type":"html","value":"<div class=\"spacer\" />","data":{"tern":{"kind":"oneline"}}},{"type":"paragraph"}]}
+````
+
+````html
+<my-widget data-src="a.json"/>
+<div class="spacer" />
+<p>Text.</p>
+````
+
+## html/optional-end-p-one-line
+
+spec: syntax-blocks#raw-html
+
+A `<p>` opener is a one-line block because its end tag may be omitted; the next line is a Tern paragraph, not part of the raw block.
+
+````tern
+<p class="lead">An opening paragraph
+that continues *here*.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<p class=\"lead\">An opening paragraph","data":{"tern":{"kind":"oneline"}}},{"type":"paragraph"}]}
+````
+
+````html
+<p class="lead">An opening paragraph
+<p>that continues <em>here</em>.</p>
+````
+
+## html/optional-end-p-closing-stray
+
+spec: syntax-blocks#raw-html diagnostics#html-stray-closer
+
+Wrapping Tern text in `<p>` … `</p>` lines gives a raw `<p>`, a Tern paragraph, and a stray `</p>` that interrupts it.
+
+````tern
+<p>
+A paragraph in Tern.
+</p>
+````
+
+````html
+<p>
+<p>A paragraph in Tern.</p>
+</p>
+````
+
+````diagnostics
+3:1 info html.stray-closer
+````
+
+## html/optional-end-others
+
+spec: syntax-blocks#raw-html
+
+`li`, `tr` and `dt` openers are one-line blocks too, one node per line.
+
+````tern
+<li>first
+<tr><td>a</td></tr>
+<dt>term
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<li>first","data":{"tern":{"kind":"oneline"}}},{"type":"html","value":"<tr><td>a</td></tr>","data":{"tern":{"kind":"oneline"}}},{"type":"html","value":"<dt>term","data":{"tern":{"kind":"oneline"}}}]}
+````
+
+````html
+<li>first
+<tr><td>a</td></tr>
+<dt>term
+````
+
+## html/div-with-blank-lines
+
+spec: syntax-blocks#raw-html
+
+A generic block ends at its matching close tag, not at a blank line; a line after the blank that begins with `<` gets no warning.
+
+````tern
+<div class="cards">
+<section>One</section>
+
+<section>Two</section>
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div class=\"cards\">\n<section>One</section>\n\n<section>Two</section>\n</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<div class="cards">
+<section>One</section>
+
+<section>Two</section>
+</div>
+````
+
+## html/form-example
+
+spec: syntax-blocks#raw-html
+
+The raw HTML block example: the five lines, blank line included, are one `html` node. `html.wrapper` ignores leading whitespace when it tests for `<`, so the indented `<label>` and `<button>` lines are tag lines and nothing is reported.
+
+````tern
+<form id="guess">
+  <label>Guess <input name="n"></label>
+
+  <button>Check</button>
+</form>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<form id=\"guess\">\n  <label>Guess <input name=\"n\"></label>\n\n  <button>Check</button>\n</form>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<form id="guess">
+  <label>Guess <input name="n"></label>
+
+  <button>Check</button>
+</form>
+````
+
+## html/nested-same-tag
+
+spec: syntax-blocks#raw-html
+
+Nested tags of the same name are counted: the block ends where openings minus closings of `div` returns to 0, and the next line is Tern.
+
+````tern
+<div class="outer">
+<div class="inner">
+inner text
+</div>
+outer text
+</div>
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div class=\"outer\">\n<div class=\"inner\">\ninner text\n</div>\nouter text\n</div>","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"}]}
+````
+
+````html
+<div class="outer">
+<div class="inner">
+inner text
+</div>
+outer text
+</div>
+<p>After.</p>
+````
+
+## html/generic-same-line-closes
+
+spec: syntax-blocks#raw-html
+
+The count can return to 0 on the opener line itself; the block is then that one line.
+
+````tern
+<div class="note">Closed on its own line.</div>
+Then *Tern*.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div class=\"note\">Closed on its own line.</div>","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"}]}
+````
+
+````html
+<div class="note">Closed on its own line.</div>
+<p>Then <em>Tern</em>.</p>
+````
+
+## html/generic-same-line-reopens
+
+spec: syntax-blocks#raw-html
+
+Every opening and closing on the opener line counts, so a line that closes one `div` and opens another leaves the block open.
+
+````tern
+<div>a</div><div>
+b
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>a</div><div>\nb\n</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<div>a</div><div>
+b
+</div>
+````
+
+## html/details-panel-boundary
+
+spec: syntax-blocks#raw-html
+
+The tag-name boundary: `<details-panel>` and `</details-panel>` are not an opening and a closing of `details`, so the `<details>` block ends at its own `</details>`.
+
+````tern
+<details>
+<summary>More</summary>
+<details-panel>Body</details-panel>
+</details>
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<details>\n<summary>More</summary>\n<details-panel>Body</details-panel>\n</details>","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"}]}
+````
+
+````html
+<details>
+<summary>More</summary>
+<details-panel>Body</details-panel>
+</details>
+<p>After.</p>
+````
+
+## html/divider-boundary
+
+spec: syntax-blocks#raw-html
+
+The tag-name boundary: `<divider>` is not an opening of `div`.
+
+````tern
+<div>
+<divider></divider>
+</div>
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>\n<divider></divider>\n</div>","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"}]}
+````
+
+````html
+<div>
+<divider></divider>
+</div>
+<p>After.</p>
+````
+
+## html/self-closed-not-counted
+
+spec: syntax-blocks#raw-html
+
+A self-closed `<div/>` inside a generic block is not an opening.
+
+````tern
+<div>
+<div/>
+</div>
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>\n<div/>\n</div>","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"}]}
+````
+
+````html
+<div>
+<div/>
+</div>
+<p>After.</p>
+````
+
+## html/closing-spellings
+
+spec: syntax-blocks#raw-html
+
+Names compare case-insensitively, and a closing may have whitespace before its `>`: `</DIV>` and `</div >` both count.
+
+````tern
+<div>
+<div>
+</DIV>
+</div >
+After.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>\n<div>\n</DIV>\n</div >","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"}]}
+````
+
+````html
+<div>
+<div>
+</DIV>
+</div >
+<p>After.</p>
+````
+
+## html/opener-attrs-next-line
+
+spec: syntax-blocks#raw-html
+
+`<NAME` at the end of the line starts a generic block, so a tag whose attributes wrap is still one block.
+
+````tern
+<div
+  class="note">
+text
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div\n  class=\"note\">\ntext\n</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<div
+  class="note">
+text
+</div>
+````
+
+## html/custom-element
+
+spec: syntax-blocks#raw-html
+
+A valid custom-element name (lower case, starting with a letter, containing `-`) starts a generic block, depth-counted on its own name.
+
+````tern
+<tide-clock station="leith">
+<span slot="label">Leith</span>
+</tide-clock>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<tide-clock station=\"leith\">\n<span slot=\"label\">Leith</span>\n</tide-clock>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<tide-clock station="leith">
+<span slot="label">Leith</span>
+</tide-clock>
+````
+
+## html/heading-tag-no-id
+
+spec: syntax-blocks#raw-html syntax-blocks#heading
+
+A raw `<h2>` is a generic block emitted verbatim: it gets no id, unlike a Tern heading.
+
+````tern
+<h2>Raw heading</h2>
+
+## Tern heading
+````
+
+````html
+<h2>Raw heading</h2>
+<h2 id="tern-heading">Tern heading</h2>
+````
+
+## html/generic-not-cut
+
+spec: syntax-blocks#raw-html syntax-blocks#r1
+
+Blank lines, headings, `$$` and `+++` do not end a generic block; the first text line after the blank gets `html.wrapper`.
+
+````tern
+<div>
+
+## Not a heading
+$$
++++
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>\n\n## Not a heading\n$$\n+++\n</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<div>
+
+## Not a heading
+$$
++++
+</div>
+````
+
+````diagnostics
+3:1 warning html.wrapper
+````
+
+## html/unclosed-div-cut-by-closer
+
+spec: syntax-blocks#raw-html syntax-blocks#closer diagnostics#html-unclosed syntax-inline#residual-html-soup
+
+A generic block whose close tag never comes is cut by a `:::` closer line, which is then reprocessed and closes the container.
+
+````tern
+:::box
+<div class="card">
+Body text
+:::
+after
+````
+
+````json ast
+{"type":"root","children":[{"type":"containerDirective","name":"box","children":[{"type":"html","value":"<div class=\"card\">\nBody text","data":{"tern":{"kind":"generic"}}}]},{"type":"paragraph"}]}
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="card">
+Body text
+</div>
+<p>after</p>
+````
+
+````diagnostics
+2:1 error html.unclosed
+````
+
+## html/unclosed-div-cut-by-opener
+
+spec: syntax-blocks#raw-html syntax-blocks#container
+
+A `:::` opener line also cuts an unclosed generic block, and then opens its container.
+
+````tern
+<div>
+text
+:::box
+inside
+:::
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>\ntext","data":{"tern":{"kind":"generic"}}},{"type":"containerDirective","name":"box"}]}
+````
+
+````html
+<div>
+text
+<div class="t-block box" data-t="box">
+<p>inside</p>
+</div>
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/plus-line-not-terminator
+
+spec: syntax-blocks#raw-html syntax-blocks#cells
+
+A `+++` line inside a raw block inside a container is content: it does not cut the block or split the container into cells.
+
+````tern
+:::box
+<div>
++++
+</div>
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div>
++++
+</div>
+</div>
+````
+
+## html/unclosed-div-end-of-note
+
+spec: syntax-blocks#raw-html diagnostics#html-unclosed
+
+An unclosed generic block runs to the end of the note, with `html.unclosed` at its tag line. It is still emitted as raw HTML (the error block is only for comment and raw-text blocks): the browser shows its text.
+
+````tern
+<section>
+text
+````
+
+````html
+<section>
+text
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/unclosed-div-in-list
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm syntax-blocks#lists
+
+An unclosed generic block inside a list item ends with the item (its parent); the next line is not lazy and starts a paragraph. `html.unclosed` is at the column where the remainder starts, and the generic block is still raw HTML (the error block covers only comment and raw-text blocks).
+
+````tern
+- <div>
+  text
+next
+````
+
+````html
+<ul>
+<li><div>
+text</li>
+</ul>
+<p>next</p>
+````
+
+````diagnostics
+1:3 error html.unclosed
+````
+
+## html/unclosed-div-closer-dedented
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm syntax-blocks#lists syntax-blocks#r2
+
+A close tag below the item's content column is outside the item: the item's block is unclosed (at the remainder's column), and the `</div>` line is a stray end tag.
+
+````tern
+- <div>
+  a
+</div>
+````
+
+````html
+<ul>
+<li><div>
+a</li>
+</ul>
+</div>
+````
+
+````diagnostics
+1:3 error html.unclosed
+3:1 info html.stray-closer
+````
+
+## html/residual-quoted-end-tag
+
+spec: syntax-blocks#raw-html syntax-blocks#raw-html-generic
+
+Depth counting is textual: a `</div>` inside a quoted attribute value still counts, so this block ends on its opener line and the real `</div>` is stray.
+
+````tern
+<div title="</div>">
+text
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div title=\"</div>\">","data":{"tern":{"kind":"generic"}}},{"type":"paragraph"},{"type":"html","value":"</div>","data":{"tern":{"kind":"oneline"}}}]}
+````
+
+````html
+<div title="</div>">
+<p>text</p>
+</div>
+````
+
+````diagnostics
+3:1 info html.stray-closer
+````
+
+## html/residual-comment-opening
+
+spec: syntax-blocks#raw-html syntax-blocks#raw-html-generic
+
+Depth counting is textual: a `<div>` inside a comment inside the block still counts, so the block never returns to 0 and runs to the end of the note.
+
+````tern
+<div>
+<!-- <div> -->
+</div>
+text
+````
+
+````html
+<div>
+<!-- <div> -->
+</div>
+text
+````
+
+````diagnostics
+1:1 error html.unclosed
+````
+
+## html/wrapper-warning
+
+spec: syntax-blocks#raw-html diagnostics#html-wrapper
+
+The `<div>`-around-markdown habit: the markdown stays raw HTML text, and the first text line after a blank line gets `html.wrapper` naming `:::div`.
+
+````tern
+<div class="note">
+
+**Markdown** inside.
+
+</div>
+````
+
+````html
+<div class="note">
+
+**Markdown** inside.
+
+</div>
+````
+
+````diagnostics
+3:1 warning html.wrapper ":::div{"
+````
+
+## html/wrapper-only-first
+
+spec: syntax-blocks#raw-html
+
+Only the first qualifying line gets `html.wrapper`: a plain text line (no Tern syntax) with no blank line before it and a tag line after a blank do not qualify, and later text lines after blanks are not reported again.
+
+````tern
+<div>
+text one
+
+<p>tag line</p>
+
+text two
+
+text three
+</div>
+````
+
+````html
+<div>
+text one
+
+<p>tag line</p>
+
+text two
+
+text three
+</div>
+````
+
+````diagnostics
+6:1 warning html.wrapper
+````
+
+## html/wrapper-markdown-no-blank
+
+spec: syntax-blocks#raw-html diagnostics#html-wrapper
+
+The 0.1 pattern, a `<div>` around Markdown with no blank line. The block is still one verbatim `html` node (the `**` shows literally), and the first line inside it that holds Tern syntax gets `html.wrapper`, naming `:::div`.
+
+````tern
+<div class="box">
+Some **bold** text
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div class=\"box\">\nSome **bold** text\n</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<div class="box">
+Some **bold** text
+</div>
+````
+
+````diagnostics
+2:1 warning html.wrapper ":::div{"
+````
+
+## html/wrapper-plain-prose-silent
+
+spec: syntax-blocks#raw-html
+
+A plain prose line inside a generic block, with no blank line before it and none of the Tern marks, gets no `html.wrapper`. `#hashtag` is not a heading marker (no space after `#`) and `3.5` is not a list marker (no space after the `.`).
+
+````tern
+<div class="note">
+Plain prose, with commas: and nothing else.
+#hashtag and 3.5 are not markers either.
+</div>
+````
+
+````html
+<div class="note">
+Plain prose, with commas: and nothing else.
+#hashtag and 3.5 are not markers either.
+</div>
+````
+
+````diagnostics
+````
+
+## html/wrapper-list-marker
+
+spec: syntax-blocks#raw-html syntax-blocks#lists diagnostics#html-wrapper
+
+A line inside a generic block that begins with a list-item marker gets `html.wrapper`, once per block, even with no blank line before it.
+
+````tern
+<div>
+- first
+- second
+</div>
+````
+
+````html
+<div>
+- first
+- second
+</div>
+````
+
+````diagnostics
+2:1 warning html.wrapper
+````
+
+## html/wrapper-each-trigger
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm diagnostics#html-wrapper
+
+Each mark makes a line Tern syntax on its own: `[`, `$`, a backtick, a `:::` inside the line, an ordered list marker, and a line starting with `|` (here a whole pipe table). Each block gets its own `html.wrapper`.
+
+````tern
+<div>
+See [the docs](x.html).
+</div>
+<div>
+It costs $5.
+</div>
+<div>
+Run `make` first.
+</div>
+<div>
+Then :::note opens nothing.
+</div>
+<div>
+1. first step
+</div>
+<div>
+| a | b |
+|---|---|
+</div>
+````
+
+````diagnostics
+2:1 warning html.wrapper
+5:1 warning html.wrapper
+8:1 warning html.wrapper
+11:1 warning html.wrapper
+14:1 warning html.wrapper
+17:1 warning html.wrapper
+````
+
+## html/wrapper-lone-pipe-line
+
+spec: syntax-blocks#raw-html diagnostics#html-wrapper
+
+A line that begins with `|` is Tern syntax for the wrapper test whether or not a delimiter row follows it.
+
+````tern
+<div>
+| not a table
+</div>
+````
+
+````html
+<div>
+| not a table
+</div>
+````
+
+````diagnostics
+2:1 warning html.wrapper
+````
+
+## html/wrapper-indented-column
+
+spec: syntax-blocks#raw-html syntax-blocks#blockquote syntax-blocks#r2 diagnostics#html-wrapper
+
+`html.wrapper` is positioned at the line's first non-space character: the indented quote-marker line gets it at column 3.
+
+````tern
+<section>
+  > quoted text
+</section>
+````
+
+````html
+<section>
+  > quoted text
+</section>
+````
+
+````diagnostics
+2:3 warning html.wrapper
+````
+
+## html/wrapper-heading-marker
+
+spec: syntax-blocks#raw-html syntax-blocks#heading diagnostics#html-wrapper
+
+A line inside a generic block that begins with a heading marker (`#` then a space) gets `html.wrapper` with no blank line before it; the raw block is not cut, so there is no heading.
+
+````tern
+<aside>
+## Not a heading
+</aside>
+````
+
+````html
+<aside>
+## Not a heading
+</aside>
+````
+
+````diagnostics
+2:1 warning html.wrapper
+````
+
+## html/wrapper-whitespace-only-line
+
+spec: syntax-blocks#raw-html syntax-blocks#r3 diagnostics#html-wrapper
+options: escaped
+
+A whitespace-only line inside a generic block counts as blank, so the plain text line after it gets `html.wrapper`.
+
+````tern
+<div>
+\u0020\u0020
+plain text
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>\n  \nplain text\n</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````diagnostics
+3:1 warning html.wrapper
+````
+
+## html/leading-whitespace-ignored
+
+spec: syntax-blocks#raw-html syntax-blocks#r2
+
+Leading whitespace before the `<` is ignored when the block starts (there are no indented code blocks), and kept in the verbatim value.
+
+````tern
+      <div>x</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"      <div>x</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<div>x</div>
+````
+
+## html/interrupts-paragraph
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm
+
+A raw HTML block interrupts a paragraph.
+
+````tern
+Some text
+<div>raw</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph"},{"type":"html","value":"<div>raw</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<p>Some text</p>
+<div>raw</div>
+````
+
+## html/phrasing-tag-starts-paragraph
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html
+
+A phrasing tag at the start of a line begins a paragraph; the tags pass through as inline `html` nodes and the text between them is parsed.
+
+````tern
+<span class="badge">new</span> Released *today*.
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph","children":[{"type":"html","value":"<span class=\"badge\">"},{"type":"text","value":"new"},{"type":"html","value":"</span>"},{"type":"text","value":" Released "},{"type":"emphasis","children":[{"type":"text","value":"today"}]},{"type":"text","value":"."}]}]}
+````
+
+````html
+<p><span class="badge">new</span> Released <em>today</em>.</p>
+````
+
+## html/phrasing-tag-no-interrupt
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm syntax-blocks#paragraph
+
+A line starting with a phrasing tag does not interrupt a paragraph; it continues it.
+
+````tern
+Some text
+<b>bold</b> continues it.
+````
+
+````html
+<p>Some text
+<b>bold</b> continues it.</p>
+````
+
+## html/raw-ends-lazy-quote
+
+spec: syntax-blocks#raw-html syntax-blocks#line-algorithm syntax-blocks#blockquote
+
+A raw HTML line would interrupt a paragraph, so it is not a lazy continuation: it ends the quote and starts a raw block.
+
+````tern
+> quoted
+<div>raw</div>
+````
+
+````html
+<blockquote>
+<p>quoted</p>
+</blockquote>
+<div>raw</div>
+````
+
+## html/select-multiline
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html
+
+`select` and `option` are phrasing, so a `<select>` written over several lines is one paragraph of inline tags. The one-line `</NAME>` kind is limited to block-level and custom names, so the `</select>` line continues the paragraph instead of becoming a stray one-line block.
+
+````tern
+<select name="size">
+<option>S</option>
+</select>
+````
+
+````html
+<p><select name="size">
+<option>S</option>
+</select></p>
+````
+
+## html/less-than-text
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html
+
+`<3 this` and `< 5 items` start nothing: they are paragraphs, and the `<` is escaped.
+
+````tern
+<3 this
+
+< 5 items
+````
+
+````html
+<p>&lt;3 this</p>
+<p>&lt; 5 items</p>
+````
+
+## html/not-block-names
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html syntax-blocks#character-classes
+
+`<divider>` is not block-level and has no `-`; `<My-Widget>` is not lower case, so not a custom element; both lines are paragraphs, escaped, and neither names a known element.
+
+````tern
+<divider> is not a div.
+
+<My-Widget> is not a custom element.
+````
+
+````html
+<p>&lt;divider&gt; is not a div.</p>
+<p>&lt;My-Widget&gt; is not a custom element.</p>
+````
+
+## html/custom-reserved-name
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html syntax-blocks#character-classes
+
+Custom-element names exclude HTML's reserved names: `font-face` is lower case and contains `-`, but it is not a custom element, so the line starts no block, and inline the tag is escaped. It names no current HTML element, so there is no diagnostic.
+
+````tern
+<font-face src="a.woff">
+````
+
+````html
+<p>&lt;font-face src="a.woff"&gt;</p>
+````
+
+````diagnostics
+````
+
+## html/document-tag-not-block
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html diagnostics#html-inline-escaped
+
+`body` is not a block-level name, so `<body …>` starts a paragraph; inline it is not phrasing, so it is escaped with `html.inline-escaped`.
+
+````tern
+<body class="dark">
+````
+
+````html
+<p>&lt;body class="dark"&gt;</p>
+````
+
+````diagnostics
+1:1 info html.inline-escaped
+````
+
+## html/escaped-line-start
+
+spec: syntax-blocks#raw-html syntax-inline#escapes
+
+`\<` at the start of a line turns a would-be raw block into text, with no diagnostic.
+
+````tern
+\<div> is a tag name.
+````
+
+````html
+<p>&lt;div&gt; is a tag name.</p>
+````
+
+## html/attributes-raw
+
+spec: syntax-blocks#raw-html syntax-blocks#attribute-line diagnostics#attributes-raw
+
+An attribute line before a raw HTML block does not attach: it stays paragraph text, with `attributes.raw`.
+
+````tern
+{.wide}
+<table>
+<tr><td>a</td></tr>
+</table>
+````
+
+````html
+<p>{.wide}</p>
+<table>
+<tr><td>a</td></tr>
+</table>
+````
+
+````diagnostics
+1:1 warning attributes.raw "in the tag"
+````
+
+## html/attributes-before-phrasing
+
+spec: syntax-blocks#raw-html syntax-blocks#attribute-line
+
+A line starting with a phrasing tag is a paragraph, so an attribute line before it attaches normally.
+
+````tern
+{.lead}
+<b>Bold</b> opening.
+````
+
+````html
+<p class="lead"><b>Bold</b> opening.</p>
+````
+
+## html/fence-inside-raw-block
+
+spec: syntax-blocks#raw-html syntax-blocks#r1
+
+Fence lines inside a raw block are raw content: no fence opens, and none is left unclosed. The first fence line holds a backtick, which is Tern syntax, so it gets `html.wrapper` with no blank line before it.
+
+````tern
+<div>
+```js
+x
+```
+</div>
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<div>\n```js\nx\n```\n</div>","data":{"tern":{"kind":"generic"}}}]}
+````
+
+````html
+<div>
+```js
+x
+```
+</div>
+````
+
+````diagnostics
+2:1 warning html.wrapper
+````
+
+## html/scoping-not-parsed
+
+spec: elements#raw-html-scoping syntax-blocks#raw-html
+
+Nothing inside a raw block is parsed: the reference, math, footnote reference, element and id there produce no nodes, no ids and none of their own diagnostics (no `ref.dangling`, no `footnote.undefined`). The line holds `$` and `[`, so it gets `html.wrapper`.
+
+````tern
+<div>
+@missing $x$ [^nope] :kbd[k] {#id}
+</div>
+````
+
+````html
+<div>
+@missing $x$ [^nope] :kbd[k] {#id}
+</div>
+````
+
+````diagnostics
+2:1 warning html.wrapper
+````
+
+## html/inline-spec-example
+
+spec: syntax-inline#raw-inline-html
+
+The raw inline HTML example: lower-case phrasing tags, a void `<br>` and a comment pass through inline unchanged.
+
+````tern
+x <b class="y">z</b> <br> <span style="color:red">r</span> <!-- c -->
+````
+
+````html
+<p>x <b class="y">z</b> <br> <span style="color:red">r</span> <!-- c --></p>
+````
+
+## html/inline-custom-element
+
+spec: syntax-inline#raw-inline-html
+
+A custom-element tag passes through inline.
+
+````tern
+Tide now: <tide-clock station="leith"></tide-clock>.
+````
+
+````html
+<p>Tide now: <tide-clock station="leith"></tide-clock>.</p>
+````
+
+## html/inline-content-parsed
+
+spec: syntax-inline#raw-inline-html elements#raw-html-scoping
+
+Each inline tag is its own `html` node; the content between an opening and a closing tag is Tern.
+
+````tern
+Press <kbd>*Ctrl*</kbd> now.
+````
+
+````html
+<p>Press <kbd><em>Ctrl</em></kbd> now.</p>
+````
+
+## html/inline-generic-escaped
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-escaped
+
+A non-phrasing tag inside a paragraph is escaped text, with `html.inline-escaped` at its `<`.
+
+````tern
+Wrap it in a <div> first.
+````
+
+````html
+<p>Wrap it in a &lt;div&gt; first.</p>
+````
+
+````diagnostics
+1:14 info html.inline-escaped "on its own line"
+````
+
+## html/inline-generic-escaped-pair
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-escaped
+
+Both tags of an inline `<div>…</div>` are escaped. `html.inline-escaped` fires on start tags only, so only the `<div>` gets it; the escaped `</div>` is text, not a stray inline end tag.
+
+````tern
+Use <div>x</div> sparingly.
+````
+
+````html
+<p>Use &lt;div&gt;x&lt;/div&gt; sparingly.</p>
+````
+
+````diagnostics
+1:5 info html.inline-escaped
+````
+
+## html/inline-uppercase-info
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-escaped
+
+Inline tags are lower case only: an upper-case `<B>` is escaped. A single upper-case letter gets `html.inline-escaped` only when its matching end tag follows in the same inline content; here `</B>` does, so `<B>` gets the info, and the end tag gets none. The hint for an upper-case name is the lower-case spelling, not "put block HTML on its own line".
+
+````tern
+Old pages wrote <B>bold</B> text.
+````
+
+````html
+<p>Old pages wrote &lt;B&gt;bold&lt;/B&gt; text.</p>
+````
+
+````diagnostics
+1:17 info html.inline-escaped "lower-case"
+````
+
+## html/inline-uppercase-lone-silent
+
+spec: syntax-inline#raw-inline-html
+
+A single upper-case letter tag with no matching end tag in the same paragraph is escaped text and silent, since it may be a generic (`List<B>`).
+
+````tern
+Old pages used <B> for bold, and List<B> is a type.
+````
+
+````html
+<p>Old pages used &lt;B&gt; for bold, and List&lt;B&gt; is a type.</p>
+````
+
+````diagnostics
+````
+
+## html/inline-uppercase-generic
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-escaped
+
+A single-capital generic is text, not an `<a>` tag, and it is silent: no `</A>` follows in the paragraph.
+
+````tern
+Rust has Box<A>.
+````
+
+````html
+<p>Rust has Box&lt;A&gt;.</p>
+````
+
+````diagnostics
+````
+
+## html/inline-uppercase-end-in-next-paragraph
+
+spec: syntax-inline#raw-inline-html
+
+The matching end tag must be in the same inline content; a `</B>` in the next paragraph does not count, so neither paragraph gets a diagnostic.
+
+````tern
+Old pages used <B> for bold.
+
+They closed it with </B> later.
+````
+
+````html
+<p>Old pages used &lt;B&gt; for bold.</p>
+<p>They closed it with &lt;/B&gt; later.</p>
+````
+
+````diagnostics
+````
+
+## html/inline-uppercase-pair-mixed-case
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-escaped diagnostics#html-stray-closer
+
+The end tag matches case-insensitively, so `<B>x</b>` gets the info at `<B>`. The lower-case `</b>` is a phrasing end tag and passes through verbatim; no `<b>` is open, so it is a stray inline end tag with `html.stray-closer` (I) at its `<`.
+
+````tern
+Old pages wrote <B>bold</b> text.
+````
+
+````html
+<p>Old pages wrote &lt;B&gt;bold</b> text.</p>
+````
+
+````diagnostics
+1:17 info html.inline-escaped
+1:24 info html.stray-closer
+````
+
+## html/inline-uppercase-multi-letter
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-escaped
+
+A tag name with an upper-case letter and two or more letters that names a current element gets `html.inline-escaped` whether or not it is closed; the end tag `</EM>` gets nothing.
+
+````tern
+An <EM>old</EM> tag and a <Div> too.
+````
+
+````html
+<p>An &lt;EM&gt;old&lt;/EM&gt; tag and a &lt;Div&gt; too.</p>
+````
+
+````diagnostics
+1:4 info html.inline-escaped
+1:27 info html.inline-escaped
+````
+
+## html/inline-end-tags-silent
+
+spec: syntax-inline#raw-inline-html
+
+End tags never get `html.inline-escaped`: an escaped `</div>` or `</B>` on its own in a paragraph is text with no diagnostic.
+
+````tern
+Close the wrapper with </div> or </B> at the end.
+````
+
+````html
+<p>Close the wrapper with &lt;/div&gt; or &lt;/B&gt; at the end.</p>
+````
+
+````diagnostics
+````
+
+## html/inline-obsolete-silent
+
+spec: syntax-inline#raw-inline-html
+
+`html.inline-escaped` is only for current HTML elements: the obsolete `<center>` and `<FONT>` are escaped text with no diagnostic.
+
+````tern
+Old <center>x</center> and <FONT>y</FONT> markup.
+````
+
+````html
+<p>Old &lt;center&gt;x&lt;/center&gt; and &lt;FONT&gt;y&lt;/FONT&gt; markup.</p>
+````
+
+````diagnostics
+````
+
+## html/inline-escaped-in-heading
+
+spec: syntax-inline#raw-inline-html syntax-blocks#heading diagnostics#html-inline-escaped
+
+`html.inline-escaped` fires in any inline content, a heading included; the slug is built from the escaped text.
+
+````tern
+## The <section> tag
+````
+
+````html
+<h2 id="the-section-tag">The &lt;section&gt; tag</h2>
+````
+
+````diagnostics
+1:8 info html.inline-escaped
+````
+
+## html/inline-generics-text
+
+spec: syntax-inline#raw-inline-html syntax-inline#soft-break
+
+`Vec<T>`, `List<int>` and `a < b` are text; `T` and `int` name no HTML element, so there is no diagnostic.
+
+````tern
+Vec<T>, List<int> and a < b stay text.
+````
+
+````html
+<p>Vec&lt;T&gt;, List&lt;int&gt; and a &lt; b stay text.</p>
+````
+
+## html/inline-svg-verbatim
+
+spec: syntax-inline#raw-inline-html elements#raw-html-scoping
+
+Inline `<svg>` is taken verbatim to its own closing tag: the non-phrasing `<text>`, the `*a*` and the `@b` inside it are not parsed.
+
+````tern
+A dot <svg width="8" height="8"><text x="0" y="8">*a* @b</text></svg> here.
+````
+
+````html
+<p>A dot <svg width="8" height="8"><text x="0" y="8">*a* @b</text></svg> here.</p>
+````
+
+## html/inline-textarea-verbatim
+
+spec: syntax-inline#raw-inline-html
+
+Inline `<textarea>` is verbatim to its closing tag, so the `<div>` and `@x` inside it are neither escaped nor parsed.
+
+````tern
+Notes: <textarea name="n">*raw* <div> @x</textarea> end.
+````
+
+````html
+<p>Notes: <textarea name="n">*raw* <div> @x</textarea> end.</p>
+````
+
+## html/inline-form-controls
+
+spec: syntax-inline#raw-inline-html syntax-blocks#raw-html
+
+Form controls (`label`, `select`, `optgroup`, `option`, `input`, `datalist`, `button`) start a paragraph and pass through inline.
+
+````tern
+<label>Size <select name="s"><optgroup label="Common"><option>M</option></optgroup></select></label> <input list="c"><datalist id="c"><option value="L"></option></datalist> <button>Go</button>
+````
+
+````html
+<p><label>Size <select name="s"><optgroup label="Common"><option>M</option></optgroup></select></label> <input list="c"><datalist id="c"><option value="L"></option></datalist> <button>Go</button></p>
+````
+
+## html/inline-unclosed
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-unclosed
+
+A non-void phrasing tag that the paragraph never closes is emitted verbatim, with `html.inline-unclosed` at the tag.
+
+````tern
+This is <b>bold forever.
+````
+
+````html
+<p>This is <b>bold forever.</p>
+````
+
+````diagnostics
+1:9 warning html.inline-unclosed
+````
+
+## html/inline-unclosed-across-paragraphs
+
+spec: syntax-inline#raw-inline-html diagnostics#html-inline-unclosed diagnostics#html-stray-closer
+
+A tag opened in one paragraph and closed in the next is unclosed in the first; the end tag in the second passes through verbatim and, with no `<b>` open in its paragraph, is a stray inline end tag: `html.stray-closer` (I) at its `<`.
+
+````tern
+Start <b>bold
+
+end</b> here.
+````
+
+````html
+<p>Start <b>bold</p>
+<p>end</b> here.</p>
+````
+
+````diagnostics
+1:7 warning html.inline-unclosed
+3:4 info html.stray-closer
+````
+
+## html/inline-void-no-warning
+
+spec: syntax-inline#raw-inline-html
+
+Void phrasing tags (`br`, `img`, `wbr`, `input`) need no end tag and get no `html.inline-unclosed`.
+
+````tern
+a<br>b <img src="x.png" alt=""> <wbr> <input name="q">
+````
+
+````html
+<p>a<br>b <img src="x.png" alt=""> <wbr> <input name="q"></p>
+````
+
+## html/inline-optional-end-no-warning
+
+spec: syntax-inline#raw-inline-html
+
+`html.inline-unclosed` also exempts phrasing elements whose end tag HTML lets you omit: `rt`, `rp`, `option` and `optgroup`.
+
+````tern
+<ruby>漢<rp>(<rt>kan<rp>)</ruby> and <select><optgroup label="g"><option>A<option>B</select>
+````
+
+````html
+<p><ruby>漢<rp>(<rt>kan<rp>)</ruby> and <select><optgroup label="g"><option>A<option>B</select></p>
+````
+
+````diagnostics
+````
+
+## html/inline-quoted-gt
+
+spec: syntax-inline#raw-inline-html syntax-inline#algorithm
+
+A `>` inside a quoted attribute value does not end an inline tag (CommonMark's tag grammar), so the `<span>` passes through whole.
+
+````tern
+A <span title="a > b">tip</span> here.
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","value":"A "},{"type":"html","value":"<span title=\"a > b\">"},{"type":"text","value":"tip"},{"type":"html","value":"</span>"},{"type":"text","value":" here."}]}]}
+````
+
+````html
+<p>A <span title="a > b">tip</span> here.</p>
+````
+
+## html/inline-verbatim-unclosed-text
+
+spec: syntax-inline#raw-inline-html
+
+An inline `<svg`, `<math` or `<textarea` with no closing tag in the paragraph is not taken verbatim: it is escaped text, and the rest of the paragraph is parsed. Neither name is in the phrasing list, and both are current elements, so each escaped start tag gets `html.inline-escaped` ("put block HTML on its own line", which is the fix for a multi-line `<svg>` or `<textarea>`).
+
+````tern
+A <svg width="8"> and a <textarea> are *never* closed.
+````
+
+````html
+<p>A &lt;svg width="8"&gt; and a &lt;textarea&gt; are <em>never</em> closed.</p>
+````
+
+````diagnostics
+1:3 info html.inline-escaped
+1:25 info html.inline-escaped
+````
+
+## html/inline-residual-b-and-c
+
+spec: syntax-inline#raw-inline-html syntax-inline#residual-inline-html syntax-inline#ambiguity
+
+Residual case: `<b and c>` matches CommonMark's tag grammar (attributes `and` and `c`), so it is a raw `<b>` tag; the paragraph never closes it.
+
+````tern
+x <b and c> y
+````
+
+````html
+<p>x <b and c> y</p>
+````
+
+````diagnostics
+1:3 warning html.inline-unclosed
+````
+
+## html/block-vs-inline-media
+
+spec: syntax-blocks#raw-html syntax-inline#raw-inline-html
+
+`iframe` and `video` are block-level at the start of a line and phrasing inside one: the first line is a generic block, the second a paragraph with inline tags.
+
+````tern
+<iframe src="map.html"></iframe>
+Watch <video src="tide.mp4" controls></video> here.
+````
+
+````json ast
+{"type":"root","children":[{"type":"html","value":"<iframe src=\"map.html\"></iframe>","data":{"tern":{"kind":"generic"}}},{"type":"paragraph","children":[{"type":"text","value":"Watch "},{"type":"html","value":"<video src=\"tide.mp4\" controls>"},{"type":"html","value":"</video>"},{"type":"text","value":" here."}]}]}
+````
+
+````html
+<iframe src="map.html"></iframe>
+<p>Watch <video src="tide.mp4" controls></video> here.</p>
+````

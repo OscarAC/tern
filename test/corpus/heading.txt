@@ -1,0 +1,502 @@
+# Headings
+
+ATX headings on one line, the trailing strong attribute group, and slugs.
+Every heading gets an id.
+
+## heading/spec-example
+
+spec: syntax-blocks#heading
+
+The heading example: a trailing strong group gives the id and class.
+
+````tern
+## Kernel and image {#kernel .wide}
+````
+
+````html
+<h2 id="kernel" class="wide">Kernel and image</h2>
+````
+
+## heading/levels
+
+spec: syntax-blocks#heading
+
+One to six `#` give `h1` to `h6`.
+
+````tern
+# One
+## Two
+### Three
+#### Four
+##### Five
+###### Six
+````
+
+````html
+<h1 id="one">One</h1>
+<h2 id="two">Two</h2>
+<h3 id="three">Three</h3>
+<h4 id="four">Four</h4>
+<h5 id="five">Five</h5>
+<h6 id="six">Six</h6>
+````
+
+## heading/seven-hashes-is-text
+
+spec: syntax-blocks#heading syntax-blocks#line-algorithm
+
+Seven `#` is not a heading.
+
+````tern
+####### Seven
+````
+
+````html
+<p>####### Seven</p>
+````
+
+## heading/not-headings
+
+spec: syntax-blocks#heading syntax-inline#ambiguity
+
+`#hashtag`, `#1 priority` and `C#` are not headings: a heading needs a space (or the end of the line) after the `#` run at the line start.
+
+````tern
+#hashtag
+#1 priority
+C# is a language
+````
+
+````html
+<p>#hashtag
+#1 priority
+C# is a language</p>
+````
+
+## heading/tab-after-hashes
+
+spec: syntax-blocks#heading syntax-blocks#line-algorithm
+options: escaped
+
+A tab after the `#` run counts as a space (as in CommonMark), so `#<TAB>Title` is a heading.
+
+````tern
+#\tTitle
+````
+
+````html
+<h1 id="title">Title</h1>
+````
+
+````diagnostics
+````
+
+## heading/closing-hashes-kept
+
+spec: syntax-blocks#heading
+
+A closing run of `#` is text: `# C# #` keeps both, and so does `## Title ##`.
+
+````tern
+# C# #
+## Title ##
+````
+
+````html
+<h1 id="c">C# #</h1>
+<h2 id="title">Title ##</h2>
+````
+
+## heading/slug-unicode
+
+spec: syntax-blocks#slugs syntax-blocks#character-classes
+options: schema=none
+
+A slug keeps letters from any script; NFKC then lower case.
+
+````tern
+## Überblick
+### 日本語
+````
+
+````html
+<h2 id="überblick">Überblick</h2>
+<h3 id="日本語">日本語</h3>
+````
+
+````diagnostics
+````
+
+## heading/slug-leading-digits
+
+spec: syntax-blocks#slugs
+
+Everything before the first letter or `_` is dropped, so section numbers do not reach the slug (and slugs stay referenceable).
+
+````tern
+## 2. Results
+## 3.1 Paragraph
+## 2nd edition
+````
+
+````html
+<h2 id="results">2. Results</h2>
+<h2 id="paragraph">3.1 Paragraph</h2>
+<h2 id="nd-edition">2nd edition</h2>
+````
+
+## heading/slug-nfkc
+
+spec: syntax-blocks#slugs syntax-blocks#character-classes
+
+NFKC is applied before lower-casing: the ligature `ﬁ` and full-width letters fold to ASCII, and `²` becomes a digit that is then dropped as leading.
+
+````tern
+## ﬁle Ｓｙｓｔｅｍ
+## ²nd place
+````
+
+````html
+<h2 id="file-system">ﬁle Ｓｙｓｔｅｍ</h2>
+<h2 id="nd-place">²nd place</h2>
+````
+
+## heading/slug-underscore-start
+
+spec: syntax-blocks#slugs
+
+A slug may start at `_`, and `_` is kept.
+
+````tern
+## _private
+## __init__
+````
+
+````html
+<h2 id="_private">_private</h2>
+<h2 id="__init__">__init__</h2>
+````
+
+## heading/slug-no-letters
+
+spec: syntax-blocks#slugs
+
+With no letter or `_`, nothing is left and the slug is `section`; repeats get `-2`, `-3`, `-4`. An empty heading is allowed.
+
+````tern
+## 1984
+## ---
+## ①
+##
+````
+
+````html
+<h2 id="section">1984</h2>
+<h2 id="section-2">---</h2>
+<h2 id="section-3">①</h2>
+<h2 id="section-4"></h2>
+````
+
+## heading/slug-combining-marks
+
+spec: syntax-blocks#slugs syntax-blocks#character-classes
+
+Combining marks (`\p{M}`) are kept by step 3, so Devanagari vowel signs and the virama stay in the slug, and `İ` lower-cases to `i` + U+0307 (Unicode default case mapping), which is kept too.
+
+````tern
+## हिन्दी
+## İstanbul
+````
+
+````html
+<h2 id="हिन्दी">हिन्दी</h2>
+<h2 id="i̇stanbul">İstanbul</h2>
+````
+
+## heading/slug-duplicates
+
+spec: syntax-blocks#slugs elements#ids
+
+A repeated slug gets `-2`, then `-3`.
+
+````tern
+## Notes
+## Notes
+## Notes
+````
+
+````html
+<h2 id="notes">Notes</h2>
+<h2 id="notes-2">Notes</h2>
+<h2 id="notes-3">Notes</h2>
+````
+
+## heading/slug-after-explicit-id
+
+spec: syntax-blocks#slugs elements#ids
+
+Slugs share one registry with explicit ids, and explicit ids are registered first: a slug that meets an id already taken gets `-2`, with no diagnostic.
+
+````tern
+## Intro {#notes}
+## Notes
+````
+
+````html
+<h2 id="notes">Intro</h2>
+<h2 id="notes-2">Notes</h2>
+````
+
+## heading/explicit-id-after-slug-wins
+
+spec: syntax-blocks#slugs elements#ids elements#references
+
+Explicit ids beat slugs: ids an author wrote are registered before any slug, so an explicit `#kernel` that comes after a heading slugged `kernel` keeps its id, the earlier heading's slug yields to `kernel-2`, there is no diagnostic, and `@kernel` reaches the explicit id.
+
+````tern
+## Kernel
+## Definition {#kernel}
+
+See @kernel.
+````
+
+````html
+<h2 id="kernel-2">Kernel</h2>
+<h2 id="kernel">Definition</h2>
+<p>See <a class="t-ref" href="#kernel">Definition</a>.</p>
+````
+
+````diagnostics
+````
+
+## heading/slug-from-text
+
+spec: syntax-blocks#slugs
+
+The slug is built from the plain text of the rendered inline content, so a link contributes its text and not its URL (from the source the id would be `see-the-docs-https-x-org`).
+
+````tern
+## See [the docs](https://x.org)
+````
+
+````html
+<h2 id="see-the-docs">See <a href="https://x.org">the docs</a></h2>
+````
+
+## heading/slug-plain-text
+
+spec: syntax-blocks#slugs syntax-inline#raw-inline-html syntax-inline#entities
+
+The plain text the slug is built from: tags dropped, entities decoded, math as its TeX, footnote references ignored. From the source the id would be `caf-eacute-b-bold-b-t-n`; with the footnote number it would end in `-1`.
+
+````tern
+## Caf&eacute; <b>bold</b> $T^*$[^n]
+
+[^n]: A note.
+````
+
+````html
+<h2 id="café-bold-t">Caf&eacute; <b>bold</b> <span class="t-math">T^*</span><sup class="t-fnref"><a id="fnref-n" href="#fn-n">1</a></sup></h2>
+<section class="t-footnotes"><ol><li id="fn-n"><p>A note. <a class="t-fnback" href="#fnref-n">↩</a></p></li></ol></section>
+````
+
+````diagnostics
+````
+
+## heading/inline-content
+
+spec: syntax-blocks#heading syntax-inline#algorithm
+
+Heading text is inline content.
+
+````tern
+## *Emph* and `code`
+````
+
+````html
+<h2 id="emph-and-code"><em>Emph</em> and <code>code</code></h2>
+````
+
+## heading/attrs-strong-only
+
+spec: syntax-blocks#heading-attributes syntax-blocks#strong-and-weak syntax-blocks#positions
+
+Only a strong group binds to a heading; weak (`{x}`, `{open}`) and unparsable (`{1, 2}`) groups stay heading text, silently.
+
+````tern
+## The set {x}
+## Options {open}
+## Pairs {1, 2}
+## Kernel {.wide}
+````
+
+````html
+<h2 id="the-set-x">The set {x}</h2>
+<h2 id="options-open">Options {open}</h2>
+<h2 id="pairs-1-2">Pairs {1, 2}</h2>
+<h2 id="kernel" class="wide">Kernel</h2>
+````
+
+## heading/attrs-glued-or-spaced
+
+spec: syntax-blocks#heading-attributes syntax-blocks#positions
+
+The group may be glued to the text or follow spaces; an explicit id is used as written.
+
+````tern
+## Kernel{#Ker_nel}
+## Image   {#img}
+````
+
+````html
+<h2 id="Ker_nel">Kernel</h2>
+<h2 id="img">Image</h2>
+````
+
+## heading/attrs-key-value
+
+spec: syntax-blocks#heading-attributes syntax-blocks#merging-and-emission
+
+A group with `key=value` is strong; without `#id` the heading still gets its slug.
+
+````tern
+## Title {data-x=1 .a}
+````
+
+````html
+<h2 id="title" class="a" data-x="1">Title</h2>
+````
+
+## heading/attrs-malformed
+
+spec: syntax-blocks#heading-attributes syntax-blocks#positions
+
+A trailing group starting with `#` that does not parse stays heading text, with `attr.malformed` at the first bad column, which is the first character the grammar rejects: the `!`, column 14, not the `#` of the item or the `{`.
+
+````tern
+## Kernel {#k!}
+````
+
+````html
+<h2 id="kernel-k">Kernel {#k!}</h2>
+````
+
+````diagnostics
+1:14 warning attr.malformed
+````
+
+## heading/attrs-malformed-once
+
+spec: syntax-blocks#heading-attributes syntax-blocks#positions
+
+A trailing group that does not parse gets `attr.malformed` once, at the first bad column, also when it is glued to a `]` or a `*` closer, where the inline parser sees a failed group too.
+
+````tern
+## Title [x]{#a!}
+## *T*{#b!}
+````
+
+````html
+<h2 id="title-x-a">Title [x]{#a!}</h2>
+<h2 id="t-b"><em>T</em>{#b!}</h2>
+````
+
+````diagnostics
+1:16 warning attr.malformed
+2:10 warning attr.malformed
+````
+
+## heading/group-not-at-end-is-text
+
+spec: syntax-blocks#heading-attributes syntax-blocks#positions
+
+A group that is not at the end of the line is text, and is not a malformed trailing group.
+
+````tern
+## {#a} title
+````
+
+````html
+<h2 id="a-title">{#a} title</h2>
+````
+
+## heading/escaped-brace-not-group
+
+spec: syntax-blocks#heading syntax-inline#escapes
+
+`\{` makes the trailing group text, with no diagnostic.
+
+````tern
+## Title \{#t}
+````
+
+````html
+<h2 id="title-t">Title {#t}</h2>
+````
+
+## heading/no-continuation
+
+spec: syntax-blocks#heading syntax-blocks#r1
+
+A heading ends on its line; nothing continues it.
+
+````tern
+# Title
+continued
+````
+
+````html
+<h1 id="title">Title</h1>
+<p>continued</p>
+````
+
+## heading/no-setext
+
+spec: syntax-blocks#heading syntax-blocks#r1 syntax-blocks#thematic-break
+
+There are no setext headings: a block is recognised from its first line, so `=====` is paragraph text and `---` is a rule.
+
+````tern
+Title
+=====
+
+Other
+---
+````
+
+````html
+<p>Title
+=====</p>
+<p>Other</p>
+<hr>
+````
+
+## heading/interrupts-paragraph
+
+spec: syntax-blocks#heading syntax-blocks#line-algorithm
+
+Row 5: a heading interrupts a paragraph.
+
+````tern
+Some prose
+## Next
+````
+
+````html
+<p>Some prose</p>
+<h2 id="next">Next</h2>
+````
+
+## heading/trailing-backslash-literal
+
+spec: syntax-blocks#heading syntax-inline#hard-break
+
+A `\` at the end of a heading is literal: a heading is a one-line construct.
+
+````tern
+## Title\
+````
+
+````html
+<h2 id="title">Title\</h2>
+````

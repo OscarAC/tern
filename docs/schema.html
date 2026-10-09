@@ -1,0 +1,1435 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Vocabulary and behaviour · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
+
+:::meta
+description: How to give Tern's element names meaning, look and behaviour: the schema and every schema field, window.TERN.schema, add-ons, tern.define, custom transforms, styling, and labels in other languages.
+:::
+
+::site-nav
+
+# Vocabulary and behaviour {#top}
+
+::toc
+
+Tern's core knows how a name is *written*, as in `:::theorem`, `::toc` or `:kbd[Ctrl]`, but not what it *means*. A **schema** gives names their meaning: the element, a label such as "Theorem 2", a counter, how a reference reads, a title slot, an end mark, a table of contents. The schema's `css` and `dom` fields, `tern.style` and `tern.define` give them a look and a behaviour.
+
+This page covers all of it, from a note that declares three names in its head to an add-on shared by a hundred notes.
+
+The live examples run with **no schema** unless they say `schema=demo`. The demo schema is the small vocabulary listed at the [end of this page](#demo-schema).
+
+## Why names need a schema {#why}
+
+The core gives a name no meaning. `:::theorem` is `div.t-block.theorem` until a schema says otherwise: no label, no number, and a reference to it reads its title.
+
+```tern {.live}
+:::theorem[Rank–nullity]{#rn}
+$\dim V = \dim \ker T + \dim \operatorname{im} T$.
+:::
+
+See @rn.
+```
+
+The same note with the demo schema, which declares `theorem`:
+
+```tern {.live schema=demo}
+:::theorem[Rank–nullity]{#rn}
+$\dim V = \dim \ker T + \dim \operatorname{im} T$.
+:::
+
+See @rn.
+```
+
+The difference is one entry:
+
+```js
+theorem: { tag: 'section', counter: 'theorem', label: 'Theorem', ref: '{label} {n}' }
+```
+
+**Why the core declares nothing.** Every subject needs its own names: a lecture has theorems, a lab notebook has protocols, a cookbook has steps. Labels differ from one language to the next. And a note must render from one script line, without a standard library to keep in step with it. So a note, or an add-on it loads, declares exactly the names it uses.
+
+A name without an entry still renders. It keeps its class and its `data-t`, so CSS and behaviours can find it, and it becomes an element on its own when the name is one:
+- an allowlisted element: `:::aside` is an `<aside>`;
+- a custom element: `:::tide-panel` is a `<tide-panel>`.
+
+[Elements and output](elements.html#names) has the whole resolution.
+
+:::table[What a schema entry adds]{#tbl-adds}
+| | Without an entry | With an entry |
+|---|---|---|
+| Element | `div` or `span`, or the name itself when it is an element | `tag` |
+| Classes and attributes | `t-block`, the name, the author's | `class`, `attrs` |
+| Label | none | `label` |
+| Number | none | `counter` |
+| Reference text | the title, else the id | the label and number, through `ref` |
+| Title element | written titles only | `title`, `titleDefault`, and a slot for the label |
+| End mark | none | `end` |
+| Body | blocks, or verbatim with `{raw}` | `body` |
+| Generated content | none | `transform: 'toc'` |
+| Look | the base stylesheet | `css` |
+| Behaviour | `tern.define` only | `dom` |
+:::
+
+**Where vocabulary comes from.**
+
+1. **The note's own head:** `window.TERN.schema`, in a script before the tern.js line ([below](#window-tern)). Best for a note that stands alone.
+2. **An add-on** listed in `data-use`, which calls `tern.block`, `tern.leaf` and `tern.inline` ([Add-ons](#addons)). Best for vocabulary shared by several notes.
+3. **Node**, for scripts that call the engine: the same three functions, or a `schema` option on each call ([JavaScript API](api.html#registry)).
+
+When a note and an add-on declare the same name, the note's entry wins.
+
+## The schema {#schema}
+
+### The registry {#the-registry}
+
+A schema is plain data: an object with three levels, each mapping a name to an entry.
+
+```js
+{
+  block:  { theorem: { tag: 'section', counter: 'theorem', label: 'Theorem' } },
+  leaf:   { toc: { tag: 'nav', transform: 'toc' } },
+  inline: { key: { tag: 'kbd' } },
+}
+```
+
+In the browser this object is `tern.schema`, the registry. Three functions write it:
+
+:::syntax
+```js
+tern.block(name, spec)    // :::name … :::
+tern.leaf(name, spec)     // ::name[…]{…}
+tern.inline(name, spec)   // :name[…]{…}
+```
+:::
+
+- **The entry.** Each function stores a shallow copy of `spec` and returns it. Changing your `spec` object afterwards changes nothing; changing the stored entry does: `tern.schema.block.note.label = 'Hinweis'`.
+- **Again.** Registering a name a second time replaces its entry whole.
+- **Refused.** They throw a `TypeError`, and register nothing, when:
+  - the name is not a NAME: a letter, then letters, marks, digits, `_` or `-`;
+  - the name is reserved: `base body head html link main meta noscript script style template title`, `tern`, any `t-…` name, and `end`;
+  - a block name is one of the core containers `meta`, `macros`, `script`, `style` or `html`;
+  - `spec` is not an object.
+- **When.** The registry is read each time a note is rendered. Declare entries in an add-on or in `window.TERN.schema`: both are applied before the note is mounted. A `<script>` inside the note runs after the mount, too late for the note around it.
+
+### Levels {#levels}
+
+The three levels match the three ways a name is written.
+
+:::table[Levels]{#tbl-levels}
+| Level | Written | AST node | The elements `tag` may name |
+|---|---|---|---|
+| `block` | `:::name` … `:::` | `containerDirective` | flow containers: `section`, `aside`, `details`, `figure`, `nav` … |
+| `leaf` | `::name[…]{…}` on its own line | `leafDirective` | the same, plus `figcaption legend p summary` and media: `video`, `img`, `iframe` … |
+| `inline` | `:name[…]{…}` in text | `textDirective` | phrasing elements: `kbd`, `abbr`, `button`, `q` … |
+:::
+
+The full lists are in [Allowlists](elements.html#allowlists).
+
+The levels are separate. An entry in `block` gives nothing to the leaf or the inline element of the same name:
+
+```tern {.live schema=demo}
+:::theorem
+A container: the demo's block entry applies.
+:::
+
+::theorem[A leaf: no entry, so a plain div.]
+
+And :theorem[an inline element], a plain span.
+```
+
+### Names {#names}
+
+- **Case-sensitive.** The registry, the allowlists and the reserved list compare names exactly, and they are all lower case. `:::Theorem` is not `theorem`:
+
+  ```tern {.live schema=demo}
+  :::Theorem
+  Upper case: no entry, so no label.
+  :::
+  ```
+
+- **Spelling.** A NAME starts with a letter of any script and goes on with letters, marks, digits, `_` and `-`: `théorème` and `定理` are names.
+- **Reserved names** can never be declared. Written in a note, they become `div` or `span` with `name.reserved` ([Reserved names](elements.html#reserved)).
+
+### What an entry changes {#what-changes}
+
+An entry changes four things:
+- **the output**: the element, its classes and attributes, the title slot, the end mark, the body;
+- **numbering**: counted names are numbered in document order;
+- **references**: `@id` reads the target's label and number;
+- **the table of contents**: a leaf with `transform: 'toc'` lists the headings.
+
+```tern {.live schema=demo}
+::toc
+
+## Results
+
+:::theorem[Rank–nullity]{#rn}
+The rank and the nullity add up to $\dim V$.
+:::
+
+:::lemma{#lm}
+The kernel is a subspace.
+:::
+
+:::proof
+By @lm.
+:::
+
+## Consequences
+
+:::corollary{#co}
+An injective $T$ has full rank.
+:::
+
+@rn, @lm and @co share one counter.
+```
+
+### Names the core consults {#core-names}
+
+Three block entries apply to constructs that are not written as `:::name`:
+
+- **`code`**: a fence with a title (```` ```js [Title] ````) is a listing, `figure.t-block.code`. Its counter, label, `ref` and `title` come from the `code` entry. An untitled fence is never counted. The entry's `tag`, `class` and `attrs` do not apply to fences.
+- **`figure`**: a paragraph holding only an image with an id becomes a `figure` container, numbered by the `figure` entry like `:::figure` ([Figures](elements.html#figures)).
+- **Any entry whose `tag` is `table`**: the container merges with the one pipe table it holds, and its title becomes the `<caption>` ([Table caption](elements.html#table-caption)).
+
+````tern {.live schema=demo}
+```js [Naive Fibonacci]{#lst-fib}
+const fib = (n) => (n < 2 ? n : fib(n - 1) + fib(n - 2));
+```
+
+:::table[Phases]{#tbl-phases}
+| Phase | Exit |
+|---|---|
+| P0 | every rule has a case |
+:::
+
+See @lst-fib and @tbl-phases.
+````
+
+### Strict names {#strict}
+
+The registry has one switch besides its levels: `strict`. With it, a name that has **no schema entry** and falls back to `div` or `span` gets `name.unknown`, an info diagnostic at the name ([`name.unknown`](diagnostics.html#name-unknown)). It catches a misspelt `:::theorm`.
+
+- **Declared names are known**, with or without a `tag`: an entry `note: {label: 'Note'}` makes `:::note` known, though its element is a `div`.
+- **Allowlisted and custom-element names are known** too: `:::aside`, `:::tide-panel`.
+- **Turning it on:**
+  - in the note's head: `window.TERN = {schema: {strict: true, block: {…}}}`;
+  - in an add-on: `tern.schema.strict = true`;
+  - under node: `tern.check(source, {schema: {...vocabulary, strict: true}})`.
+- **The note wins.** `window.TERN.schema.strict` is applied after the add-ons, so `strict: false` there turns off what an add-on turned on.
+- The browser, the command line and the language server read it the same way.
+
+## Every field {#fields}
+
+Every field is optional. All of them are plain data except two that may be functions: `label` and `dom`. A field that does not apply at an entry's level is ignored.
+
+:::table[Schema fields]{#tbl-fields}
+| Field | Value | Levels | Default | What it does |
+|---|---|---|---|---|
+| [`tag`](#field-tag) | an element name | all | the name's own resolution | the element, through the level's allowlist |
+| [`class`](#field-class) | classes, space-separated | all | none | classes before the author's |
+| [`attrs`](#field-attrs) | `{key: value}` | all | none | attributes under the author's |
+| [`counter`](#field-counter) | a counter name | all | not counted | numbers the elements; entries with the same counter share it |
+| [`within`](#field-within) | `'h2'` | all | none | accepted and kept, not applied |
+| [`label`](#field-label) | a string, a `{lang: string}` map, or `(n, node) => text` | all | none | the label: "Theorem 2", "Proof" |
+| [`ref`](#field-ref) | a template over `{label} {n} {title} {id}` | all | the text by kind | what `@id` reads |
+| [`title`](#field-title) | `block`, `inline`, `summary`, `figcaption`, `caption`, `legend` | block | follows the tag | the title element |
+| [`titleDefault`](#field-titledefault) | text | block | none | the title when none is written |
+| [`body`](#field-body) | `blocks`, `raw`; `inline` is accepted | block | `blocks` | how the body is read |
+| [`end`](#field-end) | text | block | none | a mark at the end: ∎ |
+| [`transform`](#field-transform) | `'toc'` | leaf | none | fills the leaf with a table of contents |
+| [`depth`](#field-transform) | `'N'` or `'A-B'` | leaf with `transform: 'toc'` | `'2-3'` | the heading levels listed |
+| [`css`](#field-css) | CSS text | all | none | a stylesheet, added when the entry is registered |
+| [`dom`](#field-dom) | `(el) => void` | all | none | the behaviour, as `tern.define` |
+:::
+
+### `tag` {#field-tag}
+
+The element a name becomes.
+
+```js
+tern.block('theorem', { tag: 'section' });
+tern.leaf('player', { tag: 'video', attrs: { controls: true } });
+tern.inline('key', { tag: 'kbd' });
+```
+
+```tern {.live schema=demo}
+:::theorem
+A section.
+:::
+
+:::recall[Rank]
+A details element; its title is the summary.
+:::
+```
+
+- **The allowlist.** `tag` must be on its level's allowlist ([Allowlists](elements.html#allowlists)): flow elements for containers, flow and media elements for leaves, phrasing elements for inline elements. So an inline element can never be an `<aside>` inside a `<p>`.
+- **The author's `tag=` wins.** `{tag=…}` written on the element comes first in the resolution, then the schema's `tag`, then the name itself ([Resolving a name](elements.html#names)).
+- **Refused.** A `tag` outside the allowlist is ignored with `tag.not-allowed`, and resolution goes on as if there were none. A `tag` that names a reserved element (`tag: 'main'`) is ignored the same way, with `name.reserved`. Both are reported at the element's name.
+- **`tag=` only on named elements.** On a span, a link, an image, a heading, a fence or a paragraph, `{tag=…}` is dropped with `tag.not-allowed` at the key: to choose the element, name it. On a reserved name (`:::main{tag=section}`) it is dropped with `attr.malformed`.
+- **Custom elements** are on no allowlist, so `tag: 'chart-box'` is refused. Name the element itself instead: `:::chart-box` is a `<chart-box>`.
+- **`table`.** A container whose element is `table` must hold exactly one pipe table, which it merges with ([Names the core consults](#core-names)). Anything else makes it a `div` that keeps its label and counter, with `table.body`.
+- **Void elements.** A leaf whose element is void (`hr`, `img`, `embed` …) has no content; what its brackets hold follows it in a paragraph, with `leaf.void-content`.
+
+The author's `tag=` against the schema's:
+
+```tern {.live schema=demo expect="tag.not-allowed"}
+:::theorem{tag=aside}
+An aside: the author's tag= wins.
+:::
+
+:::theorem{tag=span}
+A span cannot be a container, so the schema's section is used.
+:::
+```
+
+`tag=` where it does not apply: a bare span and a heading keep their own elements.
+
+```tern {.live expect="tag.not-allowed tag.not-allowed"}
+Press [Ctrl]{tag=kbd}, or write :kbd[Ctrl].
+
+## Kernel {tag=section}
+```
+
+`tag=` on a reserved name: the name stays a `div`, and the key is dropped.
+
+```tern {.live expect="name.reserved attr.malformed"}
+:::main{tag=section}
+No `tag=` makes a reserved name usable.
+:::
+```
+
+A `table` entry around something other than a pipe table:
+
+```tern {.live schema=demo expect="table.body"}
+:::table[Phases]
+Not a table.
+:::
+```
+
+**Diagnostics:** [`tag.not-allowed`](diagnostics.html#tag-not-allowed), [`name.reserved`](diagnostics.html#name-reserved), [`attr.malformed`](diagnostics.html#attr-malformed), [`table.body`](diagnostics.html#table-body), [`leaf.void-content`](diagnostics.html#leaf-void-content).
+
+### `class` {#field-class}
+
+Classes that every element of the name gets.
+
+```js
+tern.block('note', { class: 'callout boxed' });
+```
+
+`:::note{.wide}` then renders as `<div class="t-block note callout boxed wide" data-t="note">`.
+
+- One string; several classes are separated by spaces.
+- **Order:** `t-block` (containers only), the name, the entry's `class`, a `class` given in `attrs`, the author's classes, then `t-cols` for a grid.
+- A class equal to the name repeats it: `class: 'note'` on `note` gives `note note`.
+
+The demo schema sets no `class`, so this field has no live example.
+
+### `attrs` {#field-attrs}
+
+Default attributes, under the author's.
+
+```js
+tern.leaf('player', { tag: 'video', attrs: { controls: true, preload: 'metadata', width: 640 } });
+```
+
+`::player{src=tide.mp4 width=320}` renders as:
+
+```html
+<video class="player" data-t="player" controls preload="metadata" src="tide.mp4" width="320"></video>
+```
+
+- **The author wins**, key by key: the `width` written on the element replaces the default.
+- **Values.** `true` gives a boolean attribute (`controls`). `false`, `null` and `undefined` leave the attribute out. Anything else is written as a string.
+- **Never an id.** `attrs.id` is ignored: every element of the name would share it.
+- **`class`** in `attrs` is added after the `class` field.
+- **Ignored keys:** the reserved keys `tag`, `raw`, `cols` and `ref`, and `data-t`. A key that cannot be an HTML attribute name (with a space, a quote, `<`, `>`, `/` or `=`) is dropped from the output.
+- **Order** in the output: `id`, `class`, tern's own attributes, the defaults the author did not override, then the author's attributes as written.
+- With the `safe` option, defaults are filtered like the author's attributes ([Safe output](elements.html#safe)).
+
+The demo schema sets no `attrs`, so this field has no live example.
+
+### `counter` {#field-counter}
+
+Numbers the elements of a name, in document order.
+
+```js
+tern.block('theorem', { counter: 'theorem', label: 'Theorem' });
+tern.block('lemma', { counter: 'theorem', label: 'Lemma' });
+tern.block('definition', { counter: 'definition', label: 'Definition' });
+```
+
+```tern {.live schema=demo}
+:::theorem
+First.
+:::
+
+:::definition
+Its own counter.
+:::
+
+:::lemma
+Shares the theorem counter.
+:::
+
+:::corollary
+So does this one.
+:::
+```
+
+- **A counter is a name.** Entries that give the same `counter` share one sequence, at any level: Theorem 1, Lemma 2, Corollary 3.
+- **Document-wide.** Numbering runs over the whole note, in document order. An element is numbered at its opener, before anything it holds.
+- **The label** is the label word, a space and the number: "Theorem 2". Counted without a `label`, it is the number alone: "2".
+- **Equations** use the counter `equation`: a display formula with an id is numbered "(1)". A schema counter named `equation` shares that sequence.
+- **Footnotes** are numbered by first reference, on a sequence of their own.
+- **Fences** are counted only when titled, by the `code` entry ([Names the core consults](#core-names)).
+- **In the AST** a counted element has `data.tern.counter` and `data.tern.number` ([The transformed AST](api.html#transformed-ast)).
+
+[Numbering](elements.html#numbering) has the rules for the whole note.
+
+### `within` {#field-within}
+
+Meant to restart a counter at each section: `within: 'h2'`.
+
+- The engine **accepts it and keeps it** in the registry, but **does not apply it**: numbering is document-wide ([Numbering](elements.html#numbering)).
+- An entry with `within` numbers exactly as one without.
+
+### `label` {#field-label}
+
+The label at the start of the title, or of a leaf's or inline element's content: "Theorem 2", "Proof", "Note".
+
+```js
+tern.block('proof', { label: 'Proof' });                                          // a string
+tern.block('lemma', { counter: 'theorem', label: { en: 'Lemma', de: 'Hilfssatz' } }); // a map by language
+tern.block('satz', { counter: 'satz', label: (n, node) => `Satz 4.${n}` });         // a function
+```
+
+```tern {.live schema=demo}
+:::definition[Kernel]
+Labelled and counted.
+:::
+
+:::proof
+Labelled, not counted.
+:::
+
+:::note
+A label and no title.
+:::
+```
+
+- **A string** is the label word. With a counter, the label is the word and the number.
+- **A map** `{lang: string}` picks the word by the note's language ([Labels in other languages](#languages)).
+- **A function** `(n, node) => text` returns the **whole** label: Tern adds no number. `n` is the number, or `undefined` when the entry has no counter. `node` is the element's AST node; read it (`node.name`, `node.attributes`), don't change it. A function receives no language.
+- **Empty.** An empty string, or a function that returns `''`, `null` or `undefined`, gives no label.
+- **Where it shows.** On a container the label is `<span class="t-label">`, the first thing in the title element. The title element is created even when no title is written, and an empty title `[]` shows the label alone.
+- **Leaves and inline elements** have no title element: their label is their first child, `<span class="t-label">`, followed by a space when content follows. `tern.leaf('bib', {counter: 'bib', label: 'Ref'})` makes `::bib[Knuth, TAOCP]` render as `<div class="bib" data-t="bib"><span class="t-label">Ref 1</span> Knuth, TAOCP</div>`. A void element (`hr`, `img` …) shows no label. A labelled table of contents shows its label before the list.
+- **Real text.** Labels are text in the page, not CSS `content`, so they copy, print, can be searched for and reach screen readers ([Labels](elements.html#labels)).
+
+An empty title with a label:
+
+```tern {.live schema=demo}
+:::theorem[]
+The label stands alone.
+:::
+```
+
+### `ref` {#field-ref}
+
+The text a reference `@id` reads, as a template.
+
+```js
+tern.block('theorem', { counter: 'theorem', label: 'Theorem', ref: '{label} {n}' });
+tern.block('exercise', { counter: 'exercise', label: 'Exercise', ref: '{label} {n} ({title})' });
+tern.leaf('bib', { counter: 'bib', ref: '[{n}]' });   // @knuth reads [1]
+```
+
+:::table[Template parts]{#tbl-ref-parts}
+| Part | Stands for |
+|---|---|
+| `{label}` | the label word: the string, or the word the map picks; a label function's whole result |
+| `{n}` | the number |
+| `{title}` | the title as written, with its formatting; links are unwrapped and footnote references left out |
+| `{id}` | the target's id |
+:::
+
+```tern {.live schema=demo}
+:::theorem[Rank–nullity]{#rn}
+A template: {label} {n}.
+:::
+
+:::definition[Kernel]{#ker}
+No template: counted, so its label.
+:::
+
+:::note[Units]{#units}
+No template, not counted, titled: its title.
+:::
+
+@rn, @ker, @units. Parts: @rn{ref=title}, @rn{ref=full}.
+```
+
+- **Literal text.** Everything outside the four parts is copied as written.
+- **A missing part.** When the target lacks a part the template names (no title, no number, no label word), the template is not used, and the reference gets the default text.
+- **The default text**, without a template, depends on the target ([References](elements.html#references)):
+  - a counted element: its label and number, "Theorem 1";
+  - an equation: "(1)";
+  - a heading: its content;
+  - a titled element that is not counted: its title;
+  - a labelled element, neither counted nor titled: its label, "Proof";
+  - anything else: the id.
+- **`ref=` on the reference wins.** `@rn{ref=label}`, `{ref=number}`, `{ref=title}` and `{ref=full}` pick a part of the target and override the template ([References](syntax-inline.html#reference)). There, `label` is the whole label, "Theorem 1".
+- **With a label function**, `{label}` is already the whole label, so `'{label} {n}'` repeats the number ("Satz 4.1 1"). Write `ref: '{label}'`, or leave `ref` out.
+- A `ref` on a leaf or an inline element works as on a container: that is how `bib` reads "[1]".
+
+### `title` {#field-title}
+
+Which element holds the title and the label.
+
+```js
+tern.block('aside-note', { tag: 'aside', title: 'inline' });
+tern.block('panel', { tag: 'details', title: 'block' });
+```
+
+:::table[Title slots]{#tbl-title-slots}
+| `title` | Element | Position | Only in |
+|---|---|---|---|
+| `block` | `div.t-title` | first child | any element |
+| `inline` | `span.t-title` | first child | any element |
+| `summary` | `summary.t-title` | first child | `details` |
+| `figcaption` | `figcaption.t-title` | **last** child | `figure` |
+| `caption` | `caption.t-title` | first child | `table` |
+| `legend` | `legend.t-title` | first child | `fieldset` |
+:::
+
+Without `title`, the slot follows the tag: `details` → `summary`, `figure` → `figcaption`, `table` → `caption`, `fieldset` → `legend`, anything else → `div` ([Title slots](elements.html#title-slots)).
+
+```tern {.live schema=demo}
+:::recall[Rank]
+details: the title is the summary, first.
+:::
+
+:::figure[Tides at Leith]{#fig-tides}
+figure: the title is the figcaption, last.
+:::
+```
+
+- **A slot that cannot stand** in the element is ignored, and the tag's default is used: `title: 'summary'` on a `div` gives a `div.t-title`, and `title: 'caption'` on a figure gives a `figcaption`.
+- **`block` and `inline` override the tag.** `{tag: 'details', title: 'block'}` gives a `div.t-title` and no `<summary>`, so the browser shows its own "Details".
+- **When it appears.** The title element is written when a title is written, when `titleDefault` applies, or when there is a label to show. Otherwise there is none.
+- **Containers**, and listings: the `code` entry's `title` chooses a listing's title element, which always comes after the code.
+
+### `titleDefault` {#field-titledefault}
+
+The title when none is written.
+
+```js
+tern.block('more', { tag: 'details', titleDefault: 'Show more' });
+```
+
+`:::more` then renders as `<details class="t-block more" data-t="more"><summary class="t-title">Show more</summary>…</details>`.
+
+- It applies when there is no title, and when the title is empty: `:::more[]`.
+- It is plain text: `*` and `$` in it are not formatting.
+- It is the title everywhere: references read it as `{title}` and as their default text.
+- Containers only.
+
+The demo schema sets no `titleDefault`, so this field has no live example.
+
+### `body` {#field-body}
+
+How a container's body is read.
+
+```js
+tern.block('mermaid', { body: 'raw' });
+```
+
+- **`'blocks'`**, the default: the body is Tern blocks.
+- **`'raw'`**: the body is verbatim, as `{raw}` makes it ([Raw-body containers](syntax-blocks.html#raw-body)). The parser reads this field, so it applies in the browser and under node alike.
+  - The body is one text node, written escaped inside the element, for a behaviour to read.
+  - Nothing in it is Tern: `:::note` and `*x*` are text.
+  - It ends only at a bare `:::` or at `:::/name`.
+  - The title still works: `:::mermaid[Flow]`.
+- **`'inline'`** is accepted, but as built it is read exactly like `'blocks'`: a list in the body is still a list.
+- Any other value is read as `'blocks'`.
+- Containers only: a leaf's brackets always hold inline content.
+
+`{raw}` gives one element the same body, with no schema:
+
+```tern {.live}
+:::mermaid{raw}
+graph TD
+  A --> B
+:::
+```
+
+### `end` {#field-end}
+
+A mark at the end of a container, such as ∎ after a proof.
+
+```js
+tern.block('proof', { label: 'Proof', end: '∎' });
+```
+
+```tern {.live schema=demo}
+:::proof
+By induction on $n$.
+:::
+```
+
+- It is written as `<span class="t-end" aria-hidden="true">`, the container's last child. The base stylesheet aligns it to the end of the line.
+- **In a figure** it comes just before the `figcaption`, since HTML allows a caption only first or last.
+- **In a merged table** it is dropped: HTML allows nothing between a table's sections.
+- Nested containers each get their own mark.
+- Containers only.
+
+### `transform` {#field-transform}
+
+A built-in filler. The only one is `'toc'`: on a leaf, it lists the note's headings.
+
+```js
+tern.leaf('toc', { tag: 'nav', transform: 'toc', depth: '2-3' });
+```
+
+```tern {.live schema=demo}
+::toc{depth=2-4}
+
+## Kernel
+
+### Definition
+
+#### A detail
+
+## Image
+```
+
+- **The list** is `ol > li > a`, with a nested `ol` for each deeper level. Each link goes to the heading's id; every heading has one, written or generated.
+- **The entry text** is the heading's content, copied: links unwrapped, footnote references left out, references as their target's text.
+- **`depth`** sets the levels: `'A-B'` (in either order), or `'N'`, which runs from the lower bound up to N. The default is `'2-3'`.
+  - In the entry, it sets the default for the name.
+  - On the leaf, `{depth=…}` overrides it, and is not written to the output. A single `N` on the leaf runs from the entry's lower bound: with `'2-3'`, `{depth=2}` is level 2 only.
+  - A value that is not a level from 1 to 6, or a range of them, is ignored.
+- **The leaf's own content** in brackets is not shown; its id and classes are. A `label` in the entry is shown before the list: `{transform: 'toc', label: 'Contents'}`.
+- **An empty table of contents**, with no heading in range, writes nothing at all, label included.
+- **Any leaf name** works: `tern.leaf('contents', {transform: 'toc'})`. On a container, `transform` does nothing.
+- For other generated content, write a [custom transform](#transforms).
+
+No heading in range:
+
+```tern {.live schema=demo}
+::toc
+
+No headings here.
+```
+
+### `css` {#field-css}
+
+A stylesheet that comes with the name.
+
+```js
+tern.block('note', {
+  label: 'Note',
+  css: '.tern .note { border-inline-start: 4px solid var(--t-link); padding-inline-start: 1rem; }',
+});
+```
+
+- It is added through `tern.style` when the entry is registered: in an add-on, at that add-on's place in the cascade; from `window.TERN.schema`, after every add-on ([Styling](#styling)).
+- Replacing an entry does not remove the CSS the earlier one added.
+- **Under node** it is ignored: `tern build` writes no stylesheet for it. On a built page, the browser adds it when the add-on or `window.TERN.schema` is applied.
+
+### `dom` {#field-dom}
+
+The name's behaviour: a function the runtime calls once for each element of the name.
+
+```js
+tern.block('quiz', {
+  dom(el) {
+    el.addEventListener('click', () => el.classList.toggle('revealed'));
+  },
+});
+```
+
+- It works exactly like `tern.define(name, fn)`, and runs before any `tern.define` function on the same element ([Behaviours](#behaviours)).
+- One `dom` runs per element: see [A dom function](#dom-function) for the lookup across levels.
+- `tern.undefine(name)` does not remove it.
+- Under node it is never called.
+
+## Declaring vocabulary in a single file {#window-tern}
+
+A note that stands alone declares its vocabulary in its head, in a script before the tern.js line. The value is the registry's shape, `{block, leaf, inline}`:
+
+```html
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Rank–nullity</title>
+<script>
+window.TERN = {schema: {
+  block: {
+    theorem: {tag: 'section', counter: 'theorem', label: 'Theorem', ref: '{label} {n}'},
+    lemma: {tag: 'section', counter: 'theorem', label: 'Lemma', ref: '{label} {n}'},
+    proof: {label: 'Proof', end: '∎'},
+  },
+  leaf: {toc: {tag: 'nav', transform: 'toc', attrs: {'aria-label': 'Contents'}}},
+  inline: {key: {tag: 'kbd'}},
+}};
+</script>
+<script src="tern.js"></script>
+
+::toc
+
+## The theorem
+
+:::theorem[Rank–nullity]{#rn}
+$\dim V = \dim \ker T + \dim \operatorname{im} T$.
+:::
+
+:::proof
+Extend a basis of $\ker T$ to a basis of $V$.
+:::
+
+## Using it
+
+By @rn, … Press :key[Ctrl].
+```
+
+The toc is a `nav` with two entries, the theorem a `section` labelled "Theorem 1", the proof ends with ∎, `@rn` reads "Theorem 1", and `:key[Ctrl]` is a `<kbd>`.
+
+:::note
+The examples in this section are source, not live. A live example renders with the engine alone, and `tern.toHTML(source, {head})` reads the head only for what `:::meta` and the labels need: its `<title>`, the `lang` and `dir` of `<html>`, and its `<meta name>` tags. It runs no script. Running the head's scripts is the job of the browser runtime and the command line. Under node, pass the vocabulary as the `schema` option instead.
+:::
+
+**The rules.**
+
+- **Shape.** `window.TERN.schema` holds `block`, `leaf` and `inline`, each optional, with entries as for `tern.block`. Function fields (`label`, `dom`) and `css` work as in an add-on.
+- **Where.** In a classic `<script>` before the tern.js line: inline, or a `src` file of your own (`<script src="vocabulary.js">`). tern.js reads `window.TERN` when it starts. The command line runs only classic head scripts, not `async`, `defer` or module ones.
+- **When.** At mount, after every add-on has registered its entries. Each entry goes through `tern.block`, `tern.leaf` or `tern.inline`.
+- **Precedence.** So the note's entry replaces an add-on's entry for the same name, **whole**: the fields are not merged. An add-on's `dom` for that name is gone, unless the note's entry has one too.
+- **A bad entry** (a reserved name, a value that is not an object) is skipped with a warning in the console; the others apply.
+- **The levels and `strict`** are read: `strict: true` turns on [strict names](#strict), and `strict: false` turns off an add-on's. `window.TERN` carries other settings too, such as `lang`, `use` and `katex` ([Configuration](api.html#config)).
+- **Built pages.** `tern build` applies the vocabulary when it writes the HTML. tern.js applies it again when the built page starts, for the behaviours and for `tern.render`.
+
+**Under node.** `tern check`, `tern parse`, `tern build` and the language server run the head's scripts in a sandbox, in document order, before the add-ons. Then `window.TERN.schema` goes on top, as in the browser.
+- An inline script, or a `src` file on disk, runs.
+- A remote `src` is not run: `head.script` (info).
+- A missing file, or a script that throws, gives `head.script` (warning).
+
+**Changing one field of an add-on's entry.** A note's own entry replaces the add-on's whole. To change one field and keep the rest, list a small add-on of your own after it in `data-use`, and assign into the registry:
+
+```js
+// tweaks.js, listed after the add-on: data-use="callout.js tweaks.js"
+tern.schema.block.note.label = 'Hinweis';
+```
+
+**Diagnostics:** [`head.script`](diagnostics.html#head-script), from the command line and the language server only.
+
+## Add-ons {#addons}
+
+An add-on is a script or a stylesheet listed in `data-use` on the tern.js tag:
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js" data-use="lib/callout.js lib/theme.css"></script>
+```
+
+### Listing add-ons {#data-use}
+
+- **The list** is space-separated. Each entry is a URL, relative to the page like any `src`.
+- **Stylesheets and scripts.** An entry whose path ends in `.css` is a stylesheet; anything else is a script.
+- **Order matters.** Scripts run in the order listed, so a later add-on sees an earlier one's entries and can change them. Stylesheets cascade in the order listed: a theme listed after an add-on wins at equal specificity.
+- **Under node**, the command line reads the entries the same way: every entry that does not end in `.css` is run as a classic script, `.mjs` or no extension included. One that does not parse as a classic script, or names a directory, is `addon.failed`.
+
+### Options in the query string {#use-options}
+
+An add-on takes options from its URL's query string, in `tern.config.use`:
+
+```html
+<script src="tern.js" data-use="lib/callout.min.js?collapse=all&amp;accent=teal"></script>
+```
+
+```js
+tern.config.use.callout   // {collapse: 'all', accent: 'teal'}
+```
+
+- **The key** is the file name without its directory, `.min`, and `.js`, `.mjs` or `.css`: `lib/callout.min.js` is `callout`.
+- **Every entry** gets an object, empty when there is no query.
+- **Values** are strings. A key without `=` gets `''`.
+- **Defaults.** `window.TERN.use = {callout: {collapse: 'none'}}` gives defaults; the query string wins key by key.
+- **`&amp;`** is the strict HTML spelling of `&` in an attribute; both work.
+- **Under node, `tern.config.use` is empty.** Read options only for behaviour and style, never for vocabulary, or `tern check` and `tern build` would not see what the browser sees ([Under node](#addons-under-node)).
+
+### How they load {#addon-loading}
+
+1. When tern.js starts, it adds a preload for every script add-on, then appends them all at once: they **download in parallel** and **run in the order listed**. Stylesheets are added as links, in order.
+2. The note is rendered once the document is parsed and **every add-on has loaded or failed**. There is no timeout.
+3. So an add-on runs **before the mount**. `window.tern` exists; `window.TERN.schema` is not applied yet; the note's elements do not exist yet.
+
+An add-on therefore registers things, for the runtime to apply when the note is rendered:
+- vocabulary: `tern.block`, `tern.leaf`, `tern.inline`;
+- behaviours: `tern.define`;
+- listeners: `tern.on`;
+- transforms: `tern.transform`;
+- styles: `tern.style`.
+
+It does not look for the note's elements itself: they are not there yet.
+
+### When an add-on fails {#addon-failed}
+
+**`addon.failed`** is an error at the tern.js line. The note always renders. It is reported when:
+- a script or stylesheet does not load (a wrong path, a network error): the note renders without it;
+- a script throws while it runs: the note renders with what the add-on registered before the error, and the browser's console shows where it threw;
+- a transform the add-on registered throws when it runs: that transform is skipped ([Custom transforms](#transforms)).
+
+The command line and the language server report the same cases, and a few of their own:
+- a missing file, or a directory;
+- a script that does not parse as a classic script;
+- a script that uses what the [node shim](#addons-under-node) does not provide.
+
+**A remote add-on** (`https://…`) is not loaded under node. That is **`addon.remote`**, an info at the tern.js line: names it declares are unknown to `tern check`, which does not fail because of it. `tern build` warns about it: the page it writes uses those names without their schema entries.
+
+**Diagnostics:** [`addon.failed`](diagnostics.html#addon-failed), [`addon.remote`](diagnostics.html#addon-remote).
+
+## Writing an add-on {#writing-an-addon}
+
+### A complete add-on {#callout-addon}
+
+This add-on declares three callouts, `note`, `tip` and `warning`, with labels in three languages, a stylesheet, and a behaviour that folds a callout away.
+
+```js [callout.js, a complete add-on]{#lst-callout}
+// callout.js: callouts for Tern notes, in English, German and French.
+//   <script src="tern.js" data-use="callout.js"></script>
+//   <script src="tern.js" data-use="callout.js?collapse=all"></script>
+(function () {
+  'use strict';
+  const tern = window.tern;
+
+  // 1. Vocabulary: three containers with a label in three languages.
+  const labels = {
+    note: { en: 'Note', de: 'Hinweis', fr: 'Remarque' },
+    tip: { en: 'Tip', de: 'Tipp', fr: 'Astuce' },
+    warning: { en: 'Warning', de: 'Warnung', fr: 'Attention' },
+  };
+  for (const name of Object.keys(labels)) {
+    tern.block(name, {
+      tag: 'aside',
+      class: 'callout',
+      attrs: { role: 'note' },
+      label: labels[name],
+      dom: collapsible,
+    });
+  }
+
+  // 2. Look: keyed on the classes, never on the tag.
+  tern.style(`
+.tern .callout { border-inline-start: 4px solid var(--callout, var(--t-link));
+  background: var(--t-soft); padding: .6rem 1rem; border-radius: 6px; }
+.tern .callout.tip { --callout: #2f8a46; }
+.tern .callout.warning { --callout: var(--t-warn); }
+.callout-toggle { margin-inline-start: .5rem; font: inherit; cursor: pointer; }
+@media print { .callout-toggle { display: none; } }
+`);
+
+  // 3. Behaviour: a callout with data-collapse, or every callout with
+  //    ?collapse=all, gets a button that folds its body away.
+  const options = tern.config.use.callout || {}; // empty under node
+  function collapsible(el) {
+    const title = el.querySelector(':scope > .t-title');
+    if (!title || !(options.collapse === 'all' || el.hasAttribute('data-collapse'))) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'callout-toggle';
+    button.setAttribute('aria-expanded', 'true');
+    button.textContent = 'Hide';
+    button.addEventListener('click', () => {
+      const open = button.getAttribute('aria-expanded') === 'true';
+      button.setAttribute('aria-expanded', String(!open));
+      button.textContent = open ? 'Show' : 'Hide';
+      for (const child of el.children) if (child !== title) child.hidden = open;
+    });
+    title.append(button);
+  }
+})();
+```
+
+A note that uses it:
+
+```html
+<!doctype html><html lang="de"><meta charset="utf-8"><script src="tern.js" data-use="callout.js"></script>
+
+:::warning[Strom]{#w data-collapse}
+Erst den Stecker ziehen.
+:::
+```
+
+The engine writes this (as `tern build` shows it, without positions), and the behaviour then adds the button to the title:
+
+```html
+<aside id="w" class="t-block warning callout" data-t="warning" role="note" data-collapse><div class="t-title"><span class="t-label">Warnung</span> Strom</div><p>Erst den Stecker ziehen.</p>
+</aside>
+```
+
+What each part does:
+- **The wrapper** keeps the add-on's names out of the page's globals, and reads `window.tern`, which tern.js defined before any add-on runs.
+- **The vocabulary.** The label map picks "Warnung" from `<html lang="de">` ([Labels in other languages](#languages)). `class` and `attrs` give every callout the class `callout` and `role="note"`.
+- **The look.** `tern.style` puts the rules at this add-on's place in the cascade and adds the page's nonce. Most of the rules use tern's custom properties, so they follow dark mode ([Styling](#styling)).
+- **The behaviour** reads a per-element option from a `data-*` attribute (`{data-collapse}`), and a per-note option from the query string.
+
+### Guidelines {#addon-guidelines}
+
+- **Register everything while the script runs.** The mount comes after; nothing registered later applies to the note until the next render.
+- **Key CSS and behaviours on the class or `data-t`, never on the tag.** An author can change the tag with `{tag=…}`.
+- **Use `tern.style`** rather than adding your own `<style>`: it keeps the cascade order of `data-use`, and the nonce of a strict CSP ([CSP](publishing.html#csp)).
+- **Prefer `data-*` attributes** for options on one element. Any key is written to the element as given, but most HTML elements accept only `data-*` and their own attributes.
+- **Guard the options:** `tern.config.use.NAME || {}`. Under node the object is missing.
+- **Never derive vocabulary from options.** Labels, tags and counters must be the same under node, where `tern.config.use` is empty, as in the browser. Use a label map for languages.
+- **Walk the tree yourself in a transform.** Under node, `tern` is a shim without `tern.visit` (next section), so a transform that calls it fails there.
+- **Stay within the browser** at load time: the command line runs the add-on with stand-ins for the DOM (next section).
+
+### Under node: the command line and the language server {#addons-under-node}
+
+`tern check`, `tern parse`, `tern build` and `tern lsp` need a note's vocabulary, so they load it in a node `vm` sandbox, in this order:
+1. the head's classic scripts before the tern.js tag ([Declaring vocabulary in a single file](#window-tern));
+2. the `data-use` script add-ons, with `window.tern` set to a **shim**;
+3. `window.TERN.schema`, on top.
+
+:::table[The window.tern shim]{#tbl-shim}
+| Part | Under node |
+|---|---|
+| `tern.block`, `tern.leaf`, `tern.inline` | work: they store the spec as given, without the name checks |
+| `tern.schema` | the registry being built: `tern.schema.strict = true` and edits to entries work |
+| function fields (`label`, `dom`) | kept; a label function runs |
+| `tern.transform` | works: the transform runs in `tern check`, `tern parse --transformed`, `tern build` and the language server |
+| `tern.version` | the engine's version |
+| `tern.define`, `undefine`, `on`, `style` | accepted and ignored |
+| `tern.render` | resolves to `[]` |
+| `tern.ready` | a promise that never settles |
+| `tern.diagnostics` | an empty array |
+| `tern.config` | `{use: {}, katex: {}}`: no query options |
+| everything else on `tern` (`parse`, `toHTML`, `visit` …) | absent: calling it throws, so the add-on, or the transform that called it, is `addon.failed` |
+:::
+
+- **Browser globals** (`document`, `customElements`, `HTMLElement`, `fetch`, `setTimeout` …) are stand-ins that accept anything and do nothing. So `customElements.define(…)` or `class X extends HTMLElement` does not stop the add-on before its `tern.block` calls.
+- **`window`**, `self` and `globalThis` are the sandbox. Its `console` writes to stderr.
+- **Each script** gets 2 seconds.
+- **Files.** Only local files load: a relative URL from the note's directory, a root-relative one (`/lib/x.js`) from the note's directory or the nearest ancestor that has it. A remote add-on is not loaded: `addon.remote` ([When an add-on fails](#addon-failed)).
+
+What follows from the shim:
+- **Vocabulary is identical** under node and in the browser, if the add-on declares it without reading options or the DOM.
+- **Transforms run** under node as in the browser: `tern check` reports their diagnostics, and `tern build` writes their changes into the page. A transform that throws is skipped and reported as `addon.failed`.
+- **Behaviours and styles** do not run under node. A page written by `tern build` loads the add-on in the browser, where they run.
+
+**The language server** uses the same loader, cached per note directory, tern.js tag and head scripts. A change to an add-on file takes effect at the note's next edit. Completion lists the schema's names; hover on a name shows its element and whether the schema, the allowlist or neither gave it ([The language server](tools.html#lsp)).
+
+## Behaviours {#behaviours}
+
+A behaviour is a function the runtime calls for each element of a name, after the note is in the page: to add a button, start a widget, read the element's data.
+
+### `tern.define` {#tern-define}
+
+:::syntax
+```js
+const undo = tern.define(name, fn)   // fn(el), with this === el
+tern.undefine(name)
+```
+:::
+
+```js
+tern.define('countdown', (el) => {
+  const days = Math.ceil((new Date(el.dataset.to) - Date.now()) / 864e5);
+  el.textContent = `${el.dataset.label}: ${days} days`;
+});
+```
+
+- **Keyed on `data-t`.** `fn` runs for every element whose `data-t` is `name`: containers, leaves and inline elements, with or without a schema entry, and every fence (`data-t="code"`). A bare span `[x]{…}` has no `data-t`.
+- **Once per element** and function. Elements are remembered, so `tern.render()` never runs a function twice on one element.
+- **Document order**, element by element. For each element: its schema `dom`, then each `define` function for its name, in registration order.
+- **Before math.** Formulas are still TeX, in `data-tex`, when behaviours run. See [Behaviours that need typeset math](#pattern-math).
+- **Additive.** Several functions per name all run.
+- **`undo()`** removes that one function, for elements met afterwards; what it did to earlier elements stays.
+- **`tern.undefine(name)`** removes every function `define` registered for the name. A schema `dom` stays.
+- **Late.** A function defined after the behaviours ran, in a `ready` listener for example, runs at once on the elements already in the page.
+- **Errors** are caught and logged (`tern: the "name" behaviour failed`); the other behaviours go on.
+- **Arguments.** A name that is not a non-empty string, or an `fn` that is not a function, throws a `TypeError`.
+- **Where.** In an add-on, or in a `<script>` in the note: note scripts run after the mount and before the behaviours.
+- **Under node** `define` is accepted and never runs.
+
+What a behaviour can find: a leaf and a fence carry `data-t`, a bare span does not.
+
+````tern {.live}
+::countdown{data-to=2026-12-31 data-label="New year"}
+
+```js
+console.log('a fence');
+```
+
+A [bare span]{.aside}.
+````
+
+### A `dom` function in a schema entry {#dom-function}
+
+A schema entry's `dom` is a behaviour declared with the vocabulary: same signature, same rules.
+
+- **It runs first** on its element, before the `define` functions.
+- **One per element.** The runtime looks for a `dom` level by level and runs the first it finds. For an element with the class `t-block` (a container, or a titled fence) the order is block, leaf, inline; for any other, leaf, inline, block. So both an untitled fence (`pre`) and a titled one (`figure.t-block`) find `block.code`'s `dom`, unless a leaf or inline entry named `code` has one.
+- **`window.TERN.schema`** may hold `dom` functions too.
+- **`tern.undefine`** does not remove it.
+
+### Events {#events}
+
+:::syntax
+```js
+const off = tern.on(event, fn)
+```
+:::
+
+:::table[Events]{#tbl-events}
+| Event | When | `fn` receives |
+|---|---|---|
+| `render` | after the behaviours, before any formula is typeset | the root: `main.tern`, or the element given to `tern.render` |
+| `math` | after the formulas in view are typeset; again when a closed `<details>` opens and its formulas are typeset | the root, or that `<details>` |
+| `ready` | once, after the first `render` and `math` and the scroll to the URL's fragment | `main.tern` |
+| `diagnostic` | for each runtime diagnostic reported after you subscribe: `addon.failed`, `math.error`, `katex.unavailable`, `script.document-write`, `script.domcontentloaded` | the diagnostic object |
+:::
+
+- `on` returns a function that unsubscribes `fn`.
+- Any other event name throws a `TypeError`.
+- `render` and `math` fire again at every `tern.render`. `ready` fires once: a listener added after it never runs, so use the promise `tern.ready` instead ([`tern.ready`](api.html#ready)).
+- An error in a listener is caught and logged.
+- Under node nothing fires.
+
+[The runtime lifecycle](api.html#lifecycle) shows where each event falls.
+
+### Patterns {#patterns}
+
+#### An interactive element {#pattern-interactive}
+
+A spoiler: an inline element that is a real button, hidden until pressed. The schema gives the element, its attributes, its look and its behaviour.
+
+```html
+<script>
+window.TERN = {schema: {inline: {hide: {
+  tag: 'button',
+  attrs: {type: 'button', 'aria-pressed': 'false'},
+  css: '.tern .hide[aria-pressed="false"] { color: transparent; background: var(--t-fg); }',
+  dom(el) {
+    el.addEventListener('click', () => {
+      el.setAttribute('aria-pressed', el.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  },
+}}}};
+</script>
+```
+
+`The answer is :hide[42].` renders as `<button class="hide" data-t="hide" type="button" aria-pressed="false">42</button>`. Because it is a `<button>`, it is focusable and works from the keyboard with no extra code.
+
+#### Reading `data-*` attributes and raw bodies {#pattern-data}
+
+A behaviour reads its options from the element. Attributes written in braces arrive as written, so `el.dataset` holds them:
+
+```tern
+::countdown{data-to=2026-12-31 data-label="New year"}
+```
+
+```js
+tern.define('countdown', (el) => {
+  const days = Math.ceil((new Date(el.dataset.to) - Date.now()) / 864e5);
+  el.textContent = `${el.dataset.label}: ${days} days`;
+});
+```
+
+For more than a few values, give the container a raw body (`{raw}`, or `body: 'raw'` in its entry). The behaviour reads it as `el.textContent`:
+
+```tern
+:::chart{raw}
+month,rain
+Jan,62
+Feb,48
+:::
+```
+
+```js
+tern.define('chart', (el) => {
+  const [head, ...rows] = el.textContent.trim().split('\n').map((line) => line.split(','));
+  // … draw the chart from head and rows, then replace el's content
+});
+```
+
+No schema entry is needed: `::countdown` and `:::chart` already carry their `data-t`.
+
+#### Behaviours that need typeset math {#pattern-math}
+
+Behaviours always run before math. A behaviour that needs KaTeX's output listens for `math`:
+
+```js
+tern.on('math', (root) => {
+  for (const eq of root.querySelectorAll('.t-eq')) {
+    eq.classList.toggle('wide', eq.scrollWidth > eq.clientWidth);
+  }
+});
+```
+
+- `math` fires on `main.tern` once the formulas in view are typeset.
+- Formulas inside a closed `<details>` wait until it opens; `math` then fires again with the `<details>` as `root`. So work inside `root`, and make the handler safe to run twice.
+- Before typesetting, every formula's TeX is in its `data-tex` attribute, which stays after typesetting too.
+
+To render new Tern content into a part of the page, as a live preview does, use `tern.render(root, source)`: it runs the behaviours on the new elements and typesets their math ([`tern.render`](api.html#render)).
+
+## Custom transforms {#transforms}
+
+A transform computes something from the whole note before it is written: a glossary, an index, a count, a check. It works on the AST, so its result is in the HTML from the start, in the browser and in `tern.toHTML`.
+
+:::syntax
+```js
+const remove = tern.transform(name, fn, {before: 'refs'})   // or {after: 'numbering'}
+// fn(ast, ctx), with ctx = {schema, opts, lang, report}
+```
+:::
+
+- **`name`**: a non-empty string that is not a built-in transform's name. Registering a name again moves it and replaces its function.
+- **Where it runs:** `{before: 'x'}` or `{after: 'x'}`, where `x` is any transform already registered. Without either, it runs last. An unknown `x` throws.
+- **`remove()`** takes it out. A `remove` from an earlier registration of the same name does nothing.
+- **`fn(ast, ctx)`** changes `ast` in place. Its return value is ignored.
+- **A transform that throws** is skipped, and the note renders without it. It is reported as `addon.failed`, an error at line 0: "the transform "NAME" threw: MESSAGE".
+- **Once per tree.** A tree is transformed once; transforming it again returns it unchanged.
+
+:::table[The built-in transforms, in order]{#tbl-transforms}
+| Transform | Does | So a transform placed after it sees |
+|---|---|---|
+| `figures` | turns an image with an id into a `figure` container | implicit figures as containers |
+| `tables` | merges a `table` container with its pipe table | merged tables |
+| `attributes` | resolves elements, title slots, schema `class` and `attrs`, reserved keys | `data.tern.tag`, `data.tern.slot` |
+| `footnotes` | numbers footnotes, `fn-`/`fnref-` ids | footnote numbers |
+| `ids` | the id registry, heading slugs, invalid and duplicate ids | every heading's id |
+| `numbering` | counters, labels, equation numbers | `data.tern.number`, `data.tern.text` |
+| `refs` | fills references, checks fragment links | reference text |
+| `toc` | fills `toc` leaves | tables of contents |
+| `meta` | the title fallback | `data.tern.meta.title` |
+:::
+
+So a transform that adds ids or headings runs **before `ids`**: then references to its ids resolve, and its headings get slugs and enter the table of contents. One that reads numbers runs **after `numbering`**. [The transformed AST](api.html#transformed-ast) lists every field the built-in transforms write.
+
+**`ctx`:**
+- `ctx.schema`: the registry in use;
+- `ctx.opts`: the options of the call (`head`, `lang` …);
+- `ctx.lang`: the label language ([Labels in other languages](#languages));
+- `ctx.report(code, at, message, hint, severity)` adds a diagnostic.
+  - `at` is a node (its position is used) or a position `{start, end}`; without one, line 1, column 1.
+  - `severity` is `'error'`, `'warning'` (the default) or `'info'`. A code of Tern's own keeps its own severity, so name yours after your add-on: `glossary.empty`.
+  - Your diagnostics reach `tern.check`, `tern.diagnostics`, the console and the panel like Tern's.
+
+### A worked transform {#glossary}
+
+A glossary: `:term[…]` marks a term, and a `::glossary` leaf lists every term once, sorted, each linking to its first use.
+
+```js [glossary.js, an add-on with a transform]{#lst-glossary}
+(function () {
+  'use strict';
+  const tern = window.tern;
+  tern.inline('term', { tag: 'dfn' });
+  tern.leaf('glossary', { tag: 'nav' });
+
+  const walk = (node, fn) => {
+    fn(node);
+    if (node.children) for (const child of node.children) walk(child, fn);
+  };
+  const text = (nodes) => nodes.map((n) => n.value || (n.children ? text(n.children) : '')).join('');
+
+  tern.transform('glossary', (ast, ctx) => {
+    const terms = new Map(); // term -> the id of its first use
+    const lists = [];
+    walk(ast, (node) => {
+      if (node.type === 'leafDirective' && node.name === 'glossary') lists.push(node);
+      if (node.type !== 'textDirective' || node.name !== 'term') return;
+      const word = text(node.children).trim();
+      if (!word) return ctx.report('glossary.empty', node, 'this term is empty', 'write the term in the brackets: :term[kernel]');
+      if (terms.has(word)) return;
+      const a = node.attributes || (node.attributes = {});
+      if (a.id === undefined) a.id = `term-${terms.size + 1}`;
+      terms.set(word, a.id);
+    });
+    if (terms.size && !lists.length) ctx.report('glossary.missing', null, 'the note has terms but no ::glossary', 'add ::glossary where the list goes', 'info');
+    const items = [...terms.keys()].sort((a, b) => a.localeCompare(b)).map((word) => ({
+      type: 'listItem', spread: false, checked: null,
+      children: [{ type: 'paragraph', children: [{ type: 'link', url: `#${terms.get(word)}`, title: null, children: [{ type: 'text', value: word }] }] }],
+    }));
+    for (const leaf of lists) leaf.children = [{ type: 'list', ordered: false, start: null, spread: false, children: items }];
+  }, { before: 'ids' });
+})();
+```
+
+With it, `A :term[kernel] is a set; so is the :term[image].` followed by `::glossary` renders as:
+
+```html
+<p>A <dfn id="term-1" class="term" data-t="term">kernel</dfn> is a set; so is the <dfn id="term-2" class="term" data-t="term">image</dfn>.</p>
+<nav class="glossary" data-t="glossary"><ul>
+<li><a href="#term-2">image</a></li>
+<li><a href="#term-1">kernel</a></li>
+</ul>
+</nav>
+```
+
+- It runs **before `ids`**, so the ids it gives the terms are registered: the links are checked like any fragment link, and `@term-1` would resolve.
+- It walks the tree with its own `walk`, not `tern.visit`, which the command line's shim does not have. So it runs in the browser, in `tern check` and in `tern build` alike.
+- The nodes it builds are mdast nodes ([Node types](api.html#node-types)); the emitter writes them like parsed ones. They have no positions, so they get no `data-pos`.
+- An empty `:term[]` gets `glossary.empty` (warning) at the term.
+
+### When to use a transform {#when-transform}
+
+Use a transform when:
+- the result depends on the whole note (counts, indexes, cross-references);
+- it must be in the HTML before any script runs, with no flash of unfinished content;
+- it must be in `tern.toHTML`'s output.
+
+Use a behaviour when the work needs the page: events, measurement, a widget, data fetched at run time.
+
+Where transforms run:
+- **in the browser**, once per tree: at mount, and at each `tern.render(root, source)`;
+- **under the command line and the language server**, from an add-on: `tern check` reports their diagnostics, and `tern build` writes their changes into the page ([Under node](#addons-under-node));
+- **under node, in your own script**: a transform registered with `require('./tern.js').transform(…)` runs in `toHTML`, `check` and `transform`.
+
+## Styling {#styling}
+
+### Classes and attributes {#classes}
+
+Every element Tern writes carries classes and attributes to key CSS on. Key on these, never on the tag: an author can change the tag with `{tag=…}`.
+
+:::table[Classes and attributes]{#tbl-classes}
+| Hook | On |
+|---|---|
+| `.tern` | `main.tern`, the note's root |
+| `.t-block` | every container, and a titled fence's `figure` |
+| `.NAME` | every container, leaf and inline element, by name (reserved names excepted) |
+| `[data-t="NAME"]` | every named element, reserved names included, and every fence (`code`) |
+| `.t-title` | the title element: `div`, `span`, `summary`, `figcaption`, `caption` or `legend` |
+| `.t-label` | the label: first in a container's title, or first in a leaf or inline element |
+| `.t-end` | the end mark |
+| `.t-cols` | a grid: a container with cells or `cols`; its columns are `--t-cols` |
+| `.t-cell` | one cell of a container |
+| `.t-eq` | a display equation's box |
+| `.t-eqno` | an equation's number |
+| `.t-math` | every formula; display formulas also have `data-display`, and the runtime adds `data-tex` |
+| `.t-error` | a problem shown where it is: opener junk, an unclosed comment or `$$`, a `:::script`, a formula KaTeX rejects |
+| `.t-footnotes` | the footnote section; `.t-fnref` the reference, `.t-fnback` the back link |
+| `.t-task` | a task list item, with its checkbox |
+| `.t-ref` | a resolved reference `@id` |
+| `.t-line`, `.t-hl` | a fence's lines, with `lines`, `hl` or `start`; `pre[data-lines]` shows the numbers |
+| `.t-macros` | a hidden `:::macros` block |
+| `.t-diagnostics` | the diagnostics panel, after `main` |
+| `[data-pos]` | the source line and column, on named elements, cells, fences and formulas |
+:::
+
+Most of them at once:
+
+```tern {.live schema=demo}
+:::theorem[Mean value]{#mv}
+If $f$ is differentiable on $[a, b]$, then
+$$
+f(b) - f(a) = f'(\xi)(b - a)
+$$ {#eq-mv}
+:::
+
+:::proof
+Apply Rolle's theorem; see @eq-mv.[^r]
+:::
+
+:::row
+- [x] stated
++++
+- [ ] proved
+:::
+
+[^r]: Any calculus text.
+```
+
+And `t-error`, on opener junk:
+
+```tern {.live schema=demo expect="block.opener-junk"}
+:::tip Careful
+The title belongs in brackets.
+:::
+```
+
+### Custom properties {#custom-properties}
+
+The base stylesheet, `tern.css`, reads its colours, fonts and measures from custom properties on `:root`.
+
+:::table[Custom properties]{#tbl-properties}
+| Property | Light | Dark | Used for |
+|---|---|---|---|
+| `--t-bg` | `#fdfdfb` | `#16181c` | the page background |
+| `--t-fg` | `#1f2328` | `#dcdfe4` | the text |
+| `--t-muted` | `#636c76` | `#8b949e` | quotes, captions, equation numbers, line numbers |
+| `--t-line` | `#d9dde3` | `#30363d` | rules, table borders, the `h2` underline |
+| `--t-soft` | `#f3f4f1` | `#1f2329` | code backgrounds, table headers |
+| `--t-link` | `#0b62c4` | `#6cb0ff` | links |
+| `--t-mark` | `#fff2a8` | `#5c4d00` | `==highlight==` and highlighted code lines |
+| `--t-error` | `#b3261e` | `#ffb4ab` | `.t-error` text and border, the panel |
+| `--t-error-bg` | `#fdecea` | `#3b1714` | `.t-error` background |
+| `--t-warn` | `#8a5300` | `#e3b341` | warnings in the panel |
+| `--t-font` | Charter, Georgia, serif … | | the body text |
+| `--t-sans` | `system-ui` … | | headings, table headers, the panel |
+| `--t-mono` | `ui-monospace` … | | code |
+| `--t-width` | `40rem` | | the width of the text column |
+| `--t-size` | `18px` | | the base font size; `11pt` in print |
+| `--t-leading` | `1.6` | | the line height |
+| `--t-cols` | | | a grid's columns, set by Tern on each grid |
+:::
+
+### Overriding them {#overriding}
+
+Set the properties in your own CSS. A style in the head, before the tern.js line, is enough:
+
+```html
+<!doctype html><meta charset="utf-8"><style>
+:root { --t-width: 48rem; --t-font: "Iowan Old Style", Georgia, serif; --t-link: #8a3ffc; }
+</style><script src="tern.js"></script>
+```
+
+**The cascade.** Tern's stylesheets form one group in the head, placed before the head's first stylesheet of your own, in this order:
+1. KaTeX's stylesheet;
+2. the base, `tern.css`;
+3. each add-on in `data-use` order: a CSS add-on's link, or the `tern.style` sheets a script add-on adds;
+4. other `tern.style` sheets: from `window.TERN.schema` entries, from note scripts.
+
+Your own head styles come after the group, and a `<style>` written in the note after that. So at equal specificity, **your CSS wins** over Tern's and over every add-on's.
+
+Ways to add your own CSS:
+- a `<style>` or `<link rel="stylesheet">` in the head, before the tern.js line;
+- a `<style>` block in the note, as raw HTML;
+- a CSS add-on: `data-use="theme.css"`, ordered among the add-ons;
+- `tern.style(css)` from a script;
+- a schema entry's `css`.
+
+### `tern.style` {#style-api}
+
+:::syntax
+```js
+tern.style(css)   // adds a <style> to the head; returns it
+```
+:::
+
+- **While an add-on runs,** the sheet goes to that add-on's place in the cascade (rule 3 above). Otherwise it goes after all add-ons (rule 4).
+- **Each call** adds one `<style>`. With `data-nonce`, it carries the nonce, so a strict CSP allows it ([CSP](publishing.html#csp)).
+- A schema entry's `css` goes through `tern.style`.
+- **Under node** it does nothing and returns nothing.
+
+### Dark mode {#dark-mode}
+
+- **The palette** follows the reader's system setting: `tern.css` sets the dark values of the colour properties inside `@media (prefers-color-scheme: dark)`.
+- **The browser's own parts.** tern.js adds `<meta name="color-scheme" content="light dark">` unless the head has one, so form controls and scrollbars match.
+- **Restyling dark mode only:** set your values inside the same media query:
+
+  ```css
+  @media (prefers-color-scheme: dark) {
+    :root { --t-bg: #0d1117; --t-link: #79c0ff; }
+  }
+  ```
+
+- **A property set outside a media query holds in both modes**, since your CSS comes later. Set some colours that way and not the others, and the others still switch: light text can end up on your light background. Set the whole palette, or set it per mode.
+- **One palette for every reader:** set every colour property at the top level, and `color-scheme: light` (or `dark`) on `:root`. A `color-scheme` key in `:::meta`, or a `<meta name="color-scheme">` in the head, sets only the browser's own parts: `tern.css` still follows the system setting.
+
+### Print {#print}
+
+`tern.css` has a print stylesheet:
+- the colours are black on white, with `color-scheme: light`, and `--t-size` is `11pt`;
+- the text column has no maximum width, and the body no padding;
+- code wraps, and tables, code and equations no longer scroll;
+- the diagnostics panel is hidden;
+- KaTeX's formulas stay in their sentences in the PDF's text.
+
+Before printing, tern.js opens every `details.t-block` (closing them again afterwards), and typesets every formula still waiting.
+
+To change print, write `@media print` rules. A property you set at the top level of your CSS also wins over the print values: give it a print value too.
+
+```css
+@media print {
+  :root { --t-size: 10pt; --t-link: #000; }
+  .callout-toggle { display: none; }
+}
+```
+
+## Labels in other languages {#languages}
+
+### Language maps {#label-maps}
+
+A `label` can be a map from language tags to words:
+
+```js
+tern.block('lemma', { counter: 'theorem', label: { en: 'Lemma', de: 'Hilfssatz', fr: 'Lemme', 'pt-BR': 'Lema' } });
+```
+
+The label is picked when the note is rendered, and the reference text follows it: in a German note, `:::lemma{#l}` is "Hilfssatz 1", and so is `@l`.
+
+### How the language is chosen {#choosing-language}
+
+In the browser, and in `tern check`, `tern build` and the language server, the first of:
+1. `data-lang` on the tern.js tag;
+2. `window.TERN.lang`;
+3. `lang` in a top-level `:::meta`;
+4. `lang` on `<html>` in the head.
+
+When the head's `<html lang>` and `:::meta` disagree, the head wins, with `meta.conflict` ([Metadata](elements.html#metadata)).
+
+In your own node script, `tern.toHTML`, `tern.check` and `tern.transform` read their `lang` option, then `:::meta`, then the `<html lang>` of their `head` option.
+
+### Matching an entry {#matching}
+
+Language tags compare without regard to case. Given the language, the map's entry is the first that matches:
+1. the exact tag: `pt-BR` for `pt-BR`;
+2. its primary subtag: `pt` for `pt-BR`;
+3. any entry with that primary subtag: `pt-PT` for `pt-BR`;
+4. `en`;
+5. the map's first entry.
+
+With no language at all, `en`, then the first entry. Values that are not strings are skipped.
+
+**A label function** receives no language. To translate a computed label, keep a map of words and pick from it yourself, or use a map and no function.
+
+## The demo schema {#demo-schema}
+
+The live examples with `schema=demo`, on this page and every other, render with this schema. It is `test/fixtures/schema.js`, the vocabulary the conformance corpus assumes:
+
+```js
+const theoremLike = (label) => ({ tag: 'section', counter: 'theorem', label, ref: '{label} {n}' });
+const callout = (label) => ({ label });
+
+module.exports = {
+  block: {
+    theorem: theoremLike('Theorem'),
+    lemma: theoremLike('Lemma'),
+    proposition: theoremLike('Proposition'),
+    corollary: theoremLike('Corollary'),
+    definition: { tag: 'section', counter: 'definition', label: 'Definition' },
+    example: { tag: 'section', counter: 'example', label: 'Example' },
+    exercise: { tag: 'section', counter: 'exercise', label: 'Exercise' },
+    proof: { tag: 'section', label: 'Proof', end: '∎' },
+    note: callout('Note'),
+    tip: callout('Tip'),
+    important: callout('Important'),
+    warning: callout('Warning'),
+    caution: callout('Caution'),
+    recall: { tag: 'details' },
+    figure: { tag: 'figure', counter: 'figure', label: 'Figure' },
+    table: { tag: 'table', counter: 'table', label: 'Table' },
+    code: { counter: 'code', label: 'Listing' },
+  },
+  leaf: {
+    toc: { tag: 'nav', transform: 'toc', depth: '2-3' },
+  },
+  inline: {},
+};
+```
+
+:::table[The demo vocabulary]{#tbl-demo}
+| Name | Level | Element | Counter | Label | Other |
+|---|---|---|---|---|---|
+| `theorem`, `lemma`, `proposition`, `corollary` | block | `section` | `theorem`, shared | Theorem, Lemma, Proposition, Corollary | `ref: '{label} {n}'` |
+| `definition` | block | `section` | `definition` | Definition | |
+| `example` | block | `section` | `example` | Example | |
+| `exercise` | block | `section` | `exercise` | Exercise | |
+| `proof` | block | `section` | | Proof | `end: '∎'` |
+| `note`, `tip`, `important`, `warning`, `caution` | block | `div` | | Note, Tip, Important, Warning, Caution | |
+| `recall` | block | `details` | | | the title is the `summary` |
+| `figure` | block | `figure` | `figure` | Figure | implicit figures too |
+| `table` | block | `table` | `table` | Table | the caption merge |
+| `code` | block | | `code` | Listing | titled fences |
+| `toc` | leaf | `nav` | | | `transform: 'toc'`, `depth: '2-3'` |
+:::
+
+- It declares no inline names: `:kbd[Ctrl]` is a `<kbd>` through the allowlist, not through the schema.
+- A name it does not declare behaves as in a note with no schema.
+- The documentation pages themselves load `docs.js`, a vocabulary of their own. The live examples never see it.

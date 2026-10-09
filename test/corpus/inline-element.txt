@@ -1,0 +1,486 @@
+# Named inline elements
+
+Cases for named inline elements, the inline level of element resolution (allowlist, custom elements, the
+span fallback) and the `:` inline row of the ambiguity rules.
+
+## inline-element/kbd
+
+spec: syntax-inline#inline-element elements#output-contract
+
+`:kbd[…]` is in the inline allowlist and becomes `<kbd>` with the name as class and `data-t`.
+
+````tern
+Press :kbd[Ctrl]+:kbd[S].
+````
+
+````html
+<p>Press <kbd class="kbd" data-t="kbd">Ctrl</kbd>+<kbd class="kbd" data-t="kbd">S</kbd>.</p>
+````
+
+## inline-element/abbr-attrs
+
+spec: syntax-inline#inline-element syntax-blocks#positions
+
+A glued group's attributes go on the element.
+
+````tern
+:abbr[HTML]{title="HyperText Markup Language"}
+````
+
+````html
+<p><abbr class="abbr" data-t="abbr" title="HyperText Markup Language">HTML</abbr></p>
+````
+
+## inline-element/span-fallback-aside
+
+spec: syntax-inline#inline-element elements#names elements#allowlists
+
+`aside` is not phrasing, so inline it falls back to `span`; its content is inline and its id is emitted first.
+
+````tern
+:aside[note *now*]{#a}
+````
+
+````html
+<p><span id="a" class="aside" data-t="aside">note <em>now</em></span></p>
+````
+
+## inline-element/allowlist
+
+spec: syntax-inline#inline-element elements#allowlists
+
+Names in the inline allowlist become that element.
+
+````tern
+:sub[2] :sup[n] :mark[m] :q[x] :var[v] :small[s]
+````
+
+````html
+<p><sub class="sub" data-t="sub">2</sub> <sup class="sup" data-t="sup">n</sup> <mark class="mark" data-t="mark">m</mark> <q class="q" data-t="q">x</q> <var class="var" data-t="var">v</var> <small class="small" data-t="small">s</small></p>
+````
+
+## inline-element/not-in-allowlist-span
+
+spec: syntax-inline#inline-element elements#allowlists elements#names
+
+`a`, `img` and `br` are left out of the inline allowlist on purpose, and block names are not phrasing: all become spans.
+
+````tern
+:a[x] :img[y] :br[z] :div[w]
+````
+
+````html
+<p><span class="a" data-t="a">x</span> <span class="img" data-t="img">y</span> <span class="br" data-t="br">z</span> <span class="div" data-t="div">w</span></p>
+````
+
+## inline-element/block-schema-not-inline
+
+spec: syntax-inline#inline-element elements#names
+
+The schema is keyed by level: the fixture's block entries for `theorem` and `note` do not apply to `:theorem[` or `:note[`, which fall back to `span`.
+
+````tern
+:theorem[x] and :note[y]
+````
+
+````html
+<p><span class="theorem" data-t="theorem">x</span> and <span class="note" data-t="note">y</span></p>
+````
+
+## inline-element/custom-element
+
+spec: syntax-inline#inline-element elements#names
+
+A valid custom-element name becomes that element at the inline level too.
+
+````tern
+:my-chip[x]{a=1}
+````
+
+````html
+<p><my-chip class="my-chip" data-t="my-chip" a="1">x</my-chip></p>
+````
+
+## inline-element/tag-override
+
+spec: syntax-inline#inline-element elements#names syntax-blocks#merging-and-emission
+
+`{tag=…}` picks the element when the inline allowlist has it; the reserved key is not emitted.
+
+````tern
+:x[a]{tag=kbd}
+````
+
+````html
+<p><kbd class="x" data-t="x">a</kbd></p>
+````
+
+## inline-element/tag-not-allowed
+
+spec: syntax-inline#inline-element elements#names diagnostics#tag-not-allowed
+
+`div` is not in the inline allowlist: `tag.not-allowed` (W) at the key, and the element falls back to `span`.
+
+````tern
+:x[a]{tag=div}
+````
+
+````html
+<p><span class="x" data-t="x">a</span></p>
+````
+
+````diagnostics
+1:7 warning tag.not-allowed
+````
+
+## inline-element/reserved-name
+
+spec: syntax-inline#inline-element elements#reserved diagnostics#name-reserved
+
+`script` is a reserved name: `name.reserved` (W) at the name, and the element falls back to a `span` without `script` as a class. Only containers render a reserved body as `<pre class="t-error">`.
+
+````tern
+:script[x]
+````
+
+````html
+<p><span data-t="script">x</span></p>
+````
+
+````diagnostics
+1:2 warning name.reserved
+````
+
+## inline-element/void-content
+
+spec: syntax-inline#inline-element elements#output-contract diagnostics#leaf-void-content
+
+`wbr` is a void phrasing element: content given to it is emitted after the element, with `leaf.void-content` (W) at the `:`.
+
+````tern
+Long :wbr[x] word.
+````
+
+````html
+<p>Long <wbr class="wbr" data-t="wbr">x word.</p>
+````
+
+````diagnostics
+1:6 warning leaf.void-content
+````
+
+## inline-element/label-counted
+
+spec: syntax-inline#inline-element elements#title-slots elements#output-contract
+options: schema=extended
+
+An inline element counted or labelled by its schema gets its label as its first child, followed by a space when content follows, as a leaf does: `term` is `{tag: 'dfn', counter: 'term', label: 'Term'}`. A void element (`brk`, a `wbr` with a label) gets none.
+
+````tern
+A :term[kernel]{#t-ker}, a :term[] and :brk[x], then @t-ker.
+````
+
+````html
+<p>A <dfn id="t-ker" class="term" data-t="term"><span class="t-label">Term 1</span> kernel</dfn>, a <dfn class="term" data-t="term"><span class="t-label">Term 2</span></dfn> and <wbr class="brk" data-t="brk">x, then <a class="t-ref" href="#t-ker">Term 1</a>.</p>
+````
+
+````diagnostics
+1:40 warning leaf.void-content
+````
+
+## inline-element/content-nests-brackets
+
+spec: syntax-inline#inline-element
+
+Brackets nest inside element content.
+
+````tern
+:kbd[a [b] c]
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd">a [b] c</kbd></p>
+````
+
+## inline-element/atom-protects-bracket
+
+spec: syntax-inline#inline-element syntax-inline#algorithm
+
+An atom protects `]`: the code span's bracket does not close the element.
+
+````tern
+:kbd[`]`]
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd"><code>]</code></kbd></p>
+````
+
+## inline-element/crosses-soft-break
+
+spec: syntax-inline#inline-element syntax-inline#soft-break
+
+Element content may cross a soft line break.
+
+````tern
+:kbd[Ctrl
+S]
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd">Ctrl
+S</kbd></p>
+````
+
+## inline-element/glued-group
+
+spec: syntax-inline#inline-element syntax-blocks#merging-and-emission elements#output-contract
+
+Any group may follow the `]`: the id comes first, the element's name is the first class, and a bare key is a boolean attribute.
+
+````tern
+:kbd[a]{.big #k hidden}
+````
+
+````html
+<p><kbd id="k" class="kbd big" data-t="kbd" hidden>a</kbd></p>
+````
+
+## inline-element/paren-after-is-text
+
+spec: syntax-inline#inline-element syntax-inline#links
+
+The element closes at its `]`; a following `(…)` is text, not a link destination.
+
+````tern
+:kbd[a](u)
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd">a</kbd>(u)</p>
+````
+
+## inline-element/contains-link
+
+spec: syntax-inline#inline-element syntax-inline#links syntax-inline#algorithm
+
+An element whose content holds a link. The "no links in links" deactivation applies only to plain `[` openers, so the `:kbd[` opener still closes.
+
+````tern
+:kbd[[a](u)]
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd"><a href="u">a</a></kbd></p>
+````
+
+## inline-element/inside-link
+
+spec: syntax-inline#inline-element syntax-inline#links
+
+An element inside link text; a `:` after `[` may open.
+
+````tern
+[:kbd[a]](u)
+````
+
+````html
+<p><a href="u"><kbd class="kbd" data-t="kbd">a</kbd></a></p>
+````
+
+## inline-element/bare-url-inside
+
+spec: syntax-inline#inline-element syntax-inline#autolinks
+
+A bare URL inside an element stops at the `]`, so the element still closes.
+
+````tern
+:kbd[https://x]
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd"><a href="https://x">https://x</a></kbd></p>
+````
+
+## inline-element/unclosed
+
+spec: syntax-inline#inline-element diagnostics#inline-unclosed
+
+An element with no matching `]` stays text, with `inline.unclosed` (W) at its `[`.
+
+````tern
+Press :kbd[Ctrl and go.
+````
+
+````html
+<p>Press :kbd[Ctrl and go.</p>
+````
+
+````diagnostics
+1:11 warning inline.unclosed
+````
+
+## inline-element/unclosed-inner-delimiters
+
+spec: syntax-inline#inline-element syntax-inline#emphasis
+
+The unclosed opener is text; the emphasis after it still resolves.
+
+````tern
+:kbd[*a* b
+````
+
+````html
+<p>:kbd[<em>a</em> b</p>
+````
+
+````diagnostics
+1:5 warning inline.unclosed
+````
+
+## inline-element/unclosed-nested
+
+spec: syntax-inline#inline-element syntax-inline#algorithm
+
+Each unclosed opener reports at its own `[`.
+
+````tern
+:kbd[:kbd[:kbd[x
+````
+
+````html
+<p>:kbd[:kbd[:kbd[x</p>
+````
+
+````diagnostics
+1:5 warning inline.unclosed
+1:10 warning inline.unclosed
+1:15 warning inline.unclosed
+````
+
+## inline-element/inner-bracket-steals-closer
+
+spec: syntax-inline#inline-element syntax-inline#algorithm
+
+Brackets nest, so the only `]` closes the inner plain `[` (as text) and the element is unclosed.
+
+````tern
+:kbd[[x]
+````
+
+````html
+<p>:kbd[[x]</p>
+````
+
+````diagnostics
+1:5 warning inline.unclosed
+````
+
+## inline-element/lone-bracket-silent
+
+spec: syntax-inline#inline-element syntax-inline#span
+
+An unmatched plain `[` is text with no diagnostic; the element after it closes normally.
+
+````tern
+[x and :kbd[y]
+````
+
+````html
+<p>[x and <kbd class="kbd" data-t="kbd">y</kbd></p>
+````
+
+## inline-element/text-forms
+
+spec: syntax-inline#inline-element syntax-inline#ambiguity
+
+None of these has a `:` followed by a NAME and `[`, so all are text, silently.
+
+````tern
+Note: [x], :) :smile: :1[x], :kbd [x] and ::before stay text.
+````
+
+````html
+<p>Note: [x], :) :smile: :1[x], :kbd [x] and ::before stay text.</p>
+````
+
+## inline-element/colon-after-letter
+
+spec: syntax-inline#inline-element syntax-inline#ambiguity diagnostics#inline-glued
+
+`a:b[c]` is text: the `:` follows an ASCII letter. It has the shape of `press:kbd[S]`, so it gets `inline.glued` (I) at the `:`, which fires exactly when the `:` follows an ASCII letter or digit.
+
+````tern
+a:b[c]
+````
+
+````html
+<p>a:b[c]</p>
+````
+
+````diagnostics
+1:2 info inline.glued "put a space before"
+````
+
+## inline-element/colon-exclusions
+
+spec: syntax-inline#inline-element syntax-inline#ambiguity diagnostics#inline-glued
+
+A `:` after `_`, `/` or another `:` does not open: these are text. None of them gets `inline.glued`, which is only for a `:` after an ASCII letter or digit.
+
+````tern
+x_:kbd[S], /users/:id[0] and a ::kbd[S]
+````
+
+````html
+<p>x_:kbd[S], /users/:id[0] and a ::kbd[S]</p>
+````
+
+````diagnostics
+````
+
+## inline-element/http-colon
+
+spec: syntax-inline#inline-element syntax-inline#autolinks
+
+In `http://x[1]` the `:` is not followed by a NAME; the bare URL stops at `[`, which is text.
+
+````tern
+http://x[1]
+````
+
+````html
+<p><a href="http://x">http://x</a>[1]</p>
+````
+
+## inline-element/in-heading
+
+spec: syntax-inline#inline-element syntax-blocks#heading
+
+Inline elements work in headings.
+
+````tern
+## Press :kbd[S] {#save}
+````
+
+````html
+<h2 id="save">Press <kbd class="kbd" data-t="kbd">S</kbd></h2>
+````
+
+## inline-element/attr-malformed
+
+spec: syntax-inline#inline-element syntax-blocks#positions diagnostics#attr-malformed
+
+A glued group that does not parse stays text after the element, with `attr.malformed` (W) at the first bad column.
+
+````tern
+:kbd[a]{=x}
+````
+
+````html
+<p><kbd class="kbd" data-t="kbd">a</kbd>{=x}</p>
+````
+
+````diagnostics
+1:9 warning attr.malformed
+````

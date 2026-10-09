@@ -1,0 +1,7 @@
+# A Tern note is an .html file whose body is Tern source, not HTML. Prettier
+# (and any HTML formatter) rewrites it into something else.
+*.html
+# Generated from src/ by tools/concat.js; CI checks it byte for byte.
+tern.js
+# Verbatim spec material.
+test/corpus/

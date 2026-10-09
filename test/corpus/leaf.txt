@@ -1,0 +1,496 @@
+# Leaves
+
+Leaves: the whole-line `::NAME[…]{…}` grammar, the leaf allowlist (which reaches media, void and custom elements), demotion to a paragraph, and void tags with content. `fig` and `spacer` have no schema entry and are not in any allowlist.
+
+## leaf/video
+
+spec: syntax-blocks#leaf elements#allowlists
+
+The leaf allowlist reaches the embedded elements, so media needs no raw HTML; a bare key is a boolean attribute.
+
+````tern
+::video{src=media/tide.mp4 controls width=640}
+````
+
+````html
+<video class="video" data-t="video" src="media/tide.mp4" controls width="640"></video>
+````
+
+## leaf/custom-element
+
+spec: syntax-blocks#leaf elements#names
+
+A valid custom-element name becomes that element, its attributes passed through.
+
+````tern
+::tide-clock{station=leith units=m}
+````
+
+````html
+<tide-clock class="tide-clock" data-t="tide-clock" station="leith" units="m"></tide-clock>
+````
+
+## leaf/content-and-id
+
+spec: syntax-blocks#leaf elements#output-contract
+
+A name outside the allowlist is a `div`; the bracket content is inline, and the group's id goes on the element.
+
+````tern
+::fig[Caption *x*]{#f}
+````
+
+````html
+<div id="f" class="fig" data-t="fig">Caption <em>x</em></div>
+````
+
+## leaf/no-content
+
+spec: syntax-blocks#leaf
+
+Content and group are both optional.
+
+````tern
+::spacer
+````
+
+````html
+<div class="spacer" data-t="spacer"></div>
+````
+
+## leaf/spaces-between-parts
+
+spec: syntax-blocks#leaf
+
+The grammar allows spaces between the name, the content and the group.
+
+````tern
+::fig [Cap] {#f}
+````
+
+````html
+<div id="f" class="fig" data-t="fig">Cap</div>
+````
+
+## leaf/content-nested-element
+
+spec: syntax-blocks#leaf syntax-inline#inline-element
+
+Leaf content follows the rules of a container's title: brackets nest, `\]` escapes, code and math are atoms. So an inline element inside the content nests its brackets.
+
+````tern
+::fig[Press :kbd[Ctrl]]
+````
+
+````html
+<div class="fig" data-t="fig">Press <kbd class="kbd" data-t="kbd">Ctrl</kbd></div>
+````
+
+## leaf/allowlist-p
+
+spec: syntax-blocks#leaf elements#allowlists
+
+`p` is in the leaf allowlist (and not the container one); author classes follow the name class.
+
+````tern
+::p[Lead text]{.lead}
+````
+
+````html
+<p class="p lead" data-t="p">Lead text</p>
+````
+
+## leaf/hr-with-class
+
+spec: syntax-blocks#leaf syntax-blocks#thematic-break
+
+A thematic break takes no attributes; `::hr{…}` is the spelling for a styled rule.
+
+````tern
+::hr{.thin}
+````
+
+````html
+<hr class="hr thin" data-t="hr">
+````
+
+## leaf/name-case-sensitive
+
+spec: syntax-blocks#leaf elements#allowlists syntax-blocks#character-classes
+
+Names are case-sensitive and the leaf allowlist is lower-case, so `::HR` is not `<hr>`: it falls back to `div` with the name as written as its class, and its content is ordinary content.
+
+````tern
+::HR[x]{.thin}
+````
+
+````html
+<div class="HR thin" data-t="HR">x</div>
+````
+
+````diagnostics
+````
+
+## leaf/void-img
+
+spec: syntax-blocks#leaf elements#allowlists
+
+A void element from the leaf allowlist has no content and no end tag.
+
+````tern
+::img{src=a.png alt="A cat"}
+````
+
+````html
+<img class="img" data-t="img" src="a.png" alt="A cat">
+````
+
+## leaf/audio-with-content
+
+spec: syntax-blocks#leaf elements#allowlists
+
+A non-void media element keeps its inline content as fallback.
+
+````tern
+::audio[No audio support.]{src=a.ogg controls}
+````
+
+````html
+<audio class="audio" data-t="audio" src="a.ogg" controls>No audio support.</audio>
+````
+
+## leaf/void-content
+
+spec: syntax-blocks#leaf
+
+Content on a void leaf gets `leaf.void-content` at the leaf and is emitted after the element, in a `<p>` because block context needs a block.
+
+````tern
+::hr[x]
+````
+
+````html
+<hr class="hr" data-t="hr">
+<p>x</p>
+````
+
+````diagnostics
+1:1 warning leaf.void-content
+````
+
+## leaf/prose-demoted
+
+spec: syntax-blocks#leaf
+
+A line starting `::NAME` that is not a whole-line leaf is a paragraph, with an info at the `::`.
+
+````tern
+::before and ::after are pseudo-elements.
+````
+
+````html
+<p>::before and ::after are pseudo-elements.</p>
+````
+
+````diagnostics
+1:1 info leaf.demoted
+````
+
+## leaf/trailing-text-demoted
+
+spec: syntax-blocks#leaf
+
+Text after the content breaks the whole-line match, so the line is demoted.
+
+````tern
+::fig[Cap] trailing
+````
+
+````html
+<p>::fig[Cap] trailing</p>
+````
+
+````diagnostics
+1:1 info leaf.demoted
+````
+
+## leaf/unclosed-bracket-demoted
+
+spec: syntax-blocks#leaf
+
+Content cut off before its `]` (as auto-wrap does) demotes the line.
+
+````tern
+::fig[Caption
+````
+
+````html
+<p>::fig[Caption</p>
+````
+
+````diagnostics
+1:1 info leaf.demoted
+````
+
+## leaf/bare-double-colon
+
+spec: syntax-blocks#leaf
+
+`::` alone is a paragraph, with no diagnostic.
+
+````tern
+::
+````
+
+````html
+<p>::</p>
+````
+
+````diagnostics
+````
+
+## leaf/spaced-name
+
+spec: syntax-blocks#leaf
+
+A space between `::` and the name makes a paragraph with `block.spaced-name`.
+
+````tern
+:: toc
+````
+
+````html
+<p>:: toc</p>
+````
+
+````diagnostics
+1:1 warning block.spaced-name
+````
+
+## leaf/malformed-group
+
+spec: syntax-blocks#leaf syntax-blocks#positions
+
+A trailing group that does not parse makes the line a paragraph, with `attr.malformed` at the first bad column (the `%`) and nothing else: a leaf with a malformed group is not also `leaf.demoted`.
+
+````tern
+::spacer{#f %}
+````
+
+````html
+<p>::spacer{#f %}</p>
+````
+
+````diagnostics
+1:13 warning attr.malformed
+````
+
+## leaf/malformed-group-after-content
+
+spec: syntax-blocks#leaf syntax-blocks#positions
+
+With brackets before it, the group that does not parse still gets `attr.malformed` once, at the first bad column: the line is a paragraph whose `[…]{…}` is also a failed bare span, which is not reported a second time. The same holds for such a line inside a paragraph.
+
+````tern
+::video[Tide at *dawn*]{.a!}
+
+Text
+::video[cap]{#v!}
+````
+
+````html
+<p>::video[Tide at <em>dawn</em>]{.a!}</p>
+<p>Text
+::video[cap]{#v!}</p>
+````
+
+````diagnostics
+1:27 warning attr.malformed
+4:16 warning attr.malformed
+````
+
+## leaf/interrupts-paragraph
+
+spec: syntax-blocks#leaf syntax-blocks#line-algorithm
+
+A whole-line leaf interrupts a paragraph.
+
+````tern
+Some text
+::spacer
+````
+
+````html
+<p>Some text</p>
+<div class="spacer" data-t="spacer"></div>
+````
+
+## leaf/demoted-does-not-interrupt
+
+spec: syntax-blocks#leaf syntax-blocks#line-algorithm
+
+A line that is not a whole-line leaf does not interrupt a paragraph: it continues it, and still gets `leaf.demoted`, which a demoted line carries wherever it appears.
+
+````tern
+Some text
+::before is a pseudo-element.
+````
+
+````html
+<p>Some text
+::before is a pseudo-element.</p>
+````
+
+````diagnostics
+2:1 info leaf.demoted
+````
+
+## leaf/escaped
+
+spec: syntax-blocks#leaf syntax-inline#escapes
+
+`\::` turns a would-be leaf into text.
+
+````tern
+\::spacer
+````
+
+````html
+<p>::spacer</p>
+````
+
+## leaf/toc-depth-single-number
+
+spec: syntax-blocks#leaf elements#output-contract
+
+`{depth=N}` on a toc lists the levels from the lower bound of its range (the schema's `2-3`, so 2) to N; `depth` is consumed, not emitted. A level-1 heading stays out either way.
+
+````tern
+::toc{depth=2}
+
+::toc{depth=4}
+
+# Title
+## A
+### B
+#### C
+````
+
+````html
+<nav class="toc" data-t="toc"><ol><li><a href="#a">A</a></li></ol></nav>
+<nav class="toc" data-t="toc"><ol><li><a href="#a">A</a><ol><li><a href="#b">B</a><ol><li><a href="#c">C</a></li></ol></li></ol></li></ol></nav>
+<h1 id="title">Title</h1>
+<h2 id="a">A</h2>
+<h3 id="b">B</h3>
+<h4 id="c">C</h4>
+````
+
+````diagnostics
+````
+
+## leaf/toc-entry-copied-text
+
+spec: syntax-blocks#leaf elements#output-contract syntax-blocks#heading
+
+A toc entry is a link holding a copy of the heading's inline content, flattened as a reference's text is: the link keeps only its text, the footnote reference is left out, and the reference becomes its text.
+
+````tern
+::toc
+
+## See [the docs](https://x.org)[^n] and @k
+
+[t]{#k}
+
+[^n]: A note.
+````
+
+````html
+<nav class="toc" data-t="toc"><ol><li><a href="#see-the-docs-and-k">See the docs and k</a></li></ol></nav>
+<h2 id="see-the-docs-and-k">See <a href="https://x.org">the docs</a><sup class="t-fnref"><a id="fnref-n" href="#fn-n">1</a></sup> and <a class="t-ref" href="#k">k</a></h2>
+<p><span id="k">t</span></p>
+<section class="t-footnotes"><ol>
+<li id="fn-n"><p>A note. <a class="t-fnback" href="#fnref-n">↩</a></p></li>
+</ol></section>
+````
+
+## leaf/toc-entry-reference-target-text
+
+spec: elements#output-contract elements#references syntax-blocks#leaf
+
+A reference in a toc entry is its target's plain text, exactly as in ref text: `@map` reads "The map", without the heading's `<em>`, and `@rn{ref=title}` reads "Theorem 1", the target's default text: `ref=` chooses the text of the reference itself, not of a copy of it.
+
+````tern
+::toc
+
+## The *map* {#map}
+
+## About @map
+
+## On @rn{ref=title} today
+
+:::theorem[Rank]{#rn}
+Body.
+:::
+````
+
+````html
+<nav class="toc" data-t="toc"><ol><li><a href="#map">The <em>map</em></a></li><li><a href="#about-map">About The map</a></li><li><a href="#on-rn-today">On Theorem 1 today</a></li></ol></nav>
+<h2 id="map">The <em>map</em></h2>
+<h2 id="about-map">About <a class="t-ref" href="#map">The <em>map</em></a></h2>
+<h2 id="on-rn-today">On <a class="t-ref" href="#rn">Rank</a> today</h2>
+<section id="rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank</div><p>Body.</p>
+</section>
+````
+
+````diagnostics
+````
+
+## leaf/label-counted
+
+spec: elements#title-slots elements#output-contract syntax-blocks#leaf
+options: schema=extended
+
+A leaf counted or labelled by its schema has no title element, so its label is its first child, `span.t-label`, followed by a space when content follows; a reference to it uses the schema's `ref`. `bib` is the documented citation style, `{counter: 'bib', ref: '[{n}]'}`, whose label is its number. A void element (`photo`, an `img`) has nowhere to put a label and gets none.
+
+````tern
+::bib[Knuth, *TAOCP*]{#knuth}
+::bib{#lamport}
+::photo[Osprey]{src=osprey.jpg}
+
+See @knuth and @lamport.
+````
+
+````html
+<div id="knuth" class="bib" data-t="bib"><span class="t-label">1</span> Knuth, <em>TAOCP</em></div>
+<div id="lamport" class="bib" data-t="bib"><span class="t-label">2</span></div>
+<img class="photo" data-t="photo" src="osprey.jpg">
+<p>Osprey</p>
+<p>See <a class="t-ref" href="#knuth">[1]</a> and <a class="t-ref" href="#lamport">[2]</a>.</p>
+````
+
+````diagnostics
+3:1 warning leaf.void-content
+````
+
+## leaf/toc-label
+
+spec: elements#title-slots elements#output-contract syntax-blocks#leaf
+options: schema=extended
+
+A toc leaf with a label (`contents: {tag: 'nav', transform: 'toc', label: 'Contents'}`) gets it as its first child, before the list, as any labelled leaf does.
+
+````tern
+::contents
+
+## A
+### B
+````
+
+````html
+<nav class="contents" data-t="contents"><span class="t-label">Contents</span> <ol><li><a href="#a">A</a><ol><li><a href="#b">B</a></li></ol></li></ol></nav>
+<h2 id="a">A</h2>
+<h3 id="b">B</h3>
+````
+
+````diagnostics
+````

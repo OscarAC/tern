@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><script src="/tern.js" data-use="/test/smoke/built-addon.js /test/smoke/built-addon.css"></script>
+:::meta
+title: Smoke: a built page
+lang: en
+:::
+
+<script>
+  window.__log = [`script tern=${typeof tern}`];
+  window.__script = (window.__script || 0) + 1;
+  tern.define('box', (el) => { el.dataset.define = 'yes'; window.__log.push(`define katex=${document.querySelectorAll('main.tern .t-math .katex').length}`); });
+  tern.on('render', () => window.__log.push('render'));
+  tern.on('math', (root) => window.__log.push(`math ${root.localName}`));
+  tern.on('ready', () => window.__log.push('ready'));
+</script>
+
+# Smoke: a built page {#top}
+
+This note is built by `tern build` (test/smoke.js serves it as /gen/built.html).
+
+:::box[Labelled by the build]{#b1}
+A formula $a^2 + b^2 = c^2$ and a dangling @nowhere.
+:::
+
+$$ \int_0^1 x\,dx = \tfrac12 $$ {#eq-int}
+
+See @b1 and @eq-int.

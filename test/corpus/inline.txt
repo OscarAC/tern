@@ -1,0 +1,815 @@
+# Inlines: precedence and atoms, code spans, bare spans, entities, text
+
+Cases for how inline content is read, code spans, bare spans, entities, soft breaks and text, the non-math rows of the ambiguity rules and the
+inline residuals. Emphasis, links, inline elements, references, autolinks and
+escapes have their own files.
+
+## inline/colon-time
+
+spec: syntax-inline#inline-element syntax-inline#ambiguity
+
+A colon after a digit never opens an inline element, and `30` is not a NAME, so `10:30[x]` is plain text with no diagnostic.
+
+````tern
+Meet at 10:30[x] sharp.
+````
+
+````html
+<p>Meet at 10:30[x] sharp.</p>
+````
+
+## inline/colon-glued-word
+
+spec: syntax-inline#inline-element syntax-inline#ambiguity diagnostics#inline-glued
+
+`press:kbd[S]` has the shape of an element but its `:` follows an ASCII letter: it stays text, with `inline.glued` (I) at the `:`.
+
+````tern
+Then press:kbd[S] to save.
+````
+
+````html
+<p>Then press:kbd[S] to save.</p>
+````
+
+````diagnostics
+1:11 info inline.glued
+````
+
+## inline/cjk-element
+
+spec: syntax-inline#inline-element syntax-blocks#character-classes
+
+The glued test is ASCII only, so `漢:rt[kan]` opens an `rt` inside `ruby` although `:` follows a Han character.
+
+````tern
+The kanji :ruby[漢:rt[kan]] is read kan.
+````
+
+````html
+<p>The kanji <ruby class="ruby" data-t="ruby">漢<rt class="rt" data-t="rt">kan</rt></ruby> is read kan.</p>
+````
+
+## inline/email-not-ref
+
+spec: syntax-inline#reference syntax-inline#ambiguity
+
+An `@` after an ASCII letter is not a reference, so an e-mail address is text and nothing dangles.
+
+````tern
+Write to me@x.org today.
+````
+
+````html
+<p>Write to me@x.org today.</p>
+````
+
+## inline/ref-trailing-dash
+
+spec: syntax-inline#reference
+
+The IDENT would be `kernel-`; the trailing `-` is given back to the text.
+
+````tern
+## Kernel {#kernel}
+
+The @kernel- and image-based views.
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>The <a class="t-ref" href="#kernel">Kernel</a>- and image-based views.</p>
+````
+
+## inline/ref-forms
+
+spec: syntax-inline#reference elements#references syntax-blocks#merging-and-emission
+
+A reference renders the target's text: the label for a counted block, `(n)` for an equation; `{ref=…}` selects label, number, title or full, and the reserved key is not emitted.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+Body.
+:::
+
+$$ x $$ {#eq-rn}
+
+@thm-rn, @thm-rn{ref=label}, @thm-rn{ref=number}, @thm-rn{ref=title}, @thm-rn{ref=full}; @eq-rn.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div><p>Body.</p></section>
+<div id="eq-rn" class="t-eq"><span class="t-math" data-display>x</span><span class="t-eqno">(1)</span></div>
+<p><a class="t-ref" href="#thm-rn">Theorem 1</a>, <a class="t-ref" href="#thm-rn">Theorem 1</a>, <a class="t-ref" href="#thm-rn">1</a>, <a class="t-ref" href="#thm-rn">Rank–nullity</a>, <a class="t-ref" href="#thm-rn">Theorem 1 (Rank–nullity)</a>; <a class="t-ref" href="#eq-rn">(1)</a>.</p>
+````
+
+## inline/equality-not-mark
+
+spec: syntax-inline#strike-highlight syntax-inline#ambiguity syntax-blocks#character-classes
+
+`==` glued to ASCII letters on the outside cannot open or close, and a spaced `==` is not flanking: all of this is text.
+
+````tern
+If a==b and c==d then x == y.
+````
+
+````html
+<p>If a==b and c==d then x == y.</p>
+````
+
+## inline/multiplication-em
+
+spec: syntax-inline#emphasis syntax-inline#ambiguity syntax-inline#residual-emphasis
+
+Stars surrounded by spaces are text; `2*3*4` follows CommonMark and emphasises the `3`.
+
+````tern
+2 * 3 * 4 is text, but 2*3*4 is emphasis.
+````
+
+````html
+<p>2 * 3 * 4 is text, but 2<em>3</em>4 is emphasis.</p>
+````
+
+## inline/underscore-literal
+
+spec: syntax-inline#emphasis syntax-inline#ambiguity
+
+`_` and `__` are never delimiters.
+
+````tern
+snake_case, x_1, _private_ and __init__ stay as written.
+````
+
+````html
+<p>snake_case, x_1, _private_ and __init__ stay as written.</p>
+````
+
+## inline/bare-url-stops-at-bracket
+
+spec: syntax-inline#autolinks syntax-inline#span syntax-blocks#positions
+
+A bare URL never consumes `]`, so the bracket still closes a span and the group attaches to it.
+
+````tern
+[https://x.org]{.u}
+````
+
+````html
+<p><span class="u"><a href="https://x.org">https://x.org</a></span></p>
+````
+
+## inline/bare-url-trailing-punct
+
+spec: syntax-inline#autolinks
+
+Trailing `,` `.` `!` and an unbalanced final `)` are left out of a bare URL.
+
+````tern
+See https://x.org/a, https://x.org/b. Or https://x.org/c! (https://x.org/d)
+````
+
+````html
+<p>See <a href="https://x.org/a">https://x.org/a</a>, <a href="https://x.org/b">https://x.org/b</a>. Or <a href="https://x.org/c">https://x.org/c</a>! (<a href="https://x.org/d">https://x.org/d</a>)</p>
+````
+
+## inline/escapes-all
+
+spec: syntax-inline#escape syntax-inline#escapes syntax-inline#ambiguity
+
+Every escape the documentation lists is that character, literally.
+
+````tern
+\* \$ \: \@ \[ \] \{ \} \| \# \< \` \\ \= \~ \! \^ \> \- \+ \.
+````
+
+````html
+<p>* $ : @ [ ] { } | # &lt; ` \ = ~ ! ^ &gt; - + .</p>
+````
+
+## inline/backslash-letter-literal
+
+spec: syntax-inline#escape syntax-blocks#r4 syntax-inline#escapes
+
+Outside math, `\` before a letter is a literal backslash.
+
+````tern
+\alpha and C:\Users
+````
+
+````html
+<p>\alpha and C:\Users</p>
+````
+
+## inline/latex-linebreak-info
+
+spec: syntax-inline#latex-linebreak syntax-inline#ambiguity
+
+`\\` at the end of a line is an escaped backslash followed by a soft break, not a hard break, with `latex.linebreak` (I) at the first backslash of the `\\`.
+
+````tern
+first\\
+second
+````
+
+````html
+<p>first\
+second</p>
+````
+
+````diagnostics
+1:6 info latex.linebreak
+````
+
+## inline/precedence-code-before-emphasis
+
+spec: syntax-inline#algorithm syntax-inline#code-span
+
+A code span is an atom, so the `*` inside it is not a closer; the emphasis runs from the first `*` to the last.
+
+````tern
+*a `b*` c*
+````
+
+````html
+<p><em>a <code>b*</code> c</em></p>
+````
+
+## inline/precedence-code-before-link
+
+spec: syntax-inline#algorithm syntax-inline#code-span syntax-inline#links
+
+Backtick runs come before bracket closers: the code span swallows the `]`, so there is no link and the `[` is text.
+
+````tern
+[not a `link](/u`)
+````
+
+````html
+<p>[not a <code>link](/u</code>)</p>
+````
+
+## inline/atoms-protect-link-brackets
+
+spec: syntax-inline#algorithm syntax-inline#links
+
+An atom protects `]` from bracket matching: the code span's `]` does not close the link text.
+
+````tern
+[a `]` b](u)
+````
+
+````html
+<p><a href="u">a <code>]</code> b</a></p>
+````
+
+## inline/atoms-protect-title-brackets
+
+spec: syntax-inline#algorithm syntax-blocks#container
+
+Title-bracket matching skips atoms, so a `]` in a code span does not end a container title.
+
+````tern
+:::box[a `]` b]
+x
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><div class="t-title">a <code>]</code> b</div><p>x</p></div>
+````
+
+## inline/atom-autolink-hides-ref
+
+spec: syntax-inline#algorithm syntax-inline#autolinks syntax-inline#reference
+
+A bare URL is an atom: the `@kernel` inside it is not a reference (and does not dangle).
+
+````tern
+https://x.org/?@kernel
+````
+
+````html
+<p><a href="https://x.org/?@kernel">https://x.org/?@kernel</a></p>
+````
+
+## inline/atom-entity-not-syntax
+
+spec: syntax-inline#algorithm syntax-inline#entities
+
+Entities are atoms: `&#42;` is not a delimiter and `&#91;` is not a bracket, and both pass through as written.
+
+````tern
+&#42;not em&#42; and &#91;not a link&#93;(u)
+````
+
+````html
+<p>&#42;not em&#42; and &#91;not a link&#93;(u)</p>
+````
+
+## inline/atom-math-hides-emphasis
+
+spec: syntax-inline#algorithm syntax-inline#escapes
+
+Math is an atom: the `*` inside it is TeX, and the emphasis wraps the whole span.
+
+````tern
+*$a*b$*
+````
+
+````html
+<p><em><span class="t-math">a*b</span></em></p>
+````
+
+## inline/code-span-spelling
+
+spec: syntax-inline#code-span syntax-inline#ambiguity
+
+The three spellings of code spans: content is escaped, a longer run encloses a shorter one, and one space each side is stripped.
+
+````tern
+`a < b`
+
+``a`b``
+
+x ``` `` ` `` ``` y
+````
+
+````html
+<p><code>a &lt; b</code></p>
+<p><code>a`b</code></p>
+<p>x <code>`` ` ``</code> y</p>
+````
+
+## inline/code-span-unmatched-literal
+
+spec: syntax-inline#code-span syntax-inline#ambiguity
+
+With no later run of exactly the same length, the backticks are literal.
+
+````tern
+x ``a` y
+````
+
+````html
+<p>x ``a` y</p>
+````
+
+## inline/code-span-skips-longer-run
+
+spec: syntax-inline#code-span
+
+A single backtick closes only at a run of exactly one, so the inner run of two is content.
+
+````tern
+`a``b`
+````
+
+````html
+<p><code>a``b</code></p>
+````
+
+## inline/code-span-newline-is-space
+
+spec: syntax-inline#code-span
+
+A code span may cross a soft break; the newline becomes a space.
+
+````tern
+`a
+b`
+````
+
+````html
+<p><code>a b</code></p>
+````
+
+## inline/code-span-strip-one-space
+
+spec: syntax-inline#code-span
+
+Exactly one leading and one trailing space are stripped, and only when both are present.
+
+````tern
+` a ` and `  b  ` and ` c`
+````
+
+````html
+<p><code>a</code> and <code> b </code> and <code> c</code></p>
+````
+
+````json ast
+{"type": "root", "children": [{"type": "paragraph", "children": [
+  {"type": "inlineCode", "value": "a"},
+  {"type": "text", "value": " and "},
+  {"type": "inlineCode", "value": " b "},
+  {"type": "text", "value": " and "},
+  {"type": "inlineCode", "value": " c"}
+]}]}
+````
+
+## inline/code-span-all-spaces
+
+spec: syntax-inline#code-span
+
+Content that is all spaces is not stripped.
+
+````tern
+`  `
+````
+
+````json ast
+{"type": "root", "children": [{"type": "paragraph", "children": [{"type": "inlineCode", "value": "  "}]}]}
+````
+
+## inline/code-span-no-escapes
+
+spec: syntax-inline#code-span syntax-inline#escapes syntax-inline#entities
+
+Inside a code span there are no escapes and no entities; the content is escaped text.
+
+````tern
+`\*` and `&amp;`
+````
+
+````html
+<p><code>\*</code> and <code>&amp;amp;</code></p>
+````
+
+## inline/code-span-glued-strong-group
+
+spec: syntax-inline#code-span syntax-blocks#positions
+
+A strong group glued to a code span's closing run attaches to the `<code>`.
+
+````tern
+`x`{.lang-js}
+````
+
+````html
+<p><code class="lang-js">x</code></p>
+````
+
+## inline/code-span-glued-weak-group-text
+
+spec: syntax-inline#code-span syntax-blocks#positions
+
+After a code span only strong groups attach; a weak group stays text, silently.
+
+````tern
+`x`{hidden}
+````
+
+````html
+<p><code>x</code>{hidden}</p>
+````
+
+## inline/code-span-glued-malformed
+
+spec: syntax-inline#code-span syntax-blocks#positions diagnostics#attr-malformed
+
+A glued candidate starting with `.` that does not parse stays text, with `attr.malformed` (W) at the first bad column (the `"` where an item should start).
+
+````tern
+`x`{.a "b"}
+````
+
+````html
+<p><code>x</code>{.a "b"}</p>
+````
+
+````diagnostics
+1:8 warning attr.malformed
+````
+
+## inline/lone-backtick-pairs-later
+
+spec: syntax-inline#residual-lone-backtick syntax-inline#ambiguity syntax-inline#code-span syntax-inline#inline-element
+
+The residual: the lone backtick in `:kbd[`]` pairs with the next single backtick, the code span swallows the `]`, and the element is left unclosed.
+
+````tern
+Press :kbd[`] then type `x`.
+````
+
+````html
+<p>Press :kbd[<code>] then type </code>x`.</p>
+````
+
+````diagnostics
+1:11 warning inline.unclosed
+````
+
+## inline/lone-backtick-escaped
+
+spec: syntax-inline#residual-lone-backtick syntax-inline#ambiguity syntax-inline#escape syntax-inline#inline-element
+
+The fix for the residual: `` \` `` is a literal backtick, so the element closes and the later code span is intact.
+
+````tern
+Press :kbd[\`] then type `x`.
+````
+
+````html
+<p>Press <kbd class="kbd" data-t="kbd">`</kbd> then type <code>x</code>.</p>
+````
+
+## inline/span-spelling
+
+spec: syntax-inline#span elements#output-contract syntax-blocks#merging-and-emission
+
+`]` immediately followed by a group that parses makes a bare span, with no `data-t`; a weak group is accepted.
+
+````tern
+[the term]{.term #k} and [answer]{hidden}
+````
+
+````html
+<p><span id="k" class="term">the term</span> and <span hidden>answer</span></p>
+````
+
+## inline/span-text-forms
+
+spec: syntax-inline#span syntax-inline#ambiguity syntax-blocks#positions
+
+Brackets with no `(` or glued group after them are text; a group after a space is not glued.
+
+````tern
+[1, 2], f[x], [not a link] f(x) and [x] {.c}
+````
+
+````html
+<p>[1, 2], f[x], [not a link] f(x) and [x] {.c}</p>
+````
+
+## inline/span-malformed-group
+
+spec: syntax-inline#span syntax-blocks#positions diagnostics#attr-malformed
+
+A glued group that does not parse leaves both brackets and the group as text, with `attr.malformed` (W) at the first bad column.
+
+````tern
+[x]{.a "b"}
+````
+
+````html
+<p>[x]{.a "b"}</p>
+````
+
+````diagnostics
+1:8 warning attr.malformed
+````
+
+## inline/span-numeric-group-malformed
+
+spec: syntax-inline#span syntax-blocks#positions
+
+After a bracket any group is a candidate, so `{1, 2}` glued to `]` is a malformed group (a KEY cannot start with a digit), not silent text as it would be elsewhere.
+
+````tern
+[x]{1, 2}
+````
+
+````html
+<p>[x]{1, 2}</p>
+````
+
+````diagnostics
+1:5 warning attr.malformed
+````
+
+## inline/span-empty-group
+
+spec: syntax-inline#span syntax-blocks#finding-the-group
+
+`{}` is not a group, so `[x]{}` is text, and silent: an empty group after a bracket is not a failed candidate.
+
+````tern
+[x]{}
+````
+
+````html
+<p>[x]{}</p>
+````
+
+````diagnostics
+````
+
+## inline/span-inline-content
+
+spec: syntax-inline#span
+
+Span content is ordinary inline content.
+
+````tern
+[*a* `b`]{.c}
+````
+
+````html
+<p><span class="c"><em>a</em> <code>b</code></span></p>
+````
+
+## inline/span-nested
+
+spec: syntax-inline#span syntax-inline#algorithm
+
+Spans nest through the bracket stack.
+
+````tern
+[a [b]{.y}]{.x}
+````
+
+````html
+<p><span class="x">a <span class="y">b</span></span></p>
+````
+
+## inline/span-containing-link
+
+spec: syntax-inline#span syntax-inline#links syntax-inline#algorithm
+
+A span may contain a link: link deactivation ("no links in links") only stops the earlier `[` from becoming a link, so it still closes as a span.
+
+````tern
+[see [x](u) now]{.n}
+````
+
+````html
+<p><span class="n">see <a href="u">x</a> now</span></p>
+````
+
+## inline/link-containing-span
+
+spec: syntax-inline#span syntax-inline#links
+
+A span inside link text: only links deactivate earlier openers, so the link still forms around it.
+
+````tern
+[[a]{.c}](u)
+````
+
+````html
+<p><a href="u"><span class="c">a</span></a></p>
+````
+
+## inline/entities
+
+spec: syntax-inline#entities syntax-inline#ambiguity
+
+Well-formed named and numeric references pass through as written; any other `&` is escaped.
+
+````tern
+AT&T, &nbsp;, &#x2203; and &#8704;
+````
+
+````html
+<p>AT&amp;T, &nbsp;, &#x2203; and &#8704;</p>
+````
+
+## inline/entity-needs-semicolon
+
+spec: syntax-inline#entities
+
+Without the `;`, or with no digits, a reference is not well formed and its `&` is escaped.
+
+````tern
+&copy 2026 and &#x;
+````
+
+````html
+<p>&amp;copy 2026 and &amp;#x;</p>
+````
+
+## inline/entity-unknown-escaped
+
+spec: syntax-inline#entities
+
+A named reference that HTML does not define is not well formed: its `&` is escaped.
+
+````tern
+&foo; and &bogus; but &amp;
+````
+
+````html
+<p>&amp;foo; and &amp;bogus; but &amp;</p>
+````
+
+## inline/entity-escaped-ampersand
+
+spec: syntax-inline#entities syntax-inline#escape syntax-inline#ambiguity
+
+`\&` is the literal spelling: the escaped `&` cannot start an entity, so `&amp;` shows as written.
+
+````tern
+\&amp;
+````
+
+````html
+<p>&amp;amp;</p>
+````
+
+## inline/text-escaping
+
+spec: syntax-inline#soft-break
+
+`<`, `>`, `&` and `"` in text are escaped.
+
+````tern
+a < b & c > d "e"
+````
+
+````html
+<p>a &lt; b &amp; c &gt; d &quot;e&quot;</p>
+````
+
+## inline/soft-break
+
+spec: syntax-inline#soft-break syntax-blocks#paragraph
+
+A newline inside inline content is emitted as a newline.
+
+````tern
+one
+two
+````
+
+````html
+<p>one
+two</p>
+````
+
+## inline/hash-text
+
+spec: syntax-inline#ambiguity
+
+`#` inside a line is text: `C#`, `#tag`, `#1`.
+
+````tern
+Use C# and #tags; see #1.
+````
+
+````html
+<p>Use C# and #tags; see #1.</p>
+````
+
+## inline/tilde-caret-percent-text
+
+spec: syntax-inline#ambiguity syntax-inline#strike-highlight
+
+A lone `~` or `^` is never syntax (there is no sub- or superscript spelling), and `%` is never syntax.
+
+````tern
+x^2, a ~ b, ~x~, ^y^ and 100% stay text.
+````
+
+````html
+<p>x^2, a ~ b, ~x~, ^y^ and 100% stay text.</p>
+````
+
+## inline/brace-escaped-after-bracket
+
+spec: syntax-inline#ambiguity syntax-inline#escape syntax-inline#span
+
+`\{` is the literal spelling of an inline `{`: the escaped brace is not a group, so the brackets are text.
+
+````tern
+[x]\{.c}
+````
+
+````html
+<p>[x]{.c}</p>
+````
+
+## inline/multiplication-fixes
+
+spec: syntax-inline#residual-emphasis syntax-inline#emphasis syntax-inline#escape
+
+The two documented fixes for `2*3*4`: escaped stars, or math.
+
+````tern
+2\*3\*4 or $2 \cdot 3 \cdot 4$
+````
+
+````html
+<p>2*3*4 or <span class="t-math">2 \cdot 3 \cdot 4</span></p>
+````
+
+## inline/residual-raw-tag
+
+spec: syntax-inline#residual-inline-html syntax-inline#ambiguity
+
+`x <b and c> y` matches CommonMark's tag grammar, so it is a raw `<b>` tag (never closed: `html.inline-unclosed`); `\<` is the fix.
+
+````tern
+x <b and c> y
+
+x \<b and c> y
+````
+
+````html
+<p>x <b and c> y</p>
+<p>x &lt;b and c&gt; y</p>
+````
+
+````diagnostics
+1:3 warning html.inline-unclosed
+````

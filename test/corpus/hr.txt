@@ -1,0 +1,321 @@
+# Thematic breaks and front matter
+
+`---` is the documented rule; `***`, `___` and spaced forms are accepted
+alternates. Front matter is not supported and says so.
+
+## hr/dash
+
+spec: syntax-blocks#thematic-break
+
+`---` alone on a line is a rule.
+
+````tern
+---
+````
+
+````html
+<hr>
+````
+
+## hr/star-and-underscore
+
+spec: syntax-blocks#thematic-break syntax-blocks#r8
+
+`***` and `___` are accepted, undocumented spellings of the rule.
+
+````tern
+***
+___
+````
+
+````html
+<hr>
+<hr>
+````
+
+## hr/spaced
+
+spec: syntax-blocks#thematic-break syntax-blocks#r8 syntax-blocks#line-algorithm
+
+Spaced forms are rules, and rules are tested before list items, so `- - -` and `* * *` are not nested lists.
+
+````tern
+- - -
+* * *
+_ _ _
+````
+
+````html
+<hr>
+<hr>
+<hr>
+````
+
+## hr/long-runs
+
+spec: syntax-blocks#thematic-break
+
+Three or more of the same character make a rule.
+
+````tern
+----------
+*****
+_____
+````
+
+````html
+<hr>
+<hr>
+<hr>
+````
+
+## hr/rule-on-remainder
+
+spec: syntax-blocks#thematic-break syntax-blocks#line-algorithm syntax-blocks#blockquote
+
+The rule test applies to the whole remainder: `- ---` is dashes and spaces only, so it is a rule (not a list item); `> ---` is a quote holding a rule.
+
+````tern
+- ---
+
+> ---
+````
+
+````html
+<hr>
+<blockquote><hr></blockquote>
+````
+
+## hr/two-is-text
+
+spec: syntax-blocks#thematic-break
+
+Two characters are not a rule.
+
+````tern
+--
+**
+__
+````
+
+````html
+<p>--
+**
+__</p>
+````
+
+## hr/mixed-is-text
+
+spec: syntax-blocks#thematic-break syntax-inline#ambiguity
+
+The characters must all be the same, and nothing else may be on the line.
+
+````tern
+-_-
+_-_
+-- x
+````
+
+````html
+<p>-_-
+_-_
+-- x</p>
+````
+
+## hr/trailing-text-not-rule
+
+spec: syntax-blocks#thematic-break syntax-blocks#line-algorithm
+
+A rule-like start followed by text is a paragraph, not a rule and not a list item.
+
+````tern
+--- x
+````
+
+````html
+<p>--- x</p>
+````
+
+## hr/not-emphasis
+
+spec: syntax-blocks#thematic-break syntax-inline#emphasis
+
+`***both***` is not a rule (it holds letters); it is strong emphasis inside emphasis.
+
+````tern
+***both***
+````
+
+````html
+<p><em><strong>both</strong></em></p>
+````
+
+## hr/indented
+
+spec: syntax-blocks#thematic-break syntax-blocks#r2
+options: escaped
+
+Leading whitespace is ignored: an indented rule is still a rule.
+
+````tern
+      ---
+\t***
+````
+
+````html
+<hr>
+<hr>
+````
+
+## hr/interrupts-paragraph
+
+spec: syntax-blocks#thematic-break syntax-blocks#line-algorithm
+
+Row 6: a rule interrupts a paragraph (and makes no setext heading).
+
+````tern
+Some prose
+---
+````
+
+````html
+<p>Some prose</p>
+<hr>
+````
+
+## hr/attrs-not-accepted
+
+spec: syntax-blocks#thematic-break syntax-blocks#positions
+
+A thematic break takes no attributes: with a group after it the line is no longer a rule, and the group is ordinary text.
+
+````tern
+--- {.thin}
+````
+
+````html
+<p>--- {.thin}</p>
+````
+
+## hr/attribute-line-before-rule
+
+spec: syntax-blocks#thematic-break syntax-blocks#attribute-line
+
+An attribute line before `---` attaches to the `<hr>`: only a trailing group is refused on a rule.
+
+````tern
+{.thin}
+---
+````
+
+````html
+<hr class="thin">
+````
+
+````diagnostics
+````
+
+## hr/tabs-between-marks
+
+spec: syntax-blocks#thematic-break
+options: escaped
+
+Rule lines allow tabs as well as spaces between the marks.
+
+````tern
+-\t-\t-
+*\t* *
+_ \t_\t_
+````
+
+````html
+<hr>
+<hr>
+<hr>
+````
+
+## hr/frontmatter-info
+
+spec: syntax-blocks#front-matter elements#meta-rules syntax-blocks#r1
+
+A note whose first block is `---`, `key: value` lines and `---` renders as a rule, a paragraph and a rule, with an info pointing to `:::meta`.
+
+````tern
+---
+title: Linear maps
+lang: en
+---
+````
+
+````html
+<hr>
+<p>title: Linear maps
+lang: en</p>
+<hr>
+````
+
+````diagnostics
+1:1 info doc.frontmatter ":::meta"
+````
+
+## hr/frontmatter-not-first-block
+
+spec: syntax-blocks#front-matter
+
+The same lines after another block are just a rule, a paragraph and a rule.
+
+````tern
+# Notes
+
+---
+title: x
+---
+````
+
+````html
+<h1 id="notes">Notes</h1>
+<hr>
+<p>title: x</p>
+<hr>
+````
+
+## hr/frontmatter-needs-key-value
+
+spec: syntax-blocks#front-matter
+
+Prose between two rules at the start of a note is not front matter.
+
+````tern
+---
+Just a paragraph between rules.
+---
+````
+
+````html
+<hr>
+<p>Just a paragraph between rules.</p>
+<hr>
+````
+
+## hr/frontmatter-after-blank-line
+
+spec: syntax-blocks#front-matter diagnostics#doc-frontmatter
+
+A note usually starts with a blank line after the tern.js line; front matter is detected on the first block wherever it starts, and `doc.frontmatter` points at the opening `---` line, here line 2.
+
+````tern
+
+---
+title: x
+---
+````
+
+````html
+<hr>
+<p>title: x</p>
+<hr>
+````
+
+````diagnostics
+2:1 info doc.frontmatter
+````

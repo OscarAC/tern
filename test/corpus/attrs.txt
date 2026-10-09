@@ -1,0 +1,1190 @@
+# Attributes
+
+The one attribute grammar (finding the group, strong and weak groups, merging and emission, reserved keys and names, the positions) and the attribute line. The bare span `[x]{…}` accepts any group, so it carries most grammar cases; the attribute line accepts strong groups only.
+
+## attrs/line-basic
+
+spec: syntax-blocks#attribute-line syntax-blocks#r5
+
+The attribute-line example: an attribute line attaches its group to the block that starts on the next line.
+
+````tern
+{.byline}
+Lecture 7 · O. Carrera
+````
+
+````html
+<p class="byline">Lecture 7 · O. Carrera</p>
+````
+
+## attrs/line-before-list
+
+spec: syntax-blocks#attribute-line
+
+An attribute line before a list goes on the list element.
+
+````tern
+{.steps}
+- one
+- two
+````
+
+````html
+<ul class="steps">
+<li>one</li>
+<li>two</li>
+</ul>
+````
+
+## attrs/line-before-heading
+
+spec: syntax-blocks#attribute-line
+
+An attribute line before a heading gives it its id, so no slug is made.
+
+````tern
+{#intro .x}
+## Start
+````
+
+````html
+<h2 id="intro" class="x">Start</h2>
+````
+
+## attrs/line-before-fence
+
+spec: syntax-blocks#attribute-line syntax-blocks#fence
+
+On an untitled fence the attributes go on `<pre>`.
+
+````tern
+{.wide}
+```js
+let x;
+```
+````
+
+````html
+<pre class="wide" data-t="code"><code class="language-js">let x;</code></pre>
+````
+
+## attrs/line-before-titled-fence
+
+spec: syntax-blocks#attribute-line syntax-blocks#fence
+
+On a titled fence the attributes go on the listing's figure.
+
+````tern
+{.wide}
+```js[Setup]
+let x;
+```
+````
+
+````html
+<figure class="t-block code wide" data-t="code">
+<pre><code class="language-js">let x;</code></pre>
+<figcaption class="t-title"><span class="t-label">Listing 1</span> Setup</figcaption>
+</figure>
+````
+
+## attrs/line-before-display-math
+
+spec: syntax-blocks#attribute-line syntax-blocks#display-math
+
+On display math the attributes go on `div.t-eq`; an id there numbers the equation.
+
+````tern
+{#eq-a}
+$$
+x = 1
+$$
+````
+
+````html
+<div class="t-eq" id="eq-a"><span class="t-math" data-display>x = 1</span><span class="t-eqno">(1)</span></div>
+````
+
+## attrs/line-before-container-opener-wins
+
+spec: syntax-blocks#attribute-line syntax-blocks#merging-and-emission
+
+An attribute line merges into the container it precedes; where both set the id or a key, the opener's own value wins.
+
+````tern
+{#a .x key=1}
+:::box{#b key=2}
+Text.
+:::
+````
+
+````html
+<div id="b" class="t-block box x" data-t="box" key="2">
+<p>Text.</p>
+</div>
+````
+
+## attrs/line-before-container-classes
+
+spec: syntax-blocks#attribute-line syntax-blocks#merging-and-emission
+
+Classes from the attribute line and from the opener both reach the container, the line's first: "the opener's own attributes win" applies to the id and other keys, never to classes, which accumulate.
+
+````tern
+{.x}
+:::box{.y}
+Text.
+:::
+````
+
+````html
+<div class="t-block box x y" data-t="box">
+<p>Text.</p>
+</div>
+````
+
+## attrs/line-before-leaf
+
+spec: syntax-blocks#attribute-line syntax-blocks#leaf
+
+An attribute line merges into the leaf it precedes.
+
+````tern
+{.x}
+::spacer{#s}
+````
+
+````html
+<div id="s" class="spacer x" data-t="spacer"></div>
+````
+
+## attrs/line-before-image-figure
+
+spec: syntax-blocks#attribute-line elements#figures
+
+Before an image-only paragraph whose image has an id, the attributes go to the implicit figure, not to `<img>`.
+
+````tern
+{.wide}
+![Osprey](o.jpg){#fig-o}
+````
+
+````html
+<figure id="fig-o" class="t-block figure wide" data-t="figure">
+<img src="o.jpg" alt="">
+<figcaption class="t-title"><span class="t-label">Figure 1</span> Osprey</figcaption>
+</figure>
+````
+
+## attrs/lines-merge
+
+spec: syntax-blocks#attribute-line syntax-blocks#merging-and-emission
+
+Consecutive attribute lines merge into one group for the next block.
+
+````tern
+{#a .x}
+{.y k=1}
+Text.
+````
+
+````html
+<p id="a" class="x y" k="1">Text.</p>
+````
+
+## attrs/line-interrupts-paragraph
+
+spec: syntax-blocks#attribute-line syntax-blocks#line-algorithm
+
+An attribute line interrupts a paragraph and attaches to the next one.
+
+````tern
+One.
+{.x}
+Two.
+````
+
+````html
+<p>One.</p>
+<p class="x">Two.</p>
+````
+
+## attrs/orphan
+
+spec: syntax-blocks#attribute-line
+
+An attribute line followed by a blank line has nothing to attach to: it is shown as paragraph text, with `attributes.orphan`, and is an `attributes` node in the AST.
+
+````tern
+{.lead}
+
+Text.
+````
+
+````html
+<p>{.lead}</p>
+<p>Text.</p>
+````
+
+````json ast
+{"type": "root", "children": [{"type": "attributes"}, {"type": "paragraph"}]}
+````
+
+````diagnostics
+1:1 warning attributes.orphan
+````
+
+## attrs/orphan-at-end
+
+spec: syntax-blocks#attribute-line
+
+An attribute line at the end of the note is an orphan.
+
+````tern
+Text.
+
+{.x}
+````
+
+````html
+<p>Text.</p>
+<p>{.x}</p>
+````
+
+````diagnostics
+3:1 warning attributes.orphan
+````
+
+## attrs/orphan-before-closer
+
+spec: syntax-blocks#attribute-line syntax-blocks#closer
+
+A closer after an attribute line leaves it an orphan; it does not attach across the container's end.
+
+````tern
+:::box
+Text.
+
+{.x}
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+<p>{.x}</p>
+</div>
+````
+
+````diagnostics
+4:1 warning attributes.orphan
+````
+
+## attrs/orphan-before-separator
+
+spec: syntax-blocks#attribute-line syntax-blocks#cells
+
+An attribute line does not attach to the cell that a following `+++` starts (the `+++` takes its own group).
+
+````tern
+:::row
+A.
+
+{.x}
++++
+B.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell"><p>A.</p><p>{.x}</p></div>
+<div class="t-cell"><p>B.</p></div>
+</div>
+````
+
+````diagnostics
+4:1 warning attributes.orphan
+````
+
+## attrs/orphan-lines-one-paragraph
+
+spec: syntax-blocks#attribute-line syntax-blocks#line-algorithm
+
+An attribute line interrupts the paragraph above it; when no block follows, consecutive orphan lines form one paragraph of their own, with one `attributes.orphan` at the first line.
+
+````tern
+Text.
+{.a}
+{#b}
+
+More.
+````
+
+````html
+<p>Text.</p>
+<p>{.a}
+{#b}</p>
+<p>More.</p>
+````
+
+````diagnostics
+2:1 warning attributes.orphan
+````
+
+## attrs/raw-follows
+
+spec: syntax-blocks#attribute-line syntax-blocks#raw-html
+
+Before a raw HTML block the line stays text, with `attributes.raw`: attributes go in the tag.
+
+````tern
+{.x}
+<div>raw</div>
+````
+
+````html
+<p>{.x}</p>
+<div>raw</div>
+````
+
+````diagnostics
+1:1 warning attributes.raw
+````
+
+## attrs/weak-line-is-text
+
+spec: syntax-blocks#attribute-line syntax-blocks#strong-and-weak
+
+A line holding only a weak group is an ordinary paragraph line, with no diagnostic; the next line continues the paragraph.
+
+````tern
+{open}
+Text.
+````
+
+````html
+<p>{open}
+Text.</p>
+````
+
+````diagnostics
+````
+
+## attrs/unparsable-line-is-text
+
+spec: syntax-blocks#attribute-line syntax-blocks#positions
+
+The attribute-line example: `{1, 2}` alone on a line is a paragraph, with no diagnostic.
+
+````tern
+{1, 2}
+````
+
+````html
+<p>{1, 2}</p>
+````
+
+````diagnostics
+````
+
+## attrs/line-malformed-is-text
+
+spec: syntax-blocks#attribute-line syntax-blocks#positions
+
+An unparsable group alone on a line is not an attribute line: it is a paragraph line, and the next line continues the paragraph. A line that starts `{#` or `{.` gets `attr.malformed` at the first character the grammar rejects (the `%`), as a heading's trailing group does.
+
+````tern
+{#intro %}
+Text.
+````
+
+````html
+<p>{#intro %}
+Text.</p>
+````
+
+````diagnostics
+1:9 warning attr.malformed
+````
+
+## attrs/empty-line-not-group
+
+spec: syntax-blocks#finding-the-group syntax-blocks#attribute-line
+
+`{}` is not a group, so the line is paragraph text.
+
+````tern
+{}
+Text.
+````
+
+````html
+<p>{}
+Text.</p>
+````
+
+````diagnostics
+````
+
+## attrs/line-two-groups
+
+spec: syntax-blocks#attribute-line syntax-blocks#merging-and-emission
+
+An attribute line may hold several strong groups, separated by spaces; they merge as consecutive attribute lines do.
+
+````tern
+{.a} {.b}
+Text.
+````
+
+````html
+<p class="a b">Text.</p>
+````
+
+````diagnostics
+````
+
+## attrs/brace-elsewhere-text
+
+spec: syntax-blocks#positions
+
+Outside the positions `{` is text: in prose, glued to a word, after a bracket with a space, and at the end of a paragraph line.
+
+````tern
+The set {1, 2}, f{x}, [x] {.c} and a tail {.x}
+````
+
+````html
+<p>The set {1, 2}, f{x}, [x] {.c} and a tail {.x}</p>
+````
+
+````diagnostics
+````
+
+## attrs/no-unbraced-form
+
+spec: syntax-blocks#r5 syntax-blocks#heading
+
+Attributes are always braced: `#k` at the end of a heading is heading text, part of the slug.
+
+````tern
+## Kernel #k
+````
+
+````html
+<h2 id="kernel-k">Kernel #k</h2>
+````
+
+## attrs/weak-after-bracket
+
+spec: syntax-blocks#positions syntax-blocks#strong-and-weak syntax-inline#span
+
+Glued after a bracket construct any group binds, weak ones included.
+
+````tern
+Click [answer]{hidden}.
+````
+
+````html
+<p>Click <span hidden>answer</span>.</p>
+````
+
+## attrs/weak-after-math-is-text
+
+spec: syntax-blocks#positions syntax-blocks#strong-and-weak
+
+After a math span only strong groups bind; a weak one stays text, with no diagnostic because it does not start with `#` or `.`.
+
+````tern
+See $f${x} and $g${open}.
+````
+
+````html
+<p>See <span class="t-math">f</span>{x} and <span class="t-math">g</span>{open}.</p>
+````
+
+````diagnostics
+````
+
+## attrs/strong-after-math
+
+spec: syntax-blocks#positions
+
+A strong group glued after a math span binds to it (as in `$x${#e}`).
+
+````tern
+$x${#e}
+````
+
+````html
+<p><span id="e" class="t-math">x</span></p>
+````
+
+## attrs/glued-after-inline-element
+
+spec: syntax-blocks#positions syntax-inline#inline-element
+
+A group glued after an inline element binds to it; author classes follow the name class.
+
+````tern
+Press :kbd[C]{.big}.
+````
+
+````html
+<p>Press <kbd class="kbd big" data-t="kbd">C</kbd>.</p>
+````
+
+## attrs/malformed-after-bracket
+
+spec: syntax-blocks#positions syntax-inline#span
+
+After a bracket, a candidate that does not parse stays text, with `attr.malformed` at the first bad column, whatever it starts with.
+
+````tern
+[x]{x %}
+````
+
+````html
+<p>[x]{x %}</p>
+````
+
+````diagnostics
+1:7 warning attr.malformed
+````
+
+## attrs/malformed-after-code-strong-start
+
+spec: syntax-blocks#positions
+
+After a code span an unparsable candidate is text, with `attr.malformed` because it starts with `.`.
+
+````tern
+`c`{.x %}
+````
+
+````html
+<p><code>c</code>{.x %}</p>
+````
+
+````diagnostics
+1:8 warning attr.malformed
+````
+
+## attrs/malformed-after-code-weak-start-silent
+
+spec: syntax-blocks#positions
+
+After a code span an unparsable candidate that starts with neither `#` nor `.` is text without a diagnostic.
+
+````tern
+`c`{x %}
+````
+
+````html
+<p><code>c</code>{x %}</p>
+````
+
+````diagnostics
+````
+
+## attrs/candidate-brace-abort
+
+spec: syntax-blocks#finding-the-group syntax-inline#algorithm
+
+An unquoted `{` before the first `}` aborts the candidate: it is not a group, the bracket stays text, and the inner `{b}` is not glued to anything. An aborted candidate, like `{}`, is silent; only a candidate that runs to its `}` and fails to parse gets `attr.malformed`.
+
+````tern
+[x]{.a {b}}
+````
+
+````html
+<p>[x]{.a {b}}</p>
+````
+
+````diagnostics
+````
+
+## attrs/brace-run-linear
+
+spec: syntax-blocks#finding-the-group syntax-inline#algorithm
+
+Thirty thousand `[x]{` in a row, then `}`: each candidate stops at the next `{`, so finding groups stays linear and the line is one paragraph. Every candidate is aborted except the last, which is the empty `{}`; all are silent.
+
+````tern js
+'[x]{'.repeat(30000) + '}\n'
+````
+
+````json ast
+{"type": "root", "children": [{"type": "paragraph"}]}
+````
+
+````diagnostics
+````
+
+## attrs/empty-after-bracket
+
+spec: syntax-blocks#finding-the-group syntax-inline#span
+
+`{}` is not a group, so `[x]{}` is not a span and stays text, silently: an empty group is never `attr.malformed`.
+
+````tern
+[x]{}
+````
+
+````html
+<p>[x]{}</p>
+````
+
+````diagnostics
+````
+
+## attrs/quoted-close-brace
+
+spec: syntax-blocks#finding-the-group
+
+A `}` inside quotes does not end the candidate.
+
+````tern
+[x]{title="a}b"}
+````
+
+````html
+<p><span title="a}b">x</span></p>
+````
+
+## attrs/quoted-open-brace
+
+spec: syntax-blocks#finding-the-group
+
+A `{` inside quotes does not abort the candidate.
+
+````tern
+[x]{title="a{b"}
+````
+
+````html
+<p><span title="a{b">x</span></p>
+````
+
+## attrs/quoted-backslash-literal
+
+spec: syntax-blocks#finding-the-group syntax-inline#escapes
+
+Quoted values have no escapes, so `pattern="\d+"` is literal.
+
+````tern
+[n]{pattern="\d+"}
+````
+
+````html
+<p><span pattern="\d+">n</span></p>
+````
+
+## attrs/single-quoted-double-quote
+
+spec: syntax-blocks#finding-the-group syntax-blocks#merging-and-emission
+
+To put `"` in a value, single-quote it; the emitted value escapes `"`.
+
+````tern
+[x]{title='say "hi"'}
+````
+
+````html
+<p><span title="say &quot;hi&quot;">x</span></p>
+````
+
+## attrs/value-escaped
+
+spec: syntax-blocks#merging-and-emission
+
+In emitted values `<` and a bare `&` are escaped.
+
+````tern
+[x]{title="a<b & c"}
+````
+
+````html
+<p><span title="a&lt;b &amp; c">x</span></p>
+````
+
+## attrs/value-entity-kept
+
+spec: syntax-blocks#merging-and-emission
+
+A well-formed entity in a value is kept as written.
+
+````tern
+[x]{title="&copy; 2026"}
+````
+
+````html
+<p><span title="&copy; 2026">x</span></p>
+````
+
+## attrs/last-id-wins
+
+spec: syntax-blocks#merging-and-emission
+
+Of several `#id` items the last wins.
+
+````tern
+{#a #b}
+Text.
+````
+
+````html
+<p id="b">Text.</p>
+````
+
+## attrs/class-accumulation
+
+spec: syntax-blocks#merging-and-emission
+
+Classes accumulate in source order.
+
+````tern
+{.b .a .c}
+Text.
+````
+
+````html
+<p class="b a c">Text.</p>
+````
+
+## attrs/id-key-merges
+
+spec: syntax-blocks#merging-and-emission
+
+`id=` is the same attribute as `#`: the last one wins and only one `id` is emitted.
+
+````tern
+{#a id=b}
+Text.
+````
+
+````html
+<p id="b">Text.</p>
+````
+
+## attrs/class-key-merges
+
+spec: syntax-blocks#merging-and-emission
+
+`class=` merges with `.class` items, in source order.
+
+````tern
+{.a class="b c" .d}
+Text.
+````
+
+````html
+<p class="a b c d">Text.</p>
+````
+
+## attrs/repeated-key-last-wins
+
+spec: syntax-blocks#merging-and-emission
+
+For any other repeated key the last value wins.
+
+````tern
+{k=1 .x k=2}
+Text.
+````
+
+````html
+<p class="x" k="2">Text.</p>
+````
+
+## attrs/key-characters
+
+spec: syntax-blocks#attribute-grammar syntax-blocks#character-classes
+
+A KEY may hold `-`, `:` and `.` after its first letter, so `data-*`, `aria-*` and `xml:lang` are plain keys.
+
+````tern
+[x]{data-x=1 aria-label="A b" xml:lang=fr}
+````
+
+````html
+<p><span data-x="1" aria-label="A b" xml:lang="fr">x</span></p>
+````
+
+## attrs/unquoted-value
+
+spec: syntax-blocks#attribute-grammar
+
+An unquoted value runs to whitespace or `}` and may hold `%`, `/`, `?` and `#`.
+
+````tern
+[x]{w=50% u=a/b?c#d}
+````
+
+````html
+<p><span w="50%" u="a/b?c#d">x</span></p>
+````
+
+## attrs/unquoted-value-equals
+
+spec: syntax-blocks#attribute-grammar syntax-blocks#positions
+
+An unquoted value cannot hold `=`, so the group does not parse; the first bad column is the second `=`.
+
+````tern
+[x]{k=a=b}
+````
+
+````html
+<p>[x]{k=a=b}</p>
+````
+
+````diagnostics
+1:8 warning attr.malformed
+````
+
+## attrs/items-need-space
+
+spec: syntax-blocks#attribute-grammar syntax-blocks#character-classes
+
+An IDENT holds no `.`, and items are separated by whitespace, so `{#a.b}` does not parse; the first bad column is the `.`.
+
+````tern
+[x]{#a.b}
+````
+
+````html
+<p>[x]{#a.b}</p>
+````
+
+````diagnostics
+1:7 warning attr.malformed
+````
+
+## attrs/inner-whitespace
+
+spec: syntax-blocks#attribute-grammar
+
+Whitespace is allowed after `{`, between items and before `}`.
+
+````tern
+[x]{  #a   .b  }
+````
+
+````html
+<p><span id="a" class="b">x</span></p>
+````
+
+## attrs/strong-by-key-value
+
+spec: syntax-blocks#strong-and-weak syntax-blocks#merging-and-emission syntax-blocks#attribute-line
+
+One `key=value` makes a group strong, so it works as an attribute line, and its bare keys come along as boolean attributes.
+
+````tern
+{k=v open}
+Text.
+````
+
+````html
+<p k="v" open>Text.</p>
+````
+
+## attrs/reserved-data-t
+
+spec: syntax-blocks#reserved
+
+`data-t` as a key is reserved: it is dropped with `name.reserved` at the key.
+
+````tern
+{data-t=x .y}
+Text.
+````
+
+````html
+<p class="y">Text.</p>
+````
+
+````diagnostics
+1:2 warning name.reserved
+````
+
+## attrs/reserved-data-t-on-container
+
+spec: syntax-blocks#reserved elements#output-contract
+
+A `data-t` key cannot hijack a container's contract: the element keeps `data-t="box"`.
+
+````tern
+:::box{data-t=x}
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+1:8 warning name.reserved
+````
+
+## attrs/key-case-insensitive
+
+spec: syntax-blocks#merging-and-emission syntax-blocks#character-classes
+
+Keys are ASCII-lower-cased, as the browser lower-cases attribute names, so `ID=` and `CLASS=` merge with `#` and `.`, and a repeated key in another case is the same key.
+
+````tern
+[x]{ID=a CLASS=b .c Title=one title=two}
+````
+
+````html
+<p><span id="a" class="b c" title="two">x</span></p>
+````
+
+## attrs/reserved-key-upper-case
+
+spec: syntax-blocks#reserved
+
+`DATA-T` is `data-t` once lower-cased, so it is reserved and dropped like the lower-case spelling; the container keeps its own `data-t`.
+
+````tern
+:::box{DATA-T=x}
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<p>Text.</p>
+</div>
+````
+
+````diagnostics
+1:8 warning name.reserved
+````
+
+## attrs/reserved-class-t
+
+spec: syntax-blocks#reserved
+
+Class names `t-*` (and `tern`) are reserved: dropped with `name.reserved`, which points at the start of the item, the `.`, as `id.duplicate` points at the `#`.
+
+````tern
+{.t-block .ok}
+Text.
+````
+
+````html
+<p class="ok">Text.</p>
+````
+
+````diagnostics
+1:2 warning name.reserved
+````
+
+## attrs/reserved-key-tag
+
+spec: syntax-blocks#reserved elements#reserved
+
+`tag` is consumed: it chooses the element and is never emitted.
+
+````tern
+:::box{tag=aside}
+Text.
+:::
+````
+
+````html
+<aside class="t-block box" data-t="box">
+<p>Text.</p>
+</aside>
+````
+
+## attrs/reserved-key-tag-unnamed
+
+spec: syntax-blocks#reserved elements#reserved syntax-blocks#r7
+
+`tag=` chooses the element of `:::name`, `::name` and `:name[…]` only. Anywhere else (a bare span, a code span, a heading, a paragraph through its attribute line, an image) it gets `tag.not-allowed` at the key and is dropped, rather than vanishing silently.
+
+````tern
+[x]{tag=kbd} and `c`{tag=b}
+
+## Heading {tag=section}
+
+{tag=aside}
+A paragraph.
+
+![alt](a.png){tag=figure}
+````
+
+````html
+<p><span>x</span> and <code>c</code></p>
+<h2 id="heading">Heading</h2>
+<p>A paragraph.</p>
+<p><img src="a.png" alt="alt"></p>
+````
+
+````diagnostics
+1:5 warning tag.not-allowed "`tag=` applies only to"
+1:22 warning tag.not-allowed
+3:13 warning tag.not-allowed
+5:2 warning tag.not-allowed
+8:15 warning tag.not-allowed
+````
+
+## attrs/reserved-key-ref
+
+spec: syntax-blocks#reserved syntax-inline#reference
+
+`ref` is consumed: it chooses the reference text and is never emitted.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn}
+Text.
+:::
+
+See @thm-rn{ref=title}.
+````
+
+````html
+<section id="thm-rn" class="t-block theorem" data-t="theorem">
+<div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div>
+<p>Text.</p>
+</section>
+<p>See <a class="t-ref" href="#thm-rn">Rank–nullity</a>.</p>
+````
+
+## attrs/reserved-key-ref-elsewhere
+
+spec: syntax-blocks#reserved syntax-inline#reference syntax-blocks#r7
+
+`ref=` chooses a reference's text. Anywhere else (a heading, a bare span, a fence, an attribute line) it gets `attr.malformed` at the key, saying where it applies, and is dropped, rather than vanishing silently.
+
+````tern
+## Heading {ref=title}
+
+[x]{ref=label} and @h{ref=title}.
+
+```js {ref=number}
+x
+```
+
+{#p ref=full}
+A paragraph.
+
+:::note[Hi]{#h}
+:::
+````
+
+````html
+<h2 id="heading">Heading</h2>
+<p><span>x</span> and <a class="t-ref" href="#h">Hi</a>.</p>
+<pre data-t="code"><code class="language-js">x</code></pre>
+<p id="p">A paragraph.</p>
+<div id="h" class="t-block note" data-t="note"><div class="t-title"><span class="t-label">Note</span> Hi</div></div>
+````
+
+````diagnostics
+1:13 warning attr.malformed "applies only to a reference"
+3:5 warning attr.malformed
+5:8 warning attr.malformed
+9:5 warning attr.malformed
+````
+
+## attrs/reserved-key-raw-elsewhere
+
+spec: syntax-blocks#reserved syntax-blocks#raw-attribute syntax-blocks#r7
+
+`raw` makes a container's body verbatim. On a leaf, an inline element, a paragraph through its attribute line, or an implicit figure (whose body was parsed before it became a container), it gets `attr.malformed` at the key and is dropped.
+
+````tern
+::spacer[*a*]{raw}
+
+An :kbd[*b*]{raw} key.
+
+{#p raw}
+A *paragraph*.
+
+{#f raw}
+![Cap](a.png)
+````
+
+````html
+<div class="spacer" data-t="spacer"><em>a</em></div>
+<p>An <kbd class="kbd" data-t="kbd"><em>b</em></kbd> key.</p>
+<p id="p">A <em>paragraph</em>.</p>
+<figure id="f" class="t-block figure" data-t="figure"><img src="a.png" alt=""><figcaption class="t-title"><span class="t-label">Figure 1</span> Cap</figcaption></figure>
+````
+
+````diagnostics
+1:15 warning attr.malformed "applies only to a container"
+3:14 warning attr.malformed
+5:5 warning attr.malformed
+8:5 warning attr.malformed
+````
+
+## attrs/reserved-key-cols-elsewhere
+
+spec: syntax-blocks#reserved syntax-blocks#cells syntax-blocks#r7
+
+`cols=` sets the grid of a container, a leaf or an inline element, which all emit `t-cols` and `--t-cols`. On anything else (a paragraph, a bare span) and on a core block such as `:::macros`, which has its own output, it gets `attr.malformed` at the key and is dropped.
+
+````tern
+::panel[a]{cols=2}
+
+{#p cols=2}
+A paragraph and [a span]{cols=3}.
+
+:::macros{cols=2}
+\newcommand{\R}{\mathbb{R}}
+:::
+````
+
+````html
+<div class="panel t-cols" data-t="panel" style="--t-cols:repeat(2,minmax(0,1fr))">a</div>
+<p id="p">A paragraph and <span>a span</span>.</p>
+<div class="t-macros" hidden>\newcommand{\R}{\mathbb{R}}</div>
+````
+
+````diagnostics
+3:5 warning attr.malformed
+4:26 warning attr.malformed "applies only to a container, leaf or inline element"
+6:11 warning attr.malformed "which has its own output"
+````
+
+## attrs/fence-keys-elsewhere
+
+spec: syntax-blocks#merging-and-emission
+
+`lines`, `hl` and `start` are reserved on fences only; on a container they are ordinary attributes.
+
+````tern
+:::box{start=3}
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box" start="3">
+<p>Text.</p>
+</div>
+````
+
+## attrs/key-proto
+
+spec: syntax-blocks#merging-and-emission syntax-blocks#character-classes
+
+`__proto__` is a KEY like any other: it is kept as an attribute and emitted, never taken as the object's prototype.
+
+````tern
+[x]{__proto__=a}
+````
+
+````html
+<p><span __proto__="a">x</span></p>
+````

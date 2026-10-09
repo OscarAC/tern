@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><script>window.TERN = { schema: { block: { theorem: { tag: 'section', counter: 'theorem', label: (n) => `Theorem ${n}`, dom(el) { el.dataset.dom = 'own'; } } } } };</script><script src="/tern.js" data-use="/test/smoke/own-schema-addon.js"></script>
+
+# Smoke: a note's own vocabulary
+
+The head declares `theorem` in `window.TERN.schema`; the
+add-on declares it too, as "Satz", and declares `lemma` on the same counter.
+
+:::theorem[First]{#t1}
+The note's own entry wins: this is Theorem 1.
+:::
+
+:::lemma{#l2}
+The add-on's lemma shares the counter: Lemma 2.
+:::
+
+See @t1 and @l2.

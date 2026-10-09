@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="A close crop of a stylised osprey's head">
+  <rect width="320" height="320" fill="#cfe0ec"/>
+  <circle cx="160" cy="170" r="110" fill="#f2f0ea"/>
+  <path d="M60 140 C100 120 220 120 260 140 L250 160 C210 146 110 146 70 160Z" fill="#3b3f46"/>
+  <circle cx="200" cy="150" r="14" fill="#e8b23a"/>
+  <circle cx="200" cy="150" r="7" fill="#1d1f23"/>
+  <path d="M250 175 C285 180 300 200 290 230 C280 212 264 204 246 202Z" fill="#3b3f46"/>
+  <path d="M60 250 C110 290 210 290 260 250 L260 320 H60Z" fill="#3b3f46"/>
+</svg>

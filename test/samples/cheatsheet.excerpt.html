@@ -1,0 +1,44 @@
+<h1 id="neovim-cheat-sheet">Neovim cheat sheet</h1>
+<p>Keys are shown as <kbd class="kbd" data-t="kbd">Ctrl</kbd>+<kbd class="kbd" data-t="kbd">w</kbd>. <mark>Highlighted</mark> entries are new in 0.11;
+<del>struck</del> ones were removed.</p>
+<div class="t-block row wide t-cols" style="--t-cols:repeat(3,minmax(0,1fr))" data-t="row">
+<div class="t-cell">
+<h3 id="motion">Motion</h3>
+<table><thead><tr><th>Keys</th><th>Action</th></tr></thead><tbody>
+<tr><td><kbd class="kbd" data-t="kbd">h</kbd> <kbd class="kbd" data-t="kbd">j</kbd> <kbd class="kbd" data-t="kbd">k</kbd> <kbd class="kbd" data-t="kbd">l</kbd></td><td>left, down, up, right</td></tr>
+…
+<tr><td><kbd class="kbd" data-t="kbd">`</kbd><kbd class="kbd" data-t="kbd">a</kbd></td><td>jump to mark <code>a</code></td></tr>
+</tbody></table>
+</div>
+<div class="t-cell">
+<h3 id="editing">Editing</h3>
+<table>…<tr><td><kbd class="kbd" data-t="kbd">&gt;&gt;</kbd></td><td>indent</td></tr>…
+<tr><td><del><kbd class="kbd" data-t="kbd">Ctrl</kbd>+<kbd class="kbd" data-t="kbd">s</kbd></del></td><td><del>save</del> (write <code>:w</code>)</td></tr></tbody></table>
+</div>
+<div class="t-cell">
+<h3 id="windows-and-the-command-line">Windows and the command line</h3>
+<table>…<tr><td><kbd class="kbd" data-t="kbd">Ctrl</kbd>+<kbd class="kbd" data-t="kbd">w</kbd> <kbd class="kbd" data-t="kbd">|</kbd></td><td><mark>maximise the window's width</mark></td></tr>
+…<tr><td><code>:'&lt;,'&gt;!sort | uniq</code></td><td>filter the selection</td></tr>
+<tr><td><code>:g/^$/d</code></td><td>delete blank lines</td></tr></tbody></table>
+</div>
+</div>
+<div class="t-block tip" data-t="tip"><div class="t-title"><span class="t-label">Tip</span> Counts go first</div>
+<p>Any motion takes a count: <code>3dd</code>, <code>5j</code>. <mark>The count comes first</mark>, not <del>last</del>.</p></div>
+<div class="t-block warning" data-t="warning"><div class="t-title"><span class="t-label">Warning</span></div>
+<p><code>:q!</code> discards changes. Prefer <code>:x</code> (write if changed, then quit).</p></div>
+<h2 id="pipes-and-backticks-in-code">Pipes and backticks in code</h2>
+<p>A shell filter in a sentence: <code>sort | uniq -c</code>. A backtick itself: <code>`</code>, and a span that
+contains one: <code>a`b</code>. In a table cell <code>`a|b`</code> and <span class="t-math">|x|</span> keep their pipes; a literal pipe
+anywhere else is <code>\|</code>, and a backtick inside <kbd class="kbd" data-t="kbd">…</kbd> is <code>\`</code>.</p>
+<h2 id="learning-path">Learning path</h2>
+<ul>
+<li class="t-task"><input type="checkbox" checked disabled> Motions: <code>hjkl</code>, <code>w</code>, <code>b</code>, <code>e</code></li>
+<li class="t-task"><input type="checkbox" disabled> Operators + motions
+<ul>
+<li class="t-task"><input type="checkbox" checked disabled> <code>d</code>, <code>c</code>, <code>y</code></li>
+<li class="t-task"><input type="checkbox" disabled> Text objects: <code>iw</code>, <code>i(</code>, <code>it</code>
+<ol><li>inner vs around (<code>i</code> vs <code>a</code>)</li><li>counts</li></ol></li>
+</ul></li>
+<li class="t-task"><input type="checkbox" disabled> Registers: <code>"ayy</code>, <code>"ap</code></li>
+</ul>
+

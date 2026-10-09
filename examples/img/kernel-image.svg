@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="A plane through the origin, and a line through it, in 3-space">
+  <rect width="400" height="300" fill="#f7f7f4"/>
+  <g stroke="#9aa3ad" stroke-width="1.5" fill="none">
+    <path d="M200 160 L200 30"/>
+    <path d="M200 160 L360 210"/>
+    <path d="M200 160 L60 230"/>
+  </g>
+  <path d="M70 150 L250 100 L340 180 L160 230Z" fill="#0b62c4" fill-opacity=".22" stroke="#0b62c4" stroke-width="2"/>
+  <path d="M120 270 L290 40" stroke="#b3261e" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="200" cy="160" r="4" fill="#1f2328"/>
+  <g font-family="system-ui, sans-serif" font-size="16" fill="#1f2328">
+    <text x="300" y="196">ker T</text>
+    <text x="296" y="50">im T</text>
+  </g>
+</svg>

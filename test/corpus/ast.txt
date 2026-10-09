@@ -1,0 +1,944 @@
+# AST shapes and positions
+
+One case per node type of the AST (`docs/api.html#node-types`), Tern's additions included, asserting the
+type, its key fields and exact positions (`json ast`, before transforms):
+lines and columns 1-based, columns and offsets in UTF-16 code units of the
+normalised source, ends exclusive.
+
+Extents follow mdast-util-from-markdown and its extensions
+wherever an equivalent exists: the root ends at the end of the source; a
+`break` includes its line ending; a container's label paragraph spans the
+brackets; a task item's paragraph starts after `[x] `. Beyond mdast: a node's
+position includes its glued attribute group; a `tableCell` spans its trimmed
+content; a `cell` runs from its `+++` line (or, for the first cell, its first
+content line) to its last content line. Also fixed: a headerless table has
+`data.tern.headerless: true`; inline `html` nodes have `data.tern.kind:
+"inline"`; adjacent text and soft breaks merge into one `text` node; the
+parser attaches attribute lines, so table attributes are on the parse AST.
+
+## ast/root
+
+spec: syntax-blocks#line-algorithm syntax-blocks#columns
+
+The root spans the whole note, to the end of the source after the final line ending (here 2:1), as in mdast; one paragraph with one text node.
+
+````tern
+Hello.
+````
+
+````json ast
+{"type":"root",
+ "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":1,"offset":7}},
+ "children":[{"type":"paragraph",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":7,"offset":6}},
+   "children":[{"type":"text","value":"Hello.",
+     "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":7,"offset":6}}}]}]}
+````
+
+## ast/paragraph-soft-break
+
+spec: syntax-blocks#paragraph syntax-inline#soft-break syntax-blocks#columns
+
+A two-line paragraph: the soft break is a `\n` inside a text node whose position crosses the line, and the second line's stripped indentation is inside that span.
+
+````tern
+Let *x* be
+  linear, `y` too.
+````
+
+````json ast
+{"children":[{"type":"paragraph",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":19,"offset":29}},
+  "children":[
+   {"type":"text","value":"Let ",
+    "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":5,"offset":4}}},
+   {"type":"emphasis",
+    "position":{"start":{"line":1,"column":5,"offset":4},"end":{"line":1,"column":8,"offset":7}},
+    "children":[{"type":"text","value":"x",
+      "position":{"start":{"line":1,"column":6,"offset":5},"end":{"line":1,"column":7,"offset":6}}}]},
+   {"type":"text","value":" be\nlinear, ",
+    "position":{"start":{"line":1,"column":8,"offset":7},"end":{"line":2,"column":11,"offset":21}}},
+   {"type":"inlineCode","value":"y",
+    "position":{"start":{"line":2,"column":11,"offset":21},"end":{"line":2,"column":14,"offset":24}}},
+   {"type":"text","value":" too.",
+    "position":{"start":{"line":2,"column":14,"offset":24},"end":{"line":2,"column":19,"offset":29}}}]}]}
+````
+
+## ast/heading
+
+spec: syntax-blocks#heading syntax-blocks#positions
+
+A heading has `depth` and its trailing group as `attributes`; it spans the whole line, while its text stops before the space and the group.
+
+````tern
+## Kernel and image {#kernel .wide}
+````
+
+````json ast
+{"children":[{"type":"heading","depth":2,"attributes":{"id":"kernel","class":"wide"},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":36,"offset":35}},
+  "children":[{"type":"text","value":"Kernel and image",
+    "position":{"start":{"line":1,"column":4,"offset":3},"end":{"line":1,"column":20,"offset":19}}}]}]}
+````
+
+## ast/blockquote-lazy
+
+spec: syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+A blockquote with a lazy continuation line spans both lines; its paragraph starts after `> `.
+
+````tern
+> A quote,
+lazily continued.
+````
+
+````json ast
+{"children":[{"type":"blockquote",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":18,"offset":28}},
+  "children":[{"type":"paragraph",
+    "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":2,"column":18,"offset":28}},
+    "children":[{"type":"text","value":"A quote,\nlazily continued.",
+      "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":2,"column":18,"offset":28}}}]}]}]}
+````
+
+## ast/quote-list-nesting
+
+spec: syntax-blocks#line-algorithm syntax-blocks#blockquote syntax-blocks#lists syntax-blocks#r2
+
+Inside a blockquote and a list item, columns count from the start of the line, prefixes included; the second line is stripped of `>` and the item's indentation.
+
+````tern
+> - item *one*
+>   two
+````
+
+````json ast
+{"children":[{"type":"blockquote",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":8,"offset":22}},
+  "children":[{"type":"list","ordered":false,
+    "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":2,"column":8,"offset":22}},
+    "children":[{"type":"listItem",
+      "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":2,"column":8,"offset":22}},
+      "children":[{"type":"paragraph",
+        "position":{"start":{"line":1,"column":5,"offset":4},"end":{"line":2,"column":8,"offset":22}},
+        "children":[
+         {"type":"text","value":"item ",
+          "position":{"start":{"line":1,"column":5,"offset":4},"end":{"line":1,"column":10,"offset":9}}},
+         {"type":"emphasis",
+          "position":{"start":{"line":1,"column":10,"offset":9},"end":{"line":1,"column":15,"offset":14}},
+          "children":[{"type":"text","value":"one",
+            "position":{"start":{"line":1,"column":11,"offset":10},"end":{"line":1,"column":14,"offset":13}}}]},
+         {"type":"text","value":"\ntwo",
+          "position":{"start":{"line":1,"column":15,"offset":14},"end":{"line":2,"column":8,"offset":22}}}]}]}]}]}]}
+````
+
+## ast/list-ordered
+
+spec: syntax-blocks#lists
+
+An ordered list records `ordered`, `start` and `spread`; items start at the marker, their paragraphs at the content column.
+
+````tern
+3. alpha
+4. beta
+````
+
+````json ast
+{"children":[{"type":"list","ordered":true,"start":3,"spread":false,
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":8,"offset":16}},
+  "children":[
+   {"type":"listItem",
+    "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":9,"offset":8}},
+    "children":[{"type":"paragraph",
+      "position":{"start":{"line":1,"column":4,"offset":3},"end":{"line":1,"column":9,"offset":8}},
+      "children":[{"type":"text","value":"alpha"}]}]},
+   {"type":"listItem",
+    "position":{"start":{"line":2,"column":1,"offset":9},"end":{"line":2,"column":8,"offset":16}},
+    "children":[{"type":"paragraph",
+      "position":{"start":{"line":2,"column":4,"offset":12},"end":{"line":2,"column":8,"offset":16}},
+      "children":[{"type":"text","value":"beta"}]}]}]}]}
+````
+
+## ast/list-task
+
+spec: syntax-blocks#lists
+
+Task items record `checked`; the item's paragraph and its text start after the checkbox and its space.
+
+````tern
+- [x] done
+- [ ] todo
+````
+
+````json ast
+{"children":[{"type":"list","ordered":false,
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":11,"offset":21}},
+  "children":[
+   {"type":"listItem","checked":true,
+    "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":11,"offset":10}},
+    "children":[{"type":"paragraph",
+      "position":{"start":{"line":1,"column":7,"offset":6},"end":{"line":1,"column":11,"offset":10}},
+      "children":[{"type":"text","value":"done",
+      "position":{"start":{"line":1,"column":7,"offset":6},"end":{"line":1,"column":11,"offset":10}}}]}]},
+   {"type":"listItem","checked":false,
+    "position":{"start":{"line":2,"column":1,"offset":11},"end":{"line":2,"column":11,"offset":21}},
+    "children":[{"type":"paragraph",
+      "position":{"start":{"line":2,"column":7,"offset":17},"end":{"line":2,"column":11,"offset":21}},
+      "children":[{"type":"text","value":"todo",
+      "position":{"start":{"line":2,"column":7,"offset":17},"end":{"line":2,"column":11,"offset":21}}}]}]}]}]}
+````
+
+## ast/code
+
+spec: syntax-blocks#fence
+
+A fence is a `code` node with `lang` and its verbatim `value`, spanning opener to closer.
+
+`````tern
+```js
+let a = 1;
+```
+`````
+
+````json ast
+{"children":[{"type":"code","lang":"js","value":"let a = 1;",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":4,"offset":20}}}]}
+````
+
+## ast/code-titled
+
+spec: syntax-blocks#fence
+
+A titled fence keeps its title as inline nodes in `data.tern.title` and its group as `attributes`.
+
+`````tern
+```js[Fibonacci]{#lst-fib}
+fib();
+```
+`````
+
+````json ast
+{"children":[{"type":"code","lang":"js","value":"fib();","attributes":{"id":"lst-fib"},
+  "data":{"tern":{"title":[{"type":"text","value":"Fibonacci",
+    "position":{"start":{"line":1,"column":7,"offset":6},"end":{"line":1,"column":16,"offset":15}}}]}},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":4,"offset":37}}}]}
+````
+
+## ast/thematic-break
+
+spec: syntax-blocks#thematic-break
+
+A rule is a `thematicBreak` spanning its line.
+
+````tern
+Above.
+
+---
+````
+
+````json ast
+{"children":[
+ {"type":"paragraph"},
+ {"type":"thematicBreak",
+  "position":{"start":{"line":3,"column":1,"offset":8},"end":{"line":3,"column":4,"offset":11}}}]}
+````
+
+## ast/table
+
+spec: syntax-blocks#tables
+
+A table records `align`; the delimiter row is not a node; rows span their lines and cells hold inline content. A `tableCell` spans its trimmed content, without the pipes and padding that mdast-util-gfm-table includes.
+
+````tern
+| Key | Action |
+|:--|--:|
+| `:w` | write |
+````
+
+````json ast
+{"children":[{"type":"table","align":["left","right"],
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":17,"offset":43}},
+  "children":[
+   {"type":"tableRow",
+    "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":17,"offset":16}},
+    "children":[
+     {"type":"tableCell",
+      "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":1,"column":6,"offset":5}},
+      "children":[{"type":"text","value":"Key",
+        "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":1,"column":6,"offset":5}}}]},
+     {"type":"tableCell",
+      "position":{"start":{"line":1,"column":9,"offset":8},"end":{"line":1,"column":15,"offset":14}},
+      "children":[{"type":"text","value":"Action"}]}]},
+   {"type":"tableRow",
+    "position":{"start":{"line":3,"column":1,"offset":27},"end":{"line":3,"column":17,"offset":43}},
+    "children":[
+     {"type":"tableCell",
+      "position":{"start":{"line":3,"column":3,"offset":29},"end":{"line":3,"column":7,"offset":33}},
+      "children":[{"type":"inlineCode","value":":w",
+        "position":{"start":{"line":3,"column":3,"offset":29},"end":{"line":3,"column":7,"offset":33}}}]},
+     {"type":"tableCell",
+      "position":{"start":{"line":3,"column":10,"offset":36},"end":{"line":3,"column":15,"offset":41}},
+      "children":[{"type":"text","value":"write"}]}]}]}]}
+````
+
+## ast/table-attributes
+
+spec: syntax-blocks#tables syntax-blocks#attribute-line
+
+An attribute line before a table ends up as the table's `attributes`. The parser attaches attribute lines (the `attributes` transform only applies schema defaults and reserved keys), so this holds in the parse AST and no `attributes` node remains.
+
+````tern
+{.wide}
+| A |
+|---|
+| 1 |
+````
+
+````json ast
+{"children":[{"type":"table","attributes":{"class":"wide"}}]}
+````
+
+## ast/table-headerless
+
+spec: syntax-blocks#tables
+
+A table started by a delimiter row (form (b)) has `data.tern.headerless: true`; it starts at the delimiter row, which is not a node, so its only row is the body row.
+
+````tern
+|:-:|
+| a |
+````
+
+````json ast
+{"children":[{"type":"table","align":["center"],"data":{"tern":{"headerless":true}},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":6,"offset":11}},
+  "children":[
+   {"type":"tableRow",
+    "position":{"start":{"line":2,"column":1,"offset":6},"end":{"line":2,"column":6,"offset":11}},
+    "children":[
+     {"type":"tableCell",
+      "position":{"start":{"line":2,"column":3,"offset":8},"end":{"line":2,"column":4,"offset":9}},
+      "children":[{"type":"text","value":"a"}]}]}]}]}
+````
+
+## ast/html-comment
+
+spec: syntax-blocks#raw-html
+
+A comment block is an `html` node of kind `comment`.
+
+````tern
+<!-- note -->
+````
+
+````json ast
+{"children":[{"type":"html","value":"<!-- note -->","data":{"tern":{"kind":"comment"}},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":14,"offset":13}}}]}
+````
+
+## ast/html-rawtext
+
+spec: syntax-blocks#raw-html
+
+A `<script>` block is an `html` node of kind `rawtext`, its value the lines verbatim.
+
+````tern
+<script>
+let x = 1;
+</script>
+````
+
+````json ast
+{"children":[{"type":"html","value":"<script>\nlet x = 1;\n</script>","data":{"tern":{"kind":"rawtext"}},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":10,"offset":29}}}]}
+````
+
+## ast/html-oneline
+
+spec: syntax-blocks#raw-html
+
+A void block tag is an `html` node of kind `oneline`.
+
+````tern
+<hr class="x">
+````
+
+````json ast
+{"children":[{"type":"html","value":"<hr class=\"x\">","data":{"tern":{"kind":"oneline"}},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":15,"offset":14}}}]}
+````
+
+## ast/html-generic
+
+spec: syntax-blocks#raw-html
+
+A depth-counted block element is an `html` node of kind `generic`, ending on the line that balances it.
+
+````tern
+<div class="box">
+<p>x</p>
+</div>
+````
+
+````json ast
+{"children":[{"type":"html","value":"<div class=\"box\">\n<p>x</p>\n</div>","data":{"tern":{"kind":"generic"}},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":7,"offset":33}}}]}
+````
+
+## ast/html-fence
+
+spec: syntax-blocks#html-fence
+
+A ```` ```=html ```` fence is an `html` node of kind `fence` whose value is the body.
+
+`````tern
+```=html
+<b>hi</b>
+```
+`````
+
+````json ast
+{"children":[{"type":"html","value":"<b>hi</b>","data":{"tern":{"kind":"fence"}},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":4,"offset":22}}}]}
+````
+
+## ast/html-inline
+
+spec: syntax-inline#raw-inline-html
+
+Inline raw tags are `html` nodes, one per tag, between text nodes, with `data.tern.kind` `"inline"`.
+
+````tern
+a <b>b</b> c
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"a ",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":3,"offset":2}}},
+  {"type":"html","value":"<b>","data":{"tern":{"kind":"inline"}},
+   "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":1,"column":6,"offset":5}}},
+  {"type":"text","value":"b",
+   "position":{"start":{"line":1,"column":6,"offset":5},"end":{"line":1,"column":7,"offset":6}}},
+  {"type":"html","value":"</b>","data":{"tern":{"kind":"inline"}},
+   "position":{"start":{"line":1,"column":7,"offset":6},"end":{"line":1,"column":11,"offset":10}}},
+  {"type":"text","value":" c",
+   "position":{"start":{"line":1,"column":11,"offset":10},"end":{"line":1,"column":13,"offset":12}}}]}]}
+````
+
+## ast/utf16-columns
+
+spec: syntax-blocks#columns syntax-inline#emphasis
+
+A non-BMP character (U+1D53D) counts two UTF-16 units, shifting every later column and offset by two.
+
+````tern
+𝔽 is *a field*
+````
+
+````json ast
+{"children":[{"type":"paragraph",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":16,"offset":15}},
+  "children":[
+   {"type":"text","value":"𝔽 is ",
+    "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":7,"offset":6}}},
+   {"type":"emphasis",
+    "position":{"start":{"line":1,"column":7,"offset":6},"end":{"line":1,"column":16,"offset":15}},
+    "children":[{"type":"text","value":"a field",
+      "position":{"start":{"line":1,"column":8,"offset":7},"end":{"line":1,"column":15,"offset":14}}}]}]}]}
+````
+
+## ast/tab-one-column
+
+spec: syntax-blocks#columns
+options: escaped
+
+A tab is one column in positions (tab stops only matter for list membership).
+
+````tern
+a\t*b*
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"a\t",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":3,"offset":2}}},
+  {"type":"emphasis",
+   "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":1,"column":6,"offset":5}},
+   "children":[{"type":"text","value":"b",
+     "position":{"start":{"line":1,"column":4,"offset":3},"end":{"line":1,"column":5,"offset":4}}}]}]}]}
+````
+
+## ast/crlf-offsets
+
+spec: syntax-blocks#normalisation syntax-blocks#columns
+options: escaped
+
+Offsets index the normalised source: a `\r\n` counts as one `\n`.
+
+````tern
+one\r\ntwo
+````
+
+````json ast
+{"children":[{"type":"paragraph",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":4,"offset":7}},
+  "children":[{"type":"text","value":"one\ntwo",
+    "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":2,"column":4,"offset":7}}}]}]}
+````
+
+## ast/bom-offsets
+
+spec: syntax-blocks#normalisation syntax-blocks#columns
+options: escaped
+
+A leading BOM is dropped before positions are counted.
+
+````tern
+\uFEFFHi
+````
+
+````json ast
+{"children":[{"type":"paragraph",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":3,"offset":2}},
+  "children":[{"type":"text","value":"Hi"}]}]}
+````
+
+## ast/emphasis
+
+spec: syntax-inline#emphasis
+
+An `emphasis` node spans its delimiters; its text sits inside them.
+
+````tern
+a *b* c
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"a ",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":3,"offset":2}}},
+  {"type":"emphasis",
+   "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":1,"column":6,"offset":5}},
+   "children":[{"type":"text","value":"b",
+     "position":{"start":{"line":1,"column":4,"offset":3},"end":{"line":1,"column":5,"offset":4}}}]},
+  {"type":"text","value":" c",
+   "position":{"start":{"line":1,"column":6,"offset":5},"end":{"line":1,"column":8,"offset":7}}}]}]}
+````
+
+## ast/strong
+
+spec: syntax-inline#emphasis
+
+A `strong` node spans both `**` runs.
+
+````tern
+**b**
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"strong",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":6,"offset":5}},
+   "children":[{"type":"text","value":"b",
+     "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":1,"column":4,"offset":3}}}]}]}]}
+````
+
+## ast/delete
+
+spec: syntax-inline#strike-highlight
+
+`~~…~~` is a `delete` node.
+
+````tern
+x ~~gone~~ y
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"x "},
+  {"type":"delete",
+   "position":{"start":{"line":1,"column":3,"offset":2},"end":{"line":1,"column":11,"offset":10}},
+   "children":[{"type":"text","value":"gone",
+     "position":{"start":{"line":1,"column":5,"offset":4},"end":{"line":1,"column":9,"offset":8}}}]},
+  {"type":"text","value":" y",
+   "position":{"start":{"line":1,"column":11,"offset":10},"end":{"line":1,"column":13,"offset":12}}}]}]}
+````
+
+## ast/mark
+
+spec: syntax-inline#strike-highlight
+
+`==…==` is a `mark` node (a Tern type).
+
+````tern
+(==key==)
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"("},
+  {"type":"mark",
+   "position":{"start":{"line":1,"column":2,"offset":1},"end":{"line":1,"column":9,"offset":8}},
+   "children":[{"type":"text","value":"key",
+     "position":{"start":{"line":1,"column":4,"offset":3},"end":{"line":1,"column":7,"offset":6}}}]},
+  {"type":"text","value":")",
+   "position":{"start":{"line":1,"column":9,"offset":8},"end":{"line":1,"column":10,"offset":9}}}]}]}
+````
+
+## ast/inline-code
+
+spec: syntax-inline#code-span
+
+A code span is an `inlineCode` node spanning its backticks; its value is the raw content.
+
+````tern
+`a < b`
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"inlineCode","value":"a < b",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":8,"offset":7}}}]}]}
+````
+
+## ast/link
+
+spec: syntax-inline#links
+
+A link records `url` and `title` and spans `[` to `)`.
+
+````tern
+[text](https://x.y "T")
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"link","url":"https://x.y","title":"T",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":24,"offset":23}},
+   "children":[{"type":"text","value":"text",
+     "position":{"start":{"line":1,"column":2,"offset":1},"end":{"line":1,"column":6,"offset":5}}}]}]}]}
+````
+
+## ast/image
+
+spec: syntax-inline#images
+
+An image records `url` and its plain-text `alt` and spans `!` to `)`.
+
+````tern
+![alt](img.png)
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"image","url":"img.png","alt":"alt",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":16,"offset":15}}}]}]}
+````
+
+## ast/break
+
+spec: syntax-inline#hard-break
+
+A trailing `\` is a `break` node between the two lines' text; as in mdast-util-from-markdown, it includes its line ending, so it ends at 2:1.
+
+````tern
+a\
+b
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"a",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":2,"offset":1}}},
+  {"type":"break",
+   "position":{"start":{"line":1,"column":2,"offset":1},"end":{"line":2,"column":1,"offset":3}}},
+  {"type":"text","value":"b",
+   "position":{"start":{"line":2,"column":1,"offset":3},"end":{"line":2,"column":2,"offset":4}}}]}]}
+````
+
+## ast/container-directive
+
+spec: syntax-blocks#container elements#output-contract
+
+A container is a `containerDirective` with `name`, flat `attributes` and, as `children[0]`, its title as a paragraph marked `directiveLabel`; it spans opener to closer. As in remark-directive, the label paragraph spans the brackets (1:11 to 1:25) and its text the inside.
+
+````tern
+:::theorem[Rank–nullity]{#thm-rn .big}
+Body.
+:::
+````
+
+````json ast
+{"children":[{"type":"containerDirective","name":"theorem","attributes":{"id":"thm-rn","class":"big"},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":4,"offset":48}},
+  "children":[
+   {"type":"paragraph","data":{"directiveLabel":true},
+    "position":{"start":{"line":1,"column":11,"offset":10},"end":{"line":1,"column":25,"offset":24}},
+    "children":[{"type":"text","value":"Rank–nullity",
+      "position":{"start":{"line":1,"column":12,"offset":11},"end":{"line":1,"column":24,"offset":23}}}]},
+   {"type":"paragraph",
+    "position":{"start":{"line":2,"column":1,"offset":39},"end":{"line":2,"column":6,"offset":44}},
+    "children":[{"type":"text","value":"Body.",
+      "position":{"start":{"line":2,"column":1,"offset":39},"end":{"line":2,"column":6,"offset":44}}}]}]}]}
+````
+
+## ast/container-raw-value
+
+spec: syntax-blocks#raw-body syntax-blocks#container
+
+A `{raw}` container keeps its verbatim body as `value` instead of children.
+
+````tern
+:::mermaid{raw}
+a --> b
+:::
+````
+
+````json ast
+{"children":[{"type":"containerDirective","name":"mermaid","value":"a --> b",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":4,"offset":27}}}]}
+````
+
+## ast/leaf-directive
+
+spec: syntax-blocks#leaf
+
+A leaf is a `leafDirective` whose bracket content is its inline children, spanning the whole line.
+
+````tern
+::fig[Caption *x*]{#f}
+````
+
+````json ast
+{"children":[{"type":"leafDirective","name":"fig","attributes":{"id":"f"},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":23,"offset":22}},
+  "children":[
+   {"type":"text","value":"Caption ",
+    "position":{"start":{"line":1,"column":7,"offset":6},"end":{"line":1,"column":15,"offset":14}}},
+   {"type":"emphasis",
+    "position":{"start":{"line":1,"column":15,"offset":14},"end":{"line":1,"column":18,"offset":17}},
+    "children":[{"type":"text","value":"x",
+      "position":{"start":{"line":1,"column":16,"offset":15},"end":{"line":1,"column":17,"offset":16}}}]}]}]}
+````
+
+## ast/text-directive
+
+spec: syntax-inline#inline-element
+
+An inline element is a `textDirective` spanning `:` to `]`, with its content as children.
+
+````tern
+Press :kbd[Ctrl] now.
+````
+
+````json ast
+{"children":[{"type":"paragraph",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":22,"offset":21}},
+  "children":[
+   {"type":"text","value":"Press ",
+    "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":7,"offset":6}}},
+   {"type":"textDirective","name":"kbd",
+    "position":{"start":{"line":1,"column":7,"offset":6},"end":{"line":1,"column":17,"offset":16}},
+    "children":[{"type":"text","value":"Ctrl",
+      "position":{"start":{"line":1,"column":12,"offset":11},"end":{"line":1,"column":16,"offset":15}}}]},
+   {"type":"text","value":" now.",
+    "position":{"start":{"line":1,"column":17,"offset":16},"end":{"line":1,"column":22,"offset":21}}}]}]}
+````
+
+## ast/math
+
+spec: syntax-blocks#display-math
+
+Display math is a `math` node with its TeX `value` and the closer's `#id` in `attributes`; it spans opener to the end of the closer line.
+
+````tern
+$$
+a^2
+$$ {#eq-a}
+````
+
+````json ast
+{"children":[{"type":"math","value":"a^2","attributes":{"id":"eq-a"},
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":3,"column":11,"offset":17}}}]}
+````
+
+## ast/inline-math
+
+spec: syntax-inline#inline-math
+
+Inline math is an `inlineMath` node spanning both dollars, its value the raw TeX.
+
+````tern
+Let $x^2$ be.
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"Let ",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":5,"offset":4}}},
+  {"type":"inlineMath","value":"x^2",
+   "position":{"start":{"line":1,"column":5,"offset":4},"end":{"line":1,"column":10,"offset":9}}},
+  {"type":"text","value":" be.",
+   "position":{"start":{"line":1,"column":10,"offset":9},"end":{"line":1,"column":14,"offset":13}}}]}]}
+````
+
+## ast/inline-math-verbatim
+
+spec: syntax-inline#verbatim-math
+
+Verbatim math is also `inlineMath`, spanning `` $` `` to the closing backtick; its value keeps `\$` as written.
+
+````tern
+Cost $`\$5` today.
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"Cost ",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":6,"offset":5}}},
+  {"type":"inlineMath","value":"\\$5",
+   "position":{"start":{"line":1,"column":6,"offset":5},"end":{"line":1,"column":12,"offset":11}}},
+  {"type":"text","value":" today.",
+   "position":{"start":{"line":1,"column":12,"offset":11},"end":{"line":1,"column":19,"offset":18}}}]}]}
+````
+
+## ast/inline-math-attributes
+
+spec: syntax-inline#inline-math syntax-blocks#positions
+
+A strong group glued after a math span becomes the `inlineMath` node's `attributes`, and the node's position includes the group.
+
+````tern
+See $x${#e-x}.
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"text","value":"See ",
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":5,"offset":4}}},
+  {"type":"inlineMath","value":"x","attributes":{"id":"e-x"},
+   "position":{"start":{"line":1,"column":5,"offset":4},"end":{"line":1,"column":14,"offset":13}}},
+  {"type":"text","value":".",
+   "position":{"start":{"line":1,"column":14,"offset":13},"end":{"line":1,"column":15,"offset":14}}}]}]}
+````
+
+## ast/link-glued-group
+
+spec: syntax-inline#links syntax-blocks#positions
+
+A link's glued group is its `attributes`, and the link's position runs to the group's `}`.
+
+````tern
+[t](u){.c} x
+````
+
+````json ast
+{"children":[{"type":"paragraph","children":[
+  {"type":"link","url":"u","attributes":{"class":"c"},
+   "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":11,"offset":10}},
+   "children":[{"type":"text","value":"t",
+     "position":{"start":{"line":1,"column":2,"offset":1},"end":{"line":1,"column":3,"offset":2}}}]},
+  {"type":"text","value":" x",
+   "position":{"start":{"line":1,"column":11,"offset":10},"end":{"line":1,"column":13,"offset":12}}}]}]}
+````
+
+## ast/cell
+
+spec: syntax-blocks#cells
+options: schema=none
+
+`+++` segments are `cell` nodes inside the container; a cell's group is its `attributes`. The implicit first cell starts at its first content line, a `+++` cell at its `+++` line, and each ends at its last content line.
+
+````tern
+:::row
+Left.
++++ {.muted}
+Right.
+:::
+````
+
+````json ast
+{"children":[{"type":"containerDirective","name":"row",
+  "position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":5,"column":4,"offset":36}},
+  "children":[
+   {"type":"cell",
+    "position":{"start":{"line":2,"column":1,"offset":7},"end":{"line":2,"column":6,"offset":12}},
+    "children":[{"type":"paragraph",
+      "position":{"start":{"line":2,"column":1,"offset":7},"end":{"line":2,"column":6,"offset":12}}}]},
+   {"type":"cell","attributes":{"class":"muted"},
+    "position":{"start":{"line":3,"column":1,"offset":13},"end":{"line":4,"column":7,"offset":32}},
+    "children":[{"type":"paragraph",
+      "position":{"start":{"line":4,"column":1,"offset":26},"end":{"line":4,"column":7,"offset":32}}}]}]}]}
+````
+
+## ast/ref
+
+spec: syntax-inline#reference
+
+`@id` is a `ref` node with the target `id`, spanning `@` to the end of the id; its text is filled later by the refs transform.
+
+````tern
+## Kernel {#kernel}
+
+See @kernel.
+````
+
+````json ast
+{"children":[
+ {"type":"heading"},
+ {"type":"paragraph","children":[
+  {"type":"text","value":"See "},
+  {"type":"ref","id":"kernel",
+   "position":{"start":{"line":3,"column":5,"offset":25},"end":{"line":3,"column":12,"offset":32}}},
+  {"type":"text","value":".",
+   "position":{"start":{"line":3,"column":12,"offset":32},"end":{"line":3,"column":13,"offset":33}}}]}]}
+````
+
+## ast/footnote
+
+spec: syntax-inline#footnote-reference syntax-blocks#footnote-definition
+
+A reference is a `footnoteReference` and a definition a `footnoteDefinition` (GFM), both with `identifier` and `label`; the definition stays in place in the tree.
+
+````tern
+Text.[^n]
+
+[^n]: Note.
+````
+
+````json ast
+{"children":[
+ {"type":"paragraph","children":[
+  {"type":"text","value":"Text."},
+  {"type":"footnoteReference","identifier":"n","label":"n",
+   "position":{"start":{"line":1,"column":6,"offset":5},"end":{"line":1,"column":10,"offset":9}}}]},
+ {"type":"footnoteDefinition","identifier":"n","label":"n",
+  "position":{"start":{"line":3,"column":1,"offset":11},"end":{"line":3,"column":12,"offset":22}},
+  "children":[{"type":"paragraph",
+    "position":{"start":{"line":3,"column":7,"offset":17},"end":{"line":3,"column":12,"offset":22}},
+    "children":[{"type":"text","value":"Note."}]}]}]}
+````
+
+## ast/attributes-orphan
+
+spec: syntax-blocks#attribute-line
+
+An attribute line that finds no following block is an `attributes` node spanning its line, with `attributes.orphan`.
+
+````tern
+Para.
+
+{#lost}
+````
+
+````json ast
+{"children":[
+ {"type":"paragraph"},
+ {"type":"attributes",
+  "position":{"start":{"line":3,"column":1,"offset":7},"end":{"line":3,"column":8,"offset":14}}}]}
+````
+
+````diagnostics
+3:1 warning attributes.orphan
+````

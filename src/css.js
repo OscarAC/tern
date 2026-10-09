@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: MIT
+// The base stylesheet, injected by the runtime as <style id="tern-style"> and
+// published as tern.css. It styles the emitter's output: blocks have no look
+// of their own; add-ons and the note's own CSS style them by class and data-t.
+// It uses logical properties throughout and isolates math and code as LTR, so
+// RTL notes work.
+'use strict';
+
+const css = `:root {
+  color-scheme: light dark;
+  --t-bg: #fdfdfb; --t-fg: #1f2328; --t-muted: #636c76; --t-line: #d9dde3; --t-soft: #f3f4f1;
+  --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  --t-font: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --t-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --t-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --t-width: 40rem; --t-size: 18px; --t-leading: 1.6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-bg: #16181c; --t-fg: #dcdfe4; --t-muted: #8b949e; --t-line: #30363d; --t-soft: #1f2329;
+    --t-link: #6cb0ff; --t-mark: #5c4d00; --t-error: #ffb4ab; --t-error-bg: #3b1714; --t-warn: #e3b341;
+  }
+}
+html { background: var(--t-bg); color: var(--t-fg); font: var(--t-size)/var(--t-leading) var(--t-font); -webkit-text-size-adjust: 100%; }
+body { margin: 0; padding: 2.5rem 1rem 6rem; }
+.tern { max-width: var(--t-width); margin-inline: auto; overflow-wrap: break-word; }
+.tern > :first-child { margin-block-start: 0; }
+.tern :is(h1, h2, h3, h4, h5, h6) { font-family: var(--t-sans); line-height: 1.25; margin-block: 2em .6em; text-wrap: balance; }
+.tern h1 { font-size: 1.9rem; }
+.tern h2 { font-size: 1.4rem; padding-block-end: .25em; border-block-end: 1px solid var(--t-line); }
+.tern h3 { font-size: 1.15rem; }
+.tern :is(h4, h5, h6) { font-size: 1rem; }
+.tern :is(p, ul, ol, dl, pre, table, blockquote, figure, details), .t-block, .t-eq { margin-block: 0 1rem; margin-inline: 0; }
+.tern a { color: var(--t-link); text-decoration-thickness: .06em; text-underline-offset: .15em; }
+.tern :is(ul, ol) { padding-inline-start: 1.6rem; }
+.tern li > :is(ul, ol) { margin-block-end: 0; }
+.tern li > p { margin-block-end: .5rem; }
+.tern hr { border: 0; border-block-start: 1px solid var(--t-line); margin-block: 2rem; }
+.tern blockquote { padding-inline-start: 1rem; border-inline-start: 3px solid var(--t-line); color: var(--t-muted); }
+.tern mark { background: var(--t-mark); color: inherit; padding-inline: .15em; border-radius: 2px; }
+
+/* Media keep their aspect ratio when max-width shrinks them. */
+.tern :is(img, video, canvas, picture) { max-inline-size: 100%; height: auto; }
+.tern :is(iframe, embed, object) { max-inline-size: 100%; }
+
+/* Code. Math and code read left to right in a right-to-left note. */
+.tern :is(code, kbd, samp, pre) { font-family: var(--t-mono); font-size: .85em; }
+.tern pre code { font-size: 1em; }
+.tern :not(pre) > code { background: var(--t-soft); padding: .12em .35em; border-radius: 4px; }
+.tern kbd { border: 1px solid var(--t-line); border-block-end-width: 2px; border-radius: 4px; padding: .05em .4em; }
+.t-math, .tern :is(pre, code, kbd, samp) { direction: ltr; unicode-bidi: isolate; }
+.tern pre { text-align: start; background: var(--t-soft); padding: .8rem 1rem; border-radius: 6px; overflow-x: auto; line-height: 1.45; }
+.tern pre[data-lines] code { counter-reset: t-line; }
+.tern pre[data-lines][data-start] code { counter-reset: t-line calc(attr(data-start type(<integer>), 1) - 1); }
+.tern pre[data-lines] .t-line::before {
+  counter-increment: t-line; content: counter(t-line); display: inline-block; min-inline-size: 2.5ch;
+  margin-inline-end: 1.5ch; text-align: end; color: var(--t-muted); user-select: none;
+}
+.tern .t-hl { display: inline-block; min-inline-size: 100%; background: var(--t-mark); }
+
+/* Tables scroll when wider than the column. */
+.tern table { border-collapse: collapse; display: block; inline-size: max-content; max-inline-size: 100%; overflow-x: auto; font-size: .95em; }
+.tern :is(th, td) { border: 1px solid var(--t-line); padding: .35em .7em; }
+.tern th { background: var(--t-soft); font-family: var(--t-sans); font-size: .9em; }
+.tern caption { caption-side: top; text-align: start; padding-block-end: .4em; }
+
+/* Named blocks, titles, labels and end marks. */
+.t-title { font-weight: 600; margin-block-end: .4rem; }
+.tern :is(figcaption, caption).t-title { font-weight: normal; color: var(--t-muted); font-size: .95em; }
+.tern figcaption.t-title { margin-block: .4rem 0; }
+.t-label { font-weight: 700; }
+.t-end { display: block; text-align: end; }
+.t-block > :last-child, .t-cell > :last-child, .tern blockquote > :last-child { margin-block-end: 0; }
+.tern figure > img { display: block; margin-inline: auto; }
+
+/* Grids: --t-cols from cols= or the cell count; one column on narrow screens. */
+.t-cols { display: grid; grid-template-columns: var(--t-cols, repeat(auto-fit, minmax(12rem, 1fr))); gap: 1rem 1.5rem; }
+.t-cols > * { margin: 0; min-inline-size: 0; }
+.t-cols > .t-title { grid-column: 1 / -1; }
+.t-cell { min-inline-size: 0; }
+@media (max-width: 36rem) { .t-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* Math: display equations scroll rather than overflow; the number sits at the end. */
+.t-eq { display: flex; align-items: center; gap: 1rem; overflow-x: auto; overflow-y: hidden; }
+.t-eq > .t-math { flex: 1; text-align: center; min-inline-size: 0; }
+.t-eqno { color: var(--t-muted); font-family: var(--t-font); white-space: nowrap; }
+.t-math[data-display] { display: block; }
+.t-macros[hidden] { display: none !important; }
+
+/* Footnotes and task lists. */
+.t-fnref { line-height: 0; font-size: .75em; }
+.t-fnref a, .t-fnback { text-decoration: none; }
+.t-footnotes { border-block-start: 1px solid var(--t-line); margin-block-start: 3rem; padding-block-start: 1rem; font-size: .9em; }
+.tern li.t-task { list-style: none; }
+.tern li.t-task > input, .tern li.t-task > p:first-child > input { margin-inline: -1.4rem .3rem; vertical-align: middle; }
+
+/* Problems stay visible where they are. */
+.tern .t-error { color: var(--t-error); background: var(--t-error-bg); border-inline-start: 3px solid var(--t-error); padding: .3em .6em; white-space: pre-wrap; font-family: var(--t-mono); font-size: .85em; }
+.tern .t-eq.t-error { display: block; }
+
+/* The diagnostics panel: fixed at the end corner, outside main, never printed. */
+.t-diagnostics {
+  position: fixed; inset-block-end: .75rem; inset-inline-end: .75rem; z-index: 2147483647;
+  max-inline-size: min(40rem, calc(100vw - 1.5rem)); max-block-size: 60vh; overflow: auto;
+  background: var(--t-bg); color: var(--t-fg); border: 1px solid var(--t-line); border-inline-start: 4px solid var(--t-error);
+  border-radius: 6px; box-shadow: 0 4px 18px rgb(0 0 0 / .18); font: 13px/1.45 var(--t-sans);
+}
+.t-diagnostics summary { cursor: pointer; padding: .45rem .75rem; font-weight: 600; }
+.t-diagnostics ol { margin: 0; padding-block: 0 .6rem; padding-inline: 2.2rem .75rem; }
+.t-diagnostics li { margin-block: .35rem; }
+.t-diag-sev { font-weight: 700; text-transform: uppercase; font-size: .78em; letter-spacing: .03em; }
+.t-diag-error .t-diag-sev { color: var(--t-error); }
+.t-diag-warning .t-diag-sev { color: var(--t-warn); }
+.t-diag-info .t-diag-sev, .t-diag-at, .t-diag-hint { color: var(--t-muted); }
+.t-diag-code { font-family: var(--t-mono); font-size: .95em; }
+.t-diag-hint { display: block; }
+
+@media print {
+  .t-diagnostics { display: none; }
+  .tern > * { content-visibility: visible !important; } /* the runtime's held blocks (src/runtime.js) */
+  :root { color-scheme: light; --t-size: 11pt; --t-bg: #fff; --t-fg: #000; --t-soft: #f3f4f1; --t-line: #d9dde3; --t-mark: #fff2a8; --t-muted: #555; }
+  body { padding: 0; }
+  .tern { max-width: none; }
+  .tern pre { white-space: pre-wrap; }
+  .tern pre, .tern table, .t-eq { overflow: visible; }
+  .tern table { display: table; inline-size: auto; }
+  /* KaTeX positions .katex (0.19) and its bases (.base, 0.19 .katex-base) relatively, so Chromium
+     paints formulas after the text around them and the PDF text layer moves them out of their sentences. */
+  .katex, .katex :is(.base, .katex-base) { position: static; }
+}
+`;
+
+module.exports = { css };

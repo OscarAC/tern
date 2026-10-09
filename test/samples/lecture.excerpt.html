@@ -1,0 +1,54 @@
+<!-- head after mount: <html lang="en">, <title>Linear maps: kernel, image and rank</title>,
+     <meta name="author" content="O. Carrera">, <meta name="date" content="2026-10-07">.
+     data-pos="line:col" omitted on every element below. -->
+<h1 id="linear-maps-kernel-image-and-rank">Linear maps: kernel, image and rank</h1>
+<p class="byline">Lecture 7 · O. Carrera · 7 October 2026</p>
+<nav class="toc" data-t="toc"><ol><li><a href="#defs">Definitions</a></li><li><a href="#theorems">Two theorems</a></li></ol></nav>
+<div class="t-macros" hidden>\gdef\R{\mathbb{R}}
+\gdef\im{\operatorname{im}}
+\gdef\norm#1{\lVert #1 \rVert}</div>
+<h2 id="defs">Definitions</h2>
+<section id="def-kernel" class="t-block definition" data-t="definition">
+<div class="t-title"><span class="t-label">Definition 1</span> Kernel and image</div>
+<p>For a linear map <span class="t-math">T: V \to W</span> the <strong>kernel</strong> is <span class="t-math">\ker T = \{\, v \in V : Tv = 0 \,\}</span> and the
+<strong>image</strong> is <span class="t-math">\im T = \{\, Tv : v \in V \,\}</span>. Both are subspaces.<sup class="t-fnref"><a id="fnref-subspace" href="#fn-subspace">1</a></sup></p>
+</section>
+…
+<p>Notation is cheap. The sum <span class="t-math">\sum_{i=1}^{n} x_i^*</span> adds the optimum <span class="t-math">x_i^*</span> of every
+coordinate; evaluating it on the department cluster costs $5 per term, or $10 at peak
+hours. The <span class="t-math">0</span>th coordinate is the bias, the norm <span class="t-math">\norm{x}</span> is never <span class="t-math">\$</span>-valued, the
+interval <span class="t-math">]0,1[</span> is open, and <code>$HOME</code> is a shell variable, not maths.</p>
+<h2 id="theorems">Two theorems</h2>
+<section id="thm-rank-nullity" class="t-block theorem" data-t="theorem">
+<div class="t-title"><span class="t-label">Theorem 1</span> Rank–nullity</div>
+<p>If <span class="t-math">V</span> is finite-dimensional then</p>
+<div class="t-eq" id="eq-rank-nullity"><span class="t-math" data-display>\dim V = \dim \ker T + \dim \im T.</span><span class="t-eqno">(1)</span></div>
+</section>
+<section class="t-block proof" data-t="proof">
+<div class="t-title"><span class="t-label">Proof</span></div>
+<p>Pick a basis … they are independent: if</p>
+<div class="t-eq"><span class="t-math" data-display>\sum_{j=1}^{r} a_j\, Tv_j = 0</span></div>
+<p>then <span class="t-math">\sum_j a_j v_j \in \ker T</span>, so every <span class="t-math">a_j = 0</span>. Counting gives <a class="t-ref" href="#eq-rank-nullity">(1)</a>.</p>
+<span class="t-end" aria-hidden="true">∎</span>
+</section>
+<section id="lem-inj" class="t-block lemma" data-t="lemma">
+<div class="t-title"><span class="t-label">Lemma 2</span> Injectivity test</div>
+<p><span class="t-math">T</span> is injective exactly when <span class="t-math">\ker T = \{0\}</span>.</p>
+</section>
+…
+<p>By <a class="t-ref" href="#lem-inj">Lemma 2</a>, the <a class="t-ref" href="#lem-inj">Injectivity test</a>, <span class="t-math">T</span> is injective iff … compare
+<a class="t-ref" href="#eq-bound">(2)</a>, which only bounds the rank:</p>
+<div class="t-eq" id="eq-bound"><span class="t-math" data-display>\operatorname{rank} T \le \min(\dim V, \dim W).</span><span class="t-eqno">(2)</span></div>
+<span class="t-end" aria-hidden="true">∎</span>
+</section>
+<figure id="fig-kernel" class="t-block figure" data-t="figure">
+<img src="fig/kernel-image.svg" alt="A plane through the origin, and a line through it, in 3-space" width="60%">
+<figcaption class="t-title"><span class="t-label">Figure 1</span> The kernel (plane) and image (line) of a rank-one map <span class="t-math">\R^3 \to \R^3</span>.</figcaption>
+</figure>
+<p>As <a class="t-ref" href="#fig-kernel">Figure 1</a> shows, <a class="t-ref" href="#thm-rank-nullity">Theorem 1</a> says the two pictures add up to three dimensions.</p>
+<details class="t-block recall" data-t="recall"><summary class="t-title">When is a square matrix invertible?</summary>
+<p>When its determinant is nonzero; equivalently, by <a class="t-ref" href="#thm-bij">Theorem 3</a>, when its kernel is trivial.</p>
+</details>
+<section class="t-footnotes"><ol><li id="fn-subspace"><p>Closed under addition and scaling: if <span class="t-math">Tu = Tv = 0</span> then
+<span class="t-math">T(u + \lambda v) = 0</span> for every scalar <span class="t-math">\lambda</span>. <a class="t-fnback" href="#fnref-subspace">↩</a></p></li></ol></section>
+

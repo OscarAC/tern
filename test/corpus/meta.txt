@@ -1,0 +1,543 @@
+# Metadata
+
+Metadata: the preserved head (passed as `opts.head` through an
+`html head` block), the top-level `:::meta` block, conflicts with the head,
+repeated and malformed keys, nesting, the title fallback and the front
+matter pointer. `:::meta` lands in `root.data.tern.meta`, read by the parser
+as a plain object from key to value string.
+
+Also: blank lines in the body are ignored and indented lines are
+`meta.malformed`; values are right-trimmed and a key may not end in `:`;
+several top-level blocks merge, a later repeat being `meta.duplicate`; the
+conflict test is exact except for `lang`, which compares case-insensitively,
+and after a conflict `meta` holds the head's value; the title fallback is
+recorded in `meta.title` by the transforms. `:::meta` is verbatim everywhere
+and honoured only at the top level.
+
+## meta/keys
+
+spec: elements#meta-block syntax-blocks#meta
+
+The `:::meta` example: each `key: value` line is read into `root.data.tern.meta`, a plain object from key to string; the value is the rest of the line, colons included.
+
+````tern
+:::meta
+title: Linear maps: kernel, image and rank
+lang: en
+author: O. Carrera
+date: 2026-10-07
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"title":"Linear maps: kernel, image and rank","lang":"en","author":"O. Carrera","date":"2026-10-07"}}}}
+````
+
+````html
+````
+
+## meta/emits-nothing
+
+spec: elements#meta-block syntax-blocks#meta
+
+A `:::meta` block emits nothing in the body.
+
+````tern
+:::meta
+lang: en
+description: Notes on linear maps
+:::
+
+Text.
+````
+
+````html
+<p>Text.</p>
+````
+
+## meta/attributes-dropped
+
+spec: elements#meta-block syntax-blocks#meta syntax-blocks#r7
+
+`:::meta` emits nothing, so an id, classes or an ordinary key on it apply to no element: each gets `attr.malformed` at its item and is dropped. The id is not registered, so `@m` is dangling rather than a link to nothing.
+
+````tern
+:::meta{#m .a .b lang=en}
+title: T
+:::
+
+See @m.
+````
+
+````html
+<p>See @m.</p>
+````
+
+````diagnostics
+1:9 warning attr.malformed "applies to no element here"
+1:12 warning attr.malformed "apply to no element"
+1:18 warning attr.malformed
+5:5 warning ref.dangling
+````
+
+## meta/value-plain-text
+
+spec: elements#meta-block
+
+Values are plain text: nothing in them is parsed as Tern.
+
+````tern
+:::meta
+title: *Linear* maps & $T$
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"title":"*Linear* maps & $T$"}}}}
+````
+
+## meta/other-key
+
+spec: elements#meta-block
+
+Any other key is kept (it becomes `<meta name="key">`); a key may itself contain `:`, and the separator is the first `:` followed by a space.
+
+````tern
+:::meta
+og:image: cover.png
+keywords: kernel, image, rank
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"og:image":"cover.png","keywords":"kernel, image, rank"}}}}
+````
+
+## meta/verbatim-body
+
+spec: elements#meta-block syntax-blocks#meta syntax-blocks#lines
+
+The body is verbatim: a `:::note` line inside it is not an opener but a malformed meta line, and the next `:::` closes the block.
+
+````tern
+:::meta
+title: Maps
+:::note
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"title":"Maps"}}}}
+````
+
+````html
+````
+
+````diagnostics
+3:1 warning meta.malformed
+````
+
+## meta/not-first
+
+spec: elements#meta-block
+
+`:::meta` conventionally comes first, but a top-level block later in the note is honoured.
+
+````tern
+Intro.
+
+:::meta
+author: O. Carrera
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"author":"O. Carrera"}}}}
+````
+
+````html
+<p>Intro.</p>
+````
+
+## meta/head-wins
+
+spec: elements#meta-rules elements#head
+
+When the head and `:::meta` set the same key to different values the head wins, with `meta.conflict` at the key in the note.
+
+````html head
+<html lang="en">
+<title>Linear maps</title>
+````
+
+````tern
+:::meta
+title: Kernels
+:::
+````
+
+````html
+````
+
+````diagnostics
+2:1 warning meta.conflict
+````
+
+## meta/head-same-value
+
+spec: elements#meta-rules elements#head
+
+The same value in both places is not a conflict.
+
+````html head
+<title>Linear maps</title>
+````
+
+````tern
+:::meta
+title: Linear maps
+:::
+````
+
+````diagnostics
+````
+
+## meta/head-other-key
+
+spec: elements#meta-rules elements#head
+
+Keys the head does not set are not conflicts: one place per key.
+
+````html head
+<title>Linear maps</title>
+````
+
+````tern
+:::meta
+author: O. Carrera
+:::
+````
+
+````diagnostics
+````
+
+## meta/conflict-lang
+
+spec: elements#meta-rules elements#meta-block
+
+`lang` conflicts with the head's `<html lang>`.
+
+````html head
+<html lang="de">
+````
+
+````tern
+:::meta
+lang: en
+:::
+````
+
+````diagnostics
+2:1 warning meta.conflict
+````
+
+## meta/conflict-meta-name
+
+spec: elements#meta-rules elements#meta-block
+
+`author` conflicts with the head's `<meta name="author">`.
+
+````html head
+<meta name="author" content="A. Author">
+````
+
+````tern
+:::meta
+author: O. Carrera
+:::
+````
+
+````diagnostics
+2:1 warning meta.conflict
+````
+
+## meta/duplicate
+
+spec: elements#meta-rules
+
+A repeated key gets `meta.duplicate` at the repeat; the first value wins.
+
+````tern
+:::meta
+title: One
+title: Two
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"title":"One"}}}}
+````
+
+````diagnostics
+3:1 warning meta.duplicate
+````
+
+## meta/malformed
+
+spec: elements#meta-rules elements#meta-block
+
+A line that is not `key: value` gets `meta.malformed` at the line: no colon, no space after the colon, a key not starting with a letter.
+
+````tern
+:::meta
+title Linear maps
+lang:en
+1st: x
+lang: en
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"lang":"en"}}}}
+````
+
+````diagnostics
+2:1 warning meta.malformed
+3:1 warning meta.malformed
+4:1 warning meta.malformed
+````
+
+## meta/blank-and-indented-lines
+
+spec: elements#meta-rules elements#meta-block
+
+Blank lines in the body are ignored; an indented line does not parse as `key: value` and gets `meta.malformed` at the line.
+
+````tern
+:::meta
+title: Maps
+
+  lang: en
+author: O. Carrera
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"title":"Maps","author":"O. Carrera"}}}}
+````
+
+````html
+````
+
+````diagnostics
+4:1 warning meta.malformed
+````
+
+## meta/value-right-trimmed
+
+spec: elements#meta-block syntax-blocks#lines
+options: escaped
+
+The body is verbatim, but a value is right-trimmed: trailing spaces and tabs are not part of it.
+
+````tern
+:::meta
+title: Maps\u0020\u0020
+lang: en\t
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"title":"Maps","lang":"en"}}}}
+````
+
+````diagnostics
+````
+
+## meta/key-trailing-colon
+
+spec: elements#meta-rules elements#meta-block
+
+The separator is the first `:` followed by a space, and a key may not end in `:`, so `og:: x` (key `og:`) is `meta.malformed`.
+
+````tern
+:::meta
+og:: x
+note: ok
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"note":"ok"}}}}
+````
+
+````diagnostics
+2:1 warning meta.malformed
+````
+
+## meta/several-blocks-merge
+
+spec: elements#meta-rules elements#meta-block
+
+Several top-level `:::meta` blocks merge into one `meta`; a key repeated in a later block is a `meta.duplicate` at the repeat, and the first value wins.
+
+````tern
+:::meta
+title: Maps
+:::
+
+Text.
+
+:::meta
+author: O. Carrera
+title: Other
+:::
+````
+
+````json ast
+{"data":{"tern":{"meta":{"title":"Maps","author":"O. Carrera"}}}}
+````
+
+````html
+<p>Text.</p>
+````
+
+````diagnostics
+9:1 warning meta.duplicate
+````
+
+## meta/conflict-lang-case-insensitive
+
+spec: elements#meta-rules elements#head
+
+`lang` compares case-insensitively: `en-gb` agrees with the head's `en-GB`, so there is no conflict.
+
+````html head
+<html lang="en-GB">
+````
+
+````tern
+:::meta
+lang: en-gb
+:::
+````
+
+````diagnostics
+````
+
+## meta/conflict-keeps-head-value
+
+spec: elements#meta-rules elements#head
+
+Every key but `lang` compares exactly, so a title differing only in case conflicts; after a conflict `meta` holds the head's value, and the other keys are kept.
+
+````html head
+<title>Linear Maps</title>
+````
+
+````tern
+:::meta
+title: Linear maps
+author: O. Carrera
+:::
+````
+
+````json transformed
+{"data":{"tern":{"meta":{"title":"Linear Maps","author":"O. Carrera"}}}}
+````
+
+````diagnostics
+2:1 warning meta.conflict
+````
+
+## meta/nested
+
+spec: elements#meta-rules syntax-blocks#meta
+options: schema=none
+
+A `:::meta` that is not at the top level gets `meta.nested` at its opener line and is ignored; its body is verbatim everywhere, so its lines are not rendered.
+
+````tern
+:::box
+:::meta
+title: Inner
+:::
+Body.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box"><p>Body.</p></div>
+````
+
+````diagnostics
+2:1 warning meta.nested
+````
+
+## meta/title-fallback
+
+spec: elements#meta-rules
+
+With no title anywhere, the document title is the plain text of the first level-1 heading, which the transforms record in `root.data.tern.meta.title`.
+
+````tern
+## Overview
+
+# Linear *maps*
+
+Text.
+````
+
+````json transformed
+{"data":{"tern":{"meta":{"title":"Linear maps"}}}}
+````
+
+## meta/frontmatter-not-meta
+
+spec: elements#meta-rules syntax-blocks#front-matter
+
+There is no front matter: `---` … `---` is a rule, a paragraph and a rule, with `doc.frontmatter` pointing to `:::meta`.
+
+````tern
+---
+title: Linear maps
+---
+````
+
+````html
+<hr>
+<p>title: Linear maps</p>
+<hr>
+````
+
+````diagnostics
+1:1 info doc.frontmatter
+````
+
+## meta/head-not-in-body
+
+spec: elements#head syntax-blocks#note-start
+
+The preserved head is HTML the browser already parsed; none of it reaches the body, and the note's lines count from the line after `tern.js`.
+
+````html head
+<title>Maps</title>
+<link rel="icon" href="icon.png">
+<style>main { max-width: 40em }</style>
+````
+
+````tern
+# Maps
+
+:::meta
+title Maps
+:::
+````
+
+````html
+<h1 id="maps">Maps</h1>
+````
+
+````diagnostics
+4:1 warning meta.malformed
+````

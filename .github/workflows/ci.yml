@@ -1,0 +1,94 @@
+# Every test harness runs on every push and pull request.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  corpus-lint:
+    name: corpus lint and spec coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/run.js --lint
+
+  conformance:
+    name: conformance corpus and sample notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/run.js
+      - run: node test/samples.js
+
+  perf:
+    name: performance budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/perf.js
+
+  fuzz:
+    name: fuzz (30 s)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/fuzz.js --seconds=30
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-failures
+          path: test/fuzz-failures/
+
+  smoke:
+    name: browser smoke (Chromium, Firefox)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium firefox
+      - run: sudo apt-get install -y mupdf-tools # mutool, for the PDF text test
+      - run: node test/smoke.js
+
+  build:
+    name: tern.js is the build of src/
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/concat.js --check
+
+  cli:
+    name: API, command line, language server and documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/api.js
+      - run: node test/cli.js
+      - run: node test/lsp.js
+      - run: node test/docs.js # the documentation's pages, live examples and links
+
+  # The release job is .github/workflows/release.yml (a pushed tag vX.Y.Z).

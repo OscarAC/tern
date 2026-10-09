@@ -1,0 +1,88 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Smoke: docs.js · Tern</title><script src="../../tern.js" data-use="../../docs/docs.js ../../docs/docs.css"></script>
+
+::site-nav
+
+# Smoke: docs.js live examples {#top}
+
+::toc
+
+## Examples {#examples}
+
+A page paragraph, which the example's style must not reach.
+
+```tern {.live}
+A *short* example with $x^2$ and a footnote[^a].
+
+[^a]: The note, with a [link back](#k).
+
+## Kernel {#k}
+
+$$
+\int_0^1 x\,dx
+$$ {#eq}
+```
+
+```tern {.live expect="block.unclosed attr.malformed"}
+:::note
+## A heading {.a =b}
+```
+
+```tern {.live schema=demo}
+:::theorem[Rank–nullity]{#rn}
+$\dim V = \operatorname{rank} + \operatorname{nullity}$.
+:::
+
+See @rn.
+```
+
+```tern {.live}
+<script>window.__ran = 'inline'</script>
+
+<style>p { color: rgb(200, 0, 0) }</style>
+
+A paragraph styled by its own example. <button onclick="window.__ran = 'click'">Click</button>
+```
+
+````tern [A titled example] {.live}
+```js [Hello]
+console.log('hi')
+```
+````
+
+## Math {#math}
+
+An example's macros are its own, and so are its KaTeX errors.
+
+```tern {.live}
+:::macros
+\newcommand{\RR}{\mathbb{R}}
+:::
+
+$f\colon \RR \to \RR$ and
+
+$$
+\RR^2
+$$
+```
+
+```tern {.live}
+Without its own :::macros, $\RR$ is unknown here.
+```
+
+```tern {.live}
+:::macros
+\newcommand{\half
+:::
+
+A formula KaTeX rejects: $\notacommand$.
+```
+
+## Highlighting {#highlighting}
+
+```tern
+# Heading {#h .c}
+
+:::theorem[Title]{#t}
+Body with `code`, $x$, **strong**, @ref and :abbr[HTML]{title="x"}.
+:::
+```

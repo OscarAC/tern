@@ -1,0 +1,1212 @@
+# Inline math
+
+Inline math, verbatim math and `$$` in the middle of a line, with the `$`
+rows of the ambiguity rules and the dollar residuals. First every row of the inline-math outcome table, then the
+opener and closer clauses one at a time, the diagnostics with their negatives, atomicity,
+glued groups, and verbatim math.
+
+Positions: `math.inline-display`, `math.unclosed-inline` and `math.bracket` are at "the `$`"
+(the opener, or the first `$` of a `$$` run; `math.bracket` is always at the opener);
+`math.suspect-price` is at the opener. `math.inline-display` fires once per `$$` run.
+
+## inline-math/spelling
+
+spec: syntax-inline#inline-math
+
+The inline-math spelling example: the content is raw TeX, so `_`, `^` and `*` inside it are not Tern.
+
+````tern
+$\sum_{i=1}^{n} x_i^*$
+````
+
+````html
+<p><span class="t-math">\sum_{i=1}^{n} x_i^*</span></p>
+````
+
+## inline-math/price-then-price
+
+spec: syntax-inline#inline-math syntax-inline#ambiguity
+
+Outcome table: `costs $5 and $10` is text, because the candidate closer is preceded by a space, and the second `$` has no closer.
+
+````tern
+costs $5 and $10
+````
+
+````html
+<p>costs $5 and $10</p>
+````
+
+## inline-math/price-then-math
+
+spec: syntax-inline#inline-math
+
+Outcome table: in `costs $5 and $x$` the first `$` fails on the candidate before `x`, which then gets its own chance and opens.
+
+````tern
+costs $5 and $x$
+````
+
+````html
+<p>costs $5 and <span class="t-math">x</span></p>
+````
+
+## inline-math/paren-dollar-usd
+
+spec: syntax-inline#inline-math
+
+Outcome table: in `$100 ($USD) and $x$` the bracket clause rejects the candidate after `(`, `$USD` fails on the whitespace before the next dollar, and `$x$` is math.
+
+````tern
+$100 ($USD) and $x$
+````
+
+````html
+<p>$100 ($USD) and <span class="t-math">x</span></p>
+````
+
+## inline-math/paren-dollar-pair
+
+spec: syntax-inline#inline-math
+
+Outcome table: `Cost ($) and revenue ($)` is text, because `$)` cannot open; the bracket clause is silent for parentheses.
+
+````tern
+Cost ($) and revenue ($)
+````
+
+````html
+<p>Cost ($) and revenue ($)</p>
+````
+
+## inline-math/table-paren-dollar
+
+spec: syntax-inline#inline-math syntax-blocks#tables
+
+Outcome table: `| Price ($) | Amount ($) |` has two text cells, because `$)` cannot open math and so cannot hide a pipe.
+
+````tern
+| Price ($) | Amount ($) |
+|---|---|
+| 5 | 10 |
+````
+
+````html
+<table>
+<thead><tr><th>Price ($)</th><th>Amount ($)</th></tr></thead>
+<tbody><tr><td>5</td><td>10</td></tr></tbody>
+</table>
+````
+
+## inline-math/nth-st-nd
+
+spec: syntax-inline#inline-math
+
+Outcome table: there is no digit clause on the opener, so ordinals glued to a closer are math.
+
+````tern
+the $0$th, $1$st, $2$nd, $n$th, $2^n$th
+````
+
+````html
+<p>the <span class="t-math">0</span>th, <span class="t-math">1</span>st, <span class="t-math">2</span>nd, <span class="t-math">n</span>th, <span class="t-math">2^n</span>th</p>
+````
+
+## inline-math/price-slash-price
+
+spec: syntax-inline#inline-math
+
+Outcome table: in `$5/$8` the candidate closer is followed by a digit, so it does not close, and the second `$` has no closer.
+
+````tern
+$5/$8
+````
+
+````html
+<p>$5/$8</p>
+````
+
+## inline-math/price-dash-price
+
+spec: syntax-inline#inline-math
+
+Outcome table: in `$5–$10` (en dash) the candidate closer is followed by a digit.
+
+````tern
+$5–$10
+````
+
+````html
+<p>$5–$10</p>
+````
+
+## inline-math/price-in-parens
+
+spec: syntax-inline#inline-math
+
+Outcome table: in `($5 each, or $8)` the candidate closer is preceded by a space.
+
+````tern
+($5 each, or $8)
+````
+
+````html
+<p>($5 each, or $8)</p>
+````
+
+## inline-math/digit-after-closer
+
+spec: syntax-inline#inline-math
+
+Outcome table: `a $x$2 b` is text, because the candidate closer is followed by a digit.
+
+````tern
+a $x$2 b
+````
+
+````html
+<p>a $x$2 b</p>
+````
+
+## inline-math/escaped-dollar-inside
+
+spec: syntax-inline#inline-math syntax-inline#escapes
+
+Outcome table: `$\$$-valued` is math `\$`; the closer search skips the `\$` pair, and the TeX keeps it.
+
+````tern
+$\$$-valued
+````
+
+````html
+<p><span class="t-math">\$</span>-valued</p>
+````
+
+## inline-math/one-line-break
+
+spec: syntax-inline#inline-math syntax-blocks#paragraph
+
+Outcome table: one line break between opener and closer is allowed; the soft break stays in the TeX as `\n`.
+
+````tern
+$\sum_{i=1}^n
+x_i$
+````
+
+````html
+<p><span class="t-math">\sum_{i=1}^n
+x_i</span></p>
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph","children":[{"type":"inlineMath","value":"\\sum_{i=1}^n\nx_i"}]}]}
+````
+
+## inline-math/two-line-breaks-text
+
+spec: syntax-inline#inline-math
+
+Outcome table: two line breaks between opener and candidate closer make it text, with no diagnostic.
+
+````tern
+$a
+b
+c$
+````
+
+````html
+<p>$a
+b
+c$</p>
+````
+
+## inline-math/glued-to-words
+
+spec: syntax-inline#inline-math
+
+Outcome table: `x$y$z` is `x`, math `y`, `z`, as in Pandoc; nothing tests the character before the opener or the letter after the closer.
+
+````tern
+x$y$z
+````
+
+````html
+<p>x<span class="t-math">y</span>z</p>
+````
+
+## inline-math/bracket-info
+
+spec: syntax-inline#inline-math syntax-inline#residual-dollars diagnostics#math-bracket
+
+Outcome table: French interval notation `$]0,1[$` is text, with `math.bracket` at the opener and a hint naming the verbatim form.
+
+````tern
+the interval $]0,1[$ is open
+````
+
+````html
+<p>the interval $]0,1[$ is open</p>
+````
+
+````diagnostics
+1:14 info math.bracket "$`]0,1[`"
+````
+
+## inline-math/opener-followed-by-space
+
+spec: syntax-inline#inline-math
+
+A `$` followed by whitespace does not open, even when a later dollar could close.
+
+````tern
+a $ b$ c
+````
+
+````html
+<p>a $ b$ c</p>
+````
+
+## inline-math/opener-before-paren
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a `$` followed by `)` does not open, silently.
+
+````tern
+$)x$
+````
+
+````html
+<p>$)x$</p>
+````
+
+## inline-math/opener-before-square
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a `$` followed by `]` does not open; the span was rejected only because of that `]`, so `math.bracket` fires.
+
+````tern
+$]x$
+````
+
+````html
+<p>$]x$</p>
+````
+
+````diagnostics
+1:1 info math.bracket
+````
+
+## inline-math/opener-before-brace
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a `$` followed by `}` does not open, silently.
+
+````tern
+$}x$
+````
+
+````html
+<p>$}x$</p>
+````
+
+## inline-math/opener-before-comma
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a `$` followed by `,` does not open (trailing-currency prices such as `5$, 6$`).
+
+````tern
+$,x$
+````
+
+````html
+<p>$,x$</p>
+````
+
+## inline-math/opener-before-period
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a `$` followed by `.` does not open.
+
+````tern
+$.x$
+````
+
+````html
+<p>$.x$</p>
+````
+
+## inline-math/opener-before-semicolon
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a `$` followed by `;` does not open.
+
+````tern
+$;x$
+````
+
+````html
+<p>$;x$</p>
+````
+
+## inline-math/opener-before-colon
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a `$` followed by `:` does not open.
+
+````tern
+$:x$
+````
+
+````html
+<p>$:x$</p>
+````
+
+## inline-math/closer-after-space
+
+spec: syntax-inline#inline-math
+
+A candidate closer preceded by whitespace does not close ("whitespace then `$` aborts"), and it cannot open either, being followed by a space.
+
+````tern
+$a $ b
+````
+
+````html
+<p>$a $ b</p>
+````
+
+## inline-math/closer-after-paren
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a candidate closer preceded by `(` does not close, silently.
+
+````tern
+$f($
+````
+
+````html
+<p>$f($</p>
+````
+
+## inline-math/closer-after-square
+
+spec: syntax-inline#inline-math syntax-inline#residual-dollars
+
+Bracket clause: `$[0,1[$` is text, rejected only because of the `[` before the closer, with `math.bracket` (a residual case). `math.bracket` points at the opener, even when the rejecting bracket is next to the closer.
+
+````tern
+$[0,1[$
+````
+
+````html
+<p>$[0,1[$</p>
+````
+
+````diagnostics
+1:1 info math.bracket
+````
+
+## inline-math/closer-after-brace
+
+spec: syntax-inline#inline-math
+
+Bracket clause: a candidate closer preceded by `{` does not close, silently.
+
+````tern
+$f{$
+````
+
+````html
+<p>$f{$</p>
+````
+
+## inline-math/closer-after-escaped-bracket
+
+spec: syntax-inline#inline-math syntax-inline#escapes
+
+The closer clause rejects only an unescaped `(`, `[` or `{`; after `\{`, `\[` or `\(` the dollar closes.
+
+````tern
+$\{$, $\[$ and $\($
+````
+
+````html
+<p><span class="t-math">\{</span>, <span class="t-math">\[</span> and <span class="t-math">\(</span></p>
+````
+
+## inline-math/closer-before-dollar
+
+spec: syntax-inline#inline-math syntax-inline#inline-display
+
+A candidate closer followed by another dollar does not close; the two adjacent dollars are then text with `math.inline-display`.
+
+````tern
+a $x$$ b
+````
+
+````html
+<p>a $x$$ b</p>
+````
+
+````diagnostics
+1:5 info math.inline-display
+````
+
+## inline-math/adjacent-dollars-no-opener
+
+spec: syntax-inline#inline-math syntax-inline#inline-display
+
+A dollar adjacent to another dollar never opens, so `$$x$` in a line opens nothing.
+
+````tern
+a $$x$ b
+````
+
+````html
+<p>a $$x$ b</p>
+````
+
+````diagnostics
+1:3 info math.inline-display
+````
+
+## inline-math/first-dollar-decides
+
+spec: syntax-inline#inline-math
+
+The first dollar after the opener is the only candidate: it fails here (space before it), and the later `$` that could have closed is never considered.
+
+````tern
+$x $ y$
+````
+
+````html
+<p>$x $ y$</p>
+````
+
+## inline-math/candidate-reopens
+
+spec: syntax-inline#inline-math
+
+A rejected candidate gets its own chance to open: `$a ` is text and `$b$` is math.
+
+````tern
+$a $b$
+````
+
+````html
+<p>$a <span class="t-math">b</span></p>
+````
+
+## inline-math/escaped-dollar-outside
+
+spec: syntax-inline#escape syntax-inline#escapes syntax-inline#ambiguity
+
+Outside math `\$` is a literal dollar and never opens or closes.
+
+````tern
+costs \$5 and \$10
+````
+
+````html
+<p>costs $5 and $10</p>
+````
+
+## inline-math/escaped-opener
+
+spec: syntax-inline#inline-math syntax-inline#ambiguity syntax-inline#residual-dollars
+
+`\$` is the fix for a price misread as math: the escaped dollar is not a dollar, and the last `$` has nothing after it.
+
+````tern
+\$5 then x$
+````
+
+````html
+<p>$5 then x$</p>
+````
+
+## inline-math/escaped-closer
+
+spec: syntax-inline#inline-math syntax-inline#escape
+
+`$x\$` is text: the closer search skips `\$`, nothing closes, and the opener being text, `\$` is then an ordinary escape.
+
+````tern
+$x\$
+````
+
+````html
+<p>$x$</p>
+````
+
+## inline-math/backslash-pair-skipping
+
+spec: syntax-inline#inline-math syntax-inline#escapes
+
+The closer search skips `\x` pairs from the left, so in `a\\$` the `\\` is a pair and the following dollar closes.
+
+````tern
+$a\\$ and $b$
+````
+
+````html
+<p><span class="t-math">a\\</span> and <span class="t-math">b</span></p>
+````
+
+## inline-math/escaped-dollar-not-adjacent
+
+spec: syntax-inline#inline-math syntax-inline#escape
+
+An escaped `$` is not a dollar, so the `$` after `\$` is not adjacent to one and may open.
+
+````tern
+\$$x$
+````
+
+````html
+<p>$<span class="t-math">x</span></p>
+````
+
+## inline-math/two-alphabets
+
+spec: syntax-blocks#r4 syntax-inline#escape
+
+The same `\alpha` is TeX inside math and a literal backslash and letters outside it.
+
+````tern
+$\alpha$ and \alpha
+````
+
+````html
+<p><span class="t-math">\alpha</span> and \alpha</p>
+````
+
+## inline-math/tex-marks-outside-math
+
+spec: syntax-blocks#r4 syntax-inline#entities
+
+TeX's marks outside math are plain text: `^`, `_`, an unbraced-position `{…}`, and `&` (escaped, not an entity).
+
+````tern
+x^2 + y_1 & {z}
+````
+
+````html
+<p>x^2 + y_1 &amp; {z}</p>
+````
+
+## inline-math/atom-star
+
+spec: syntax-inline#inline-math syntax-inline#algorithm syntax-inline#emphasis
+
+Math is an atom: the `*` in `$a*b$` and `$c*d$` cannot pair into emphasis across the two spans.
+
+````tern
+$a*b$ and $c*d$
+````
+
+````html
+<p><span class="t-math">a*b</span> and <span class="t-math">c*d</span></p>
+````
+
+## inline-math/atom-inside-emphasis
+
+spec: syntax-inline#inline-math syntax-inline#algorithm syntax-inline#emphasis
+
+Emphasis around math pairs its own delimiters and does not see the `*` inside the span.
+
+````tern
+*a $b*$ c*
+````
+
+````html
+<p><em>a <span class="t-math">b*</span> c</em></p>
+````
+
+## inline-math/atom-at
+
+spec: syntax-inline#inline-math syntax-inline#algorithm syntax-inline#reference
+
+`@` inside math is TeX, not a reference, so there is no `ref.dangling`.
+
+````tern
+$@eq-x$
+````
+
+````html
+<p><span class="t-math">@eq-x</span></p>
+````
+
+## inline-math/atom-brackets
+
+spec: syntax-inline#inline-math syntax-inline#algorithm syntax-inline#links syntax-inline#span
+
+Brackets inside math are not links or spans.
+
+````tern
+$[a](b)$ and $[c]{.d}$
+````
+
+````html
+<p><span class="t-math">[a](b)</span> and <span class="t-math">[c]{.d}</span></p>
+````
+
+## inline-math/atom-lt
+
+spec: syntax-inline#inline-math syntax-inline#raw-inline-html
+
+A tag-shaped `<b>` inside math is TeX: escaped, never raw HTML.
+
+````tern
+$a<b>c$
+````
+
+````html
+<p><span class="t-math">a&lt;b&gt;c</span></p>
+````
+
+## inline-math/atom-amp
+
+spec: syntax-inline#inline-math syntax-inline#entities
+
+`&` inside math is escaped, and an entity inside math is not passed through.
+
+````tern
+$a & b$ and $c &amp; d$
+````
+
+````html
+<p><span class="t-math">a &amp; b</span> and <span class="t-math">c &amp;amp; d</span></p>
+````
+
+## inline-math/pipe-inside-math-in-table
+
+spec: syntax-inline#inline-math syntax-blocks#tables
+
+Math is an atom for the row splitter: `$|x|$` is one cell.
+
+````tern
+| Norm | Value |
+|---|---|
+| $|x|$ | 1 |
+````
+
+````html
+<table>
+<thead><tr><th>Norm</th><th>Value</th></tr></thead>
+<tbody><tr><td><span class="t-math">|x|</span></td><td>1</td></tr></tbody>
+</table>
+````
+
+## inline-math/math-spans-pipe-in-row
+
+spec: syntax-inline#residual-pipe syntax-blocks#tables syntax-inline#inline-math
+
+Residual case: `$a | b$` in a row is one math span, so the pipe inside it does not split the cell.
+
+````tern
+| A | B |
+|---|---|
+| $a | b$ | c |
+````
+
+````html
+<table>
+<thead><tr><th>A</th><th>B</th></tr></thead>
+<tbody><tr><td><span class="t-math">a | b</span></td><td>c</td></tr></tbody>
+</table>
+````
+
+## inline-math/math-in-container-title
+
+spec: syntax-inline#inline-math syntax-blocks#container
+
+In a container title math is an atom, so the `]` inside `$f[x]$` does not end the title.
+
+````tern
+:::idea[See $f[x]$]
+Body.
+:::
+````
+
+````html
+<div class="t-block idea" data-t="idea"><div class="t-title">See <span class="t-math">f[x]</span></div><p>Body.</p></div>
+````
+
+## inline-math/glued-strong-group
+
+spec: syntax-inline#inline-math syntax-blocks#positions elements#ids
+
+A strong group glued after the closing `$` binds to the math span. Inline math with an id is never numbered: there is no `span.t-eqno` and no `equation` count.
+
+````tern
+$x${#e}
+````
+
+````html
+<p><span id="e" class="t-math">x</span></p>
+````
+
+````json ast
+{"type":"root","children":[{"type":"paragraph","children":[{"type":"inlineMath","value":"x","attributes":{"id":"e"}}]}]}
+````
+
+## inline-math/glued-weak-group-text
+
+spec: syntax-inline#inline-math syntax-blocks#positions syntax-blocks#strong-and-weak
+
+After math only a strong group binds: `$f${x}` is math `f` followed by the text `{x}`, with no diagnostic.
+
+````tern
+$f${x}
+````
+
+````html
+<p><span class="t-math">f</span>{x}</p>
+````
+
+## inline-math/spaced-group-text
+
+spec: syntax-inline#inline-math syntax-blocks#positions
+
+A group separated from the math by a space is not glued and stays text.
+
+````tern
+$x$ {#e}
+````
+
+````html
+<p><span class="t-math">x</span> {#e}</p>
+````
+
+## inline-math/suspect-price
+
+spec: syntax-inline#inline-math syntax-inline#residual-dollars diagnostics#math-suspect-price
+
+`$5 then x$` is math (Pandoc's residue), flagged with `math.suspect-price` at the opener: the opener is followed by a digit and the span holds `then`, a run of letters after a space.
+
+````tern
+$5 then x$
+````
+
+````html
+<p><span class="t-math">5 then x</span></p>
+````
+
+````diagnostics
+1:1 warning math.suspect-price "\$"
+````
+
+## inline-math/suspect-price-us
+
+spec: syntax-inline#inline-math
+
+The second inline-math example: `costs $10 at peak hours (US$)` closes at `US$`, and `peak` and `hours` make it suspect.
+
+````tern
+costs $10 at peak hours (US$)
+````
+
+````html
+<p>costs <span class="t-math">10 at peak hours (US</span>)</p>
+````
+
+````diagnostics
+1:7 warning math.suspect-price
+````
+
+## inline-math/suspect-price-control-word
+
+spec: syntax-inline#inline-math
+
+A TeX control word is not a suspect run: `$3 \times 10^{8}$` gets no warning.
+
+````tern
+$3 \times 10^{8}$
+````
+
+````html
+<p><span class="t-math">3 \times 10^{8}</span></p>
+````
+
+## inline-math/suspect-price-text-content
+
+spec: syntax-inline#inline-math
+
+`\text{…}` content is not a suspect run, even when its words follow spaces.
+
+````tern
+$5 \text{ per unit}$
+````
+
+````html
+<p><span class="t-math">5 \text{ per unit}</span></p>
+````
+
+## inline-math/suspect-price-control-word-arguments
+
+spec: syntax-inline#inline-math
+
+Every braced argument that follows a control word is exempt, whitespace and one line break allowed before each, not only the first: `$5 \frac{ abc}{ def}$` gets no warning. Words after the arguments still count.
+
+````tern
+$5 \frac{ abc}{ def}$, $5 \frac{ abc} { def}$ and $5 \frac{ abc}
+{ def}$
+
+$5 \frac{a}{b} then x$
+````
+
+````html
+<p><span class="t-math">5 \frac{ abc}{ def}</span>, <span class="t-math">5 \frac{ abc} { def}</span> and <span class="t-math">5 \frac{ abc}
+{ def}</span></p>
+<p><span class="t-math">5 \frac{a}{b} then x</span></p>
+````
+
+````diagnostics
+4:1 warning math.suspect-price
+````
+
+## inline-math/suspect-price-letter-opener
+
+spec: syntax-inline#inline-math
+
+Only a span whose opener is followed by a digit is checked: `$x then y$` gets no warning.
+
+````tern
+$x then y$
+````
+
+````html
+<p><span class="t-math">x then y</span></p>
+````
+
+## inline-math/suspect-price-short-run
+
+spec: syntax-inline#inline-math
+
+A run of fewer than three letters is not suspect: `$5 kg$` gets no warning.
+
+````tern
+$5 kg$
+````
+
+````html
+<p><span class="t-math">5 kg</span></p>
+````
+
+## inline-math/suspect-price-textrm
+
+spec: syntax-inline#inline-math
+
+Words after spaces inside `\textrm{…}` in a digit-opened span are not suspect: `math.suspect-price` exempts the argument of any TeX control word, not only `\text`.
+
+````tern
+$5 \textrm{ per unit}$
+````
+
+````html
+<p><span class="t-math">5 \textrm{ per unit}</span></p>
+````
+
+````diagnostics
+````
+
+## inline-math/suspect-price-any-control-word
+
+spec: syntax-inline#inline-math
+
+The exemption covers the argument of any control word: `\mbox{…}` and `\operatorname{…}` arguments are not suspect runs, while a run outside every argument still is.
+
+````tern
+$3 \mbox{ per unit}$, $2 \operatorname{ max cost}$ and $5 then x$
+````
+
+````html
+<p><span class="t-math">3 \mbox{ per unit}</span>, <span class="t-math">2 \operatorname{ max cost}</span> and <span class="t-math">5 then x</span></p>
+````
+
+````diagnostics
+1:56 warning math.suspect-price
+````
+
+## inline-math/paren-us-residual
+
+spec: syntax-inline#residual-dollars syntax-inline#ambiguity syntax-inline#inline-math
+
+Residual case: `$100 (US$)` is math, closing at `US$`; under the `math.suspect-price` rule it is not suspect (`US` is two letters, after `(`).
+
+So it is not flagged: the `math.suspect-price` rule does not match it.
+
+````tern
+$100 (US$)
+````
+
+````html
+<p><span class="t-math">100 (US</span>)</p>
+````
+
+## inline-math/price-dash-math-residual
+
+spec: syntax-inline#residual-dollars syntax-inline#ambiguity syntax-inline#inline-math
+
+Residual case: `$5-$x$` is math `5-` (the candidate is preceded by `-` and followed by `x`), then text `x$`; it is not suspect.
+
+````tern
+$5-$x$
+````
+
+````html
+<p><span class="t-math">5-</span>x$</p>
+````
+
+## inline-math/unclosed-inline
+
+spec: syntax-inline#inline-math diagnostics#math-unclosed-inline
+
+An opener followed by `\` that nothing closes is text with `math.unclosed-inline`; outside math `\alpha` is then a literal backslash.
+
+````tern
+$\alpha never closes
+````
+
+````html
+<p>$\alpha never closes</p>
+````
+
+````diagnostics
+1:1 info math.unclosed-inline
+````
+
+## inline-math/unclosed-inline-rejected-candidate
+
+spec: syntax-inline#inline-math
+
+`math.unclosed-inline` also fires when there is a candidate but it fails (here, a space before it).
+
+````tern
+$\alpha + 1 $ more
+````
+
+````html
+<p>$\alpha + 1 $ more</p>
+````
+
+````diagnostics
+1:1 info math.unclosed-inline
+````
+
+## inline-math/unclosed-inline-only-backslash
+
+spec: syntax-inline#inline-math
+
+An unclosed opener not followed by `\` is silent, so prices and stray dollars produce no noise.
+
+````tern
+$x never closes
+````
+
+````html
+<p>$x never closes</p>
+````
+
+## inline-math/bracket-not-only-reason
+
+spec: syntax-inline#inline-math
+
+`math.bracket` fires only when the bracket clause is the sole reason: in `$]0,1[ $` the candidate is also preceded by a space, so it is silent.
+
+````tern
+$]0,1[ $
+````
+
+````html
+<p>$]0,1[ $</p>
+````
+
+## inline-math/bracket-no-candidate
+
+spec: syntax-inline#inline-math
+
+With no candidate closer there is no span for the bracket clause to reject, so `$]0,1[` alone is silent.
+
+````tern
+$]0,1[
+````
+
+````html
+<p>$]0,1[</p>
+````
+
+## inline-math/brackets-allowed-positions
+
+spec: syntax-inline#inline-math
+
+`[` after the opener and `]` or `)` before the closer are not in the bracket clause, so closed and half-open intervals are math.
+
+````tern
+$[0,1]$ and $(0,1]$
+````
+
+````html
+<p><span class="t-math">[0,1]</span> and <span class="t-math">(0,1]</span></p>
+````
+
+## inline-math/inline-display-mid-line
+
+spec: syntax-inline#inline-display syntax-inline#ambiguity
+
+The mid-line `$$` example: `$$` in the middle of a line never opens anything; each `$$` is text, and `math.inline-display` fires once per `$$` run, so twice here.
+
+````tern
+see $$E=mc^2$$ here
+````
+
+````html
+<p>see $$E=mc^2$$ here</p>
+````
+
+````diagnostics
+1:5 info math.inline-display
+1:13 info math.inline-display
+````
+
+## inline-math/inline-display-then-math
+
+spec: syntax-inline#inline-display syntax-inline#inline-math
+
+A mid-line `$$` does not disturb inline math later in the paragraph.
+
+````tern
+a $$ b $x$
+````
+
+````html
+<p>a $$ b <span class="t-math">x</span></p>
+````
+
+````diagnostics
+1:3 info math.inline-display
+````
+
+## inline-math/verbatim-form
+
+spec: syntax-inline#verbatim-math syntax-inline#residual-dollars
+
+Verbatim math `` $`…` `` is always math, with no price or bracket rules: the escape hatch for `\$` and for `]0,1[`.
+
+````tern
+Write $`\$5 + \$10` or $`]0,1[`.
+````
+
+````html
+<p>Write <span class="t-math">\$5 + \$10</span> or <span class="t-math">]0,1[</span>.</p>
+````
+
+## inline-math/verbatim-double-backticks
+
+spec: syntax-inline#verbatim-math
+
+A run of n backticks after `$` closes at the next run of exactly n, so a double run can hold a single backtick.
+
+````tern
+$``a`b``
+````
+
+````html
+<p><span class="t-math">a`b</span></p>
+````
+
+## inline-math/verbatim-atom
+
+spec: syntax-inline#verbatim-math syntax-inline#algorithm
+
+Verbatim math is an atom: no emphasis and no reference inside it.
+
+````tern
+$`*a* @b`
+````
+
+````html
+<p><span class="t-math">*a* @b</span></p>
+````
+
+## inline-math/verbatim-no-closing-run
+
+spec: syntax-inline#verbatim-math syntax-inline#ambiguity
+
+With no closing run the `$` is text and the backtick is processed normally (a lone backtick is literal).
+
+````tern
+cost $`5
+````
+
+````html
+<p>cost $`5</p>
+````
+
+## inline-math/verbatim-unclosed-then-dollar
+
+spec: syntax-inline#verbatim-math syntax-inline#algorithm
+
+A failed verbatim opener followed later by a dollar.
+
+The tokenizer's rule 3 defers to verbatim math.
+
+````tern
+$`x$
+````
+
+````html
+<p>$`x$</p>
+````
+
+## inline-math/verbatim-escaped-dollar
+
+spec: syntax-inline#verbatim-math syntax-inline#escape
+
+`` \$` `` is a literal dollar followed by an ordinary code span.
+
+````tern
+\$`x`
+````
+
+````html
+<p>$<code>x</code></p>
+````
+
+## inline-math/code-span-first
+
+spec: syntax-inline#algorithm syntax-inline#code-span syntax-inline#inline-math
+
+Left to right, the first atom wins: a code span that starts first protects the dollar inside it.
+
+````tern
+`a$` and b$
+````
+
+````html
+<p><code>a$</code> and b$</p>
+````
+
+## inline-math/math-first
+
+spec: syntax-inline#algorithm syntax-inline#inline-math
+
+Left to right, math that opens first takes a backtick into its TeX; the candidate closer search sees only dollars and `\x` pairs.
+
+````tern
+$a `b$ c`
+````
+
+````html
+<p><span class="t-math">a `b</span> c`</p>
+````

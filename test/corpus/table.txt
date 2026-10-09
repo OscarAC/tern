@@ -1,0 +1,1700 @@
+# Tables
+
+Pipe tables and the `:::table[Caption]` merge. Diagnostics
+positioned at "the line" use the column where the line's remainder starts (column 1
+outside quotes and list items); `table.extra-cell` sits at the `|` before the row's
+first extra cell, once per row.
+
+## table/spec-example
+
+spec: syntax-blocks#tables syntax-blocks#attribute-line
+
+The tables example: an attribute line, alignment, an escaped pipe and a continued row.
+
+````tern
+{.wide}
+| Phase | Weeks | Note |
+|---|--:|---|
+| P2 | 2 | golden DOM \| diff |
+| P3 | 3 | smoke green;\
+  no task over 50 ms |
+````
+
+````html
+<table class="wide">
+<thead><tr><th>Phase</th><th style="text-align:right">Weeks</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>P2</td><td style="text-align:right">2</td><td>golden DOM | diff</td></tr>
+<tr><td>P3</td><td style="text-align:right">3</td><td>smoke green;<br>
+no task over 50 ms</td></tr>
+</tbody>
+</table>
+````
+
+## table/basic
+
+spec: syntax-blocks#tables syntax-blocks#r1
+
+A `|` line followed by a delimiter row starts a table; the first line is the header.
+
+````tern
+| a | b |
+|---|---|
+| 1 | 2 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2</td></tr></tbody>
+</table>
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "table", "align": [null, null], "children": [
+    {"type": "tableRow", "children": [
+      {"type": "tableCell", "children": [{"type": "text", "value": "a"}]},
+      {"type": "tableCell", "children": [{"type": "text", "value": "b"}]}
+    ]},
+    {"type": "tableRow", "children": [
+      {"type": "tableCell", "children": [{"type": "text", "value": "1"}]},
+      {"type": "tableCell", "children": [{"type": "text", "value": "2"}]}
+    ]}
+  ]}
+]}
+````
+
+## table/cells-parsed-inline
+
+spec: syntax-blocks#tables syntax-inline#algorithm
+
+Header and body cells are trimmed and parsed as inline content.
+
+````tern
+| **Term** | Meaning |
+|---|---|
+| *x* | see [docs](d.html) |
+````
+
+````html
+<table>
+<thead><tr><th><strong>Term</strong></th><th>Meaning</th></tr></thead>
+<tbody><tr><td><em>x</em></td><td>see <a href="d.html">docs</a></td></tr></tbody>
+</table>
+````
+
+## table/leading-pipe-required
+
+spec: syntax-blocks#tables syntax-blocks#paragraph syntax-inline#ambiguity
+
+A header without a leading `|` is prose, so the delimiter row under it is a stray paragraph line and no table starts.
+
+````tern
+Keys | Action |
+|---|---|
+| `:w` | write |
+````
+
+````html
+<p>Keys | Action |
+|---|---|
+| <code>:w</code> | write |</p>
+````
+
+````diagnostics
+2:1 warning table.stray-delimiter "table rows start with"
+````
+
+## table/stray-delimiter-gfm
+
+spec: syntax-blocks#tables syntax-blocks#paragraph
+
+A GFM table with no leading pipes stays one paragraph; its pipe-less delimiter row gets the first hint.
+
+````tern
+Keys | Action
+--- | ---
+`:w` | write
+````
+
+````html
+<p>Keys | Action
+--- | ---
+<code>:w</code> | write</p>
+````
+
+````diagnostics
+2:1 warning table.stray-delimiter "table rows start with"
+````
+
+## table/stray-delimiter-header-continued
+
+spec: syntax-blocks#tables syntax-blocks#r1
+
+A first line ending in a continuation `\` cannot start form (a): the lines stay a paragraph (with a hard break), and because the line above ends with `\` the delimiter row gets the second hint.
+
+````tern
+| Keys | Action \
+|---|---|
+````
+
+````html
+<p>| Keys | Action<br>
+|---|---|</p>
+````
+
+````diagnostics
+2:1 warning table.stray-delimiter "cannot continue"
+````
+
+## table/delimiter-in-paragraph-does-not-interrupt
+
+spec: syntax-blocks#tables syntax-blocks#line-algorithm syntax-blocks#paragraph
+
+Form (b) starts a headerless table only at a block start; inside a paragraph a delimiter row is a stray paragraph line.
+
+````tern
+Some prose.
+|---|---|
+````
+
+````html
+<p>Some prose.
+|---|---|</p>
+````
+
+````diagnostics
+2:1 warning table.stray-delimiter "table rows start with"
+````
+
+## table/stray-delimiter-pipeless-at-block-start
+
+spec: syntax-blocks#tables
+
+A delimiter-shaped line without a leading `|` is not a delimiter row, so it does not start a headerless table even at a block start; it is a paragraph line shaped like one. With no line above, the hint is the first one, which is fixed text.
+
+````tern
+--- | ---
+````
+
+````html
+<p>--- | ---</p>
+````
+
+````diagnostics
+1:1 warning table.stray-delimiter "table rows start with"
+````
+
+## table/interrupts-paragraph
+
+spec: syntax-blocks#tables syntax-blocks#line-algorithm syntax-blocks#paragraph syntax-blocks#r1
+
+Form (a) interrupts a paragraph: the `|` line plus a delimiter row under it starts a table.
+
+````tern
+The table follows.
+| a | b |
+|---|---|
+| 1 | 2 |
+````
+
+````html
+<p>The table follows.</p>
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2</td></tr></tbody>
+</table>
+````
+
+## table/pipe-line-without-delimiter-is-paragraph
+
+spec: syntax-blocks#tables syntax-inline#ambiguity
+
+A line starting with `|` whose next line is not a delimiter row is prose.
+
+````tern
+|x| is the absolute value of x.
+| a | b |
+````
+
+````html
+<p>|x| is the absolute value of x.
+| a | b |</p>
+````
+
+## table/ends-at-non-pipe-line
+
+spec: syntax-blocks#tables
+
+The table ends at the first line that does not start with `|`; that line is not a lazy continuation of anything.
+
+````tern
+| a |
+|---|
+| 1 |
+After the table.
+````
+
+````html
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+<p>After the table.</p>
+````
+
+## table/ends-at-blank-line
+
+spec: syntax-blocks#tables
+
+A blank line ends the table; a later `|` line with no delimiter row under it is a paragraph.
+
+````tern
+| a |
+|---|
+| 1 |
+
+| 2 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+<p>| 2 |</p>
+````
+
+## table/indented-rows
+
+spec: syntax-blocks#tables syntax-blocks#r2 syntax-blocks#columns
+
+Indentation is insignificant: indented delimiter and body rows still belong to the table.
+
+````tern
+| a | b |
+  |---|---|
+    | 1 | 2 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2</td></tr></tbody>
+</table>
+````
+
+## table/trailing-pipe-optional
+
+spec: syntax-blocks#tables
+
+The trailing `|` is optional on every row, the delimiter row included.
+
+````tern
+| a | b
+|---|---
+| 1 | 2
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2</td></tr></tbody>
+</table>
+````
+
+## table/delimiter-row-spacing
+
+spec: syntax-blocks#tables
+
+Delimiter cells are `:?-+:?` with spaces allowed around them; a single `-` is enough.
+
+````tern
+| a | b | c |
+| - | :--: |  ---:  |
+| 1 | 2 | 3 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th style="text-align:center">b</th><th style="text-align:right">c</th></tr></thead>
+<tbody><tr><td>1</td><td style="text-align:center">2</td><td style="text-align:right">3</td></tr></tbody>
+</table>
+````
+
+## table/alignment
+
+spec: syntax-blocks#tables
+
+Colons in the delimiter row put `text-align` on both `th` and `td`; no colon, no style.
+
+````tern
+| l | c | r | n |
+|:--|:-:|--:|---|
+| 1 | 2 | 3 | 4 |
+````
+
+````html
+<table>
+<thead><tr><th style="text-align:left">l</th><th style="text-align:center">c</th><th style="text-align:right">r</th><th>n</th></tr></thead>
+<tbody><tr><td style="text-align:left">1</td><td style="text-align:center">2</td><td style="text-align:right">3</td><td>4</td></tr></tbody>
+</table>
+````
+
+````json ast
+{"type": "root", "children": [{"type": "table", "align": ["left", "center", "right", null]}]}
+````
+
+## table/missing-cells-empty
+
+spec: syntax-blocks#tables
+
+The header fixes the column count; missing cells are emitted empty, and an empty cell between pipes stays empty.
+
+````tern
+| a | b | c |
+|---|---|---|
+| 1 |
+|  | 2 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>
+<tbody>
+<tr><td>1</td><td></td><td></td></tr>
+<tr><td></td><td>2</td><td></td></tr>
+</tbody>
+</table>
+````
+
+## table/empty-cell-aligned
+
+spec: syntax-blocks#tables
+
+An empty cell in an aligned column, missing or written, still gets the column's `text-align`.
+
+````tern
+| a | b |
+|:-:|--:|
+| 1 |
+|  | 2 |
+````
+
+````html
+<table>
+<thead><tr><th style="text-align:center">a</th><th style="text-align:right">b</th></tr></thead>
+<tbody>
+<tr><td style="text-align:center">1</td><td style="text-align:right"></td></tr>
+<tr><td style="text-align:center"></td><td style="text-align:right">2</td></tr>
+</tbody>
+</table>
+````
+
+## table/extra-cell-kept
+
+spec: syntax-blocks#tables diagnostics#table-extra-cell
+
+A cell beyond the header's column count is kept and warned about, at the `|` that opens the first extra cell.
+
+````tern
+| a | b |
+|---|---|
+| 1 | 2 | 3 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2</td><td>3</td></tr></tbody>
+</table>
+````
+
+````diagnostics
+3:9 warning table.extra-cell
+````
+
+## table/extra-cells-one-per-row
+
+spec: syntax-blocks#tables diagnostics#table-extra-cell
+
+`table.extra-cell` is reported once per row, however many extra cells it has, at the `|` before the first one.
+
+````tern
+| a |
+|---|
+| 1 | 2 | 3 |
+| 4 | 5 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>2</td><td>3</td></tr>
+<tr><td>4</td><td>5</td></tr>
+</tbody>
+</table>
+````
+
+````diagnostics
+3:5 warning table.extra-cell
+4:5 warning table.extra-cell
+````
+
+## table/header-delimiter-count-mismatch
+
+spec: syntax-blocks#tables
+
+Header and delimiter rows of different widths still make a table, with no diagnostic (unlike GFM): the header fixes the column count, and the column with no delimiter cell is unaligned.
+
+````tern
+| a | b | c |
+|---|---|
+| 1 | 2 | 3 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>
+<tbody><tr><td>1</td><td>2</td><td>3</td></tr></tbody>
+</table>
+````
+
+````diagnostics
+````
+
+## table/delimiter-narrower-than-header
+
+spec: syntax-blocks#tables
+
+A delimiter row with fewer cells than the header: its colons align the columns it has, and a column with no delimiter cell gets no alignment.
+
+````tern
+| a | b | c |
+|:-:|--:|
+| 1 | 2 | 3 |
+````
+
+````html
+<table>
+<thead><tr><th style="text-align:center">a</th><th style="text-align:right">b</th><th>c</th></tr></thead>
+<tbody><tr><td style="text-align:center">1</td><td style="text-align:right">2</td><td>3</td></tr></tbody>
+</table>
+````
+
+````json ast
+{"type": "root", "children": [{"type": "table", "align": ["center", "right", null]}]}
+````
+
+## table/delimiter-wider-than-header
+
+spec: syntax-blocks#tables
+
+A delimiter row with more cells than the header: the header still fixes the column count and the extra delimiter cells are ignored, with no diagnostic.
+
+````tern
+| a | b |
+|:--|--:|:-:|
+| 1 | 2 |
+````
+
+````html
+<table>
+<thead><tr><th style="text-align:left">a</th><th style="text-align:right">b</th></tr></thead>
+<tbody><tr><td style="text-align:left">1</td><td style="text-align:right">2</td></tr></tbody>
+</table>
+````
+
+````json ast
+{"type": "root", "children": [{"type": "table", "align": ["left", "right"]}]}
+````
+
+## table/header-only
+
+spec: syntax-blocks#tables
+
+A header and a delimiter row with no body rows are a table, emitted without a `<tbody>`.
+
+````tern
+| a | b |
+|---|---|
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+</table>
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "table", "align": [null, null], "children": [
+    {"type": "tableRow", "children": [
+      {"type": "tableCell", "children": [{"type": "text", "value": "a"}]},
+      {"type": "tableCell", "children": [{"type": "text", "value": "b"}]}
+    ]}
+  ]}
+]}
+````
+
+## table/headerless
+
+spec: syntax-blocks#tables
+
+Form (b): a delimiter row at a block start starts a table with no header; its colons set alignment and it fixes the column count.
+
+````tern
+|:--|--:|
+| Name | Ada |
+| Born | 1815 |
+````
+
+````html
+<table>
+<tbody>
+<tr><td style="text-align:left">Name</td><td style="text-align:right">Ada</td></tr>
+<tr><td style="text-align:left">Born</td><td style="text-align:right">1815</td></tr>
+</tbody>
+</table>
+````
+
+## table/headerless-after-heading
+
+spec: syntax-blocks#tables syntax-blocks#heading
+
+The line after a heading is a block start, so a delimiter row there starts a headerless table.
+
+````tern
+## Facts
+|---|---|
+| a | b |
+````
+
+````html
+<h2 id="facts">Facts</h2>
+<table>
+<tbody><tr><td>a</td><td>b</td></tr></tbody>
+</table>
+````
+
+## table/attributes-from-attribute-line
+
+spec: syntax-blocks#tables syntax-blocks#attribute-line syntax-blocks#merging-and-emission
+
+An attribute line before the table puts its attributes on `<table>`.
+
+````tern
+{.wide data-src=survey}
+| a |
+|---|
+| 1 |
+````
+
+````html
+<table class="wide" data-src="survey">
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````
+
+## table/continuation-logical-row
+
+spec: syntax-blocks#tables syntax-inline#hard-break
+
+A row ending in a single `\` continues: the next line, minus its indentation, is joined after a hard break into one logical row.
+
+````tern
+| Phase | Note |
+|---|---|
+| P3 | smoke green;\
+  no task over 50 ms |
+````
+
+````html
+<table>
+<thead><tr><th>Phase</th><th>Note</th></tr></thead>
+<tbody><tr><td>P3</td><td>smoke green;<br>
+no task over 50 ms</td></tr></tbody>
+</table>
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "table", "children": [
+    {"type": "tableRow"},
+    {"type": "tableRow", "children": [
+      {"type": "tableCell", "children": [{"type": "text", "value": "P3"}]},
+      {"type": "tableCell", "children": [
+        {"type": "text", "value": "smoke green;"},
+        {"type": "break"},
+        {"type": "text", "value": "no task over 50 ms"}
+      ]}
+    ]}
+  ]}
+]}
+````
+
+## table/continuation-finishes-row
+
+spec: syntax-blocks#tables
+
+The continuation line can finish the row with more `|` cells.
+
+````tern
+| a | b | c |
+|---|---|---|
+| 1 | two\
+lines | 3 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>
+<tbody><tr><td>1</td><td>two<br>
+lines</td><td>3</td></tr></tbody>
+</table>
+````
+
+## table/continuation-repeats
+
+spec: syntax-blocks#tables
+
+A continued line that itself ends in `\` continues again.
+
+````tern
+| a |
+|---|
+| one\
+two\
+three |
+````
+
+````html
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>one<br>
+two<br>
+three</td></tr></tbody>
+</table>
+````
+
+## table/continuation-joins-block-like-lines
+
+spec: syntax-blocks#tables syntax-blocks#r1
+
+The continuation takes the next line whatever it starts with: a list marker or a heading mark there is cell text, not a block.
+
+````tern
+| a | b |
+|---|---|
+| 1 | x\
+- y |
+| 2 | z\
+# w |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>x<br>
+- y</td></tr>
+<tr><td>2</td><td>z<br>
+# w</td></tr>
+</tbody>
+</table>
+````
+
+## table/continuation-at-end
+
+spec: syntax-blocks#tables syntax-inline#hard-break syntax-inline#ambiguity
+
+A row ending in `\` at the end of the note is unterminated; the `\` is literal.
+
+````tern
+| a | b |
+|---|---|
+| 1 | 2 \
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2 \</td></tr></tbody>
+</table>
+````
+
+````diagnostics
+3:1 warning table.row-unterminated
+````
+
+## table/continuation-before-blank
+
+spec: syntax-blocks#tables
+
+A row ending in `\` followed by a blank line is unterminated; the `\` is literal and the blank line still ends the table.
+
+````tern
+| a |
+|---|
+| 1\
+
+After.
+````
+
+````html
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1\</td></tr></tbody>
+</table>
+<p>After.</p>
+````
+
+````diagnostics
+3:1 warning table.row-unterminated
+````
+
+## table/continuation-before-closer
+
+spec: syntax-blocks#tables syntax-blocks#closer
+
+A continuation never joins a closer line: the row is unterminated, its `\` is literal, and the closer still closes the container.
+
+````tern
+:::box
+| a |
+|---|
+| 1\
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1\</td></tr></tbody>
+</table>
+</div>
+````
+
+````diagnostics
+4:1 warning table.row-unterminated
+````
+
+## table/continuation-before-cell-separator
+
+spec: syntax-blocks#tables syntax-blocks#cells
+
+A continuation never joins a `+++` line: the row is unterminated and the `+++` starts the next cell.
+
+````tern
+:::row
+| a |
+|---|
+| 1\
++++
+Right.
+:::
+````
+
+````html
+<div class="t-block row t-cols" style="--t-cols:repeat(2,minmax(0,1fr))" data-t="row">
+<div class="t-cell">
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1\</td></tr></tbody>
+</table>
+</div>
+<div class="t-cell"><p>Right.</p></div>
+</div>
+````
+
+````diagnostics
+4:1 warning table.row-unterminated
+````
+
+## table/continuation-leaves-quote
+
+spec: syntax-blocks#tables syntax-blocks#blockquote syntax-blocks#line-algorithm
+
+A continuation joins the next line only when that line stays in the same container. Here it fails the quote's prefix and, the open block being a table, is not lazy: the row is unterminated, at the column where the line's remainder starts, and the next line is a paragraph outside the quote.
+
+````tern
+> | a |
+> |---|
+> | 1\
+next
+````
+
+````html
+<blockquote>
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1\</td></tr></tbody>
+</table>
+</blockquote>
+<p>next</p>
+````
+
+````diagnostics
+3:3 warning table.row-unterminated
+````
+
+## table/continuation-after-bare-url
+
+spec: syntax-blocks#tables syntax-inline#autolinks
+
+`\` is in the bare-URL trim set, so a URL at the end of a row never swallows the row's final `\`: the row continues and the link stops before it.
+
+````tern
+| a |
+|---|
+| https://x.org\
+more |
+````
+
+````html
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td><a href="https://x.org">https://x.org</a><br>
+more</td></tr></tbody>
+</table>
+````
+
+## table/double-backslash-not-continuation
+
+spec: syntax-blocks#tables syntax-inline#escapes syntax-inline#ambiguity
+
+`\\` at the end of a row is an escaped, literal backslash, so the row does not continue and the next line ends the table. `latex.linebreak` does not fire at the end of a row: no line break was lost.
+
+````tern
+| path |
+|---|
+| C:\\
+next
+````
+
+````html
+<table>
+<thead><tr><th>path</th></tr></thead>
+<tbody><tr><td>C:\</td></tr></tbody>
+</table>
+<p>next</p>
+````
+
+````diagnostics
+````
+
+## table/pipe-in-code-and-math
+
+spec: syntax-blocks#tables syntax-inline#algorithm syntax-inline#code-span syntax-inline#inline-math
+
+Pipes inside a code span or a math span do not split cells: `| $|x|$ | `a|b` |` has two cells.
+
+````tern
+| Math | Code |
+|---|---|
+| $|x|$ | `a|b` |
+````
+
+````html
+<table>
+<thead><tr><th>Math</th><th>Code</th></tr></thead>
+<tbody><tr><td><span class="t-math">|x|</span></td><td><code>a|b</code></td></tr></tbody>
+</table>
+````
+
+## table/math-spans-pipe
+
+spec: syntax-blocks#tables syntax-inline#residual-pipe syntax-inline#ambiguity
+
+`| $a | b$ |` is one cell: the math span contains the pipe.
+
+````tern
+| Cell |
+|---|
+| $a | b$ |
+````
+
+````html
+<table>
+<thead><tr><th>Cell</th></tr></thead>
+<tbody><tr><td><span class="t-math">a | b</span></td></tr></tbody>
+</table>
+````
+
+## table/price-dollar-cells
+
+spec: syntax-blocks#tables syntax-inline#inline-math
+
+`| Price ($) | Amount ($) |` has two text cells: `$)` cannot open math, so no span crosses the pipe.
+
+````tern
+| Price ($) | Amount ($) |
+|---|---|
+| 5 | 10 |
+````
+
+````html
+<table>
+<thead><tr><th>Price ($)</th><th>Amount ($)</th></tr></thead>
+<tbody><tr><td>5</td><td>10</td></tr></tbody>
+</table>
+````
+
+## table/escaped-pipe
+
+spec: syntax-blocks#tables syntax-inline#escapes syntax-inline#escape
+
+`\|` in a row is a literal pipe inside the cell, not a separator.
+
+````tern
+| Expr | Meaning |
+|---|---|
+| a \| b | a or b |
+````
+
+````html
+<table>
+<thead><tr><th>Expr</th><th>Meaning</th></tr></thead>
+<tbody><tr><td>a | b</td><td>a or b</td></tr></tbody>
+</table>
+````
+
+## table/escaped-trailing-pipe
+
+spec: syntax-blocks#tables syntax-inline#escapes
+
+An escaped final pipe is not a trailing `|`: it stays in the last cell as text.
+
+````tern
+| a | b |
+|---|---|
+| 1 | 2 \|
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2 |</td></tr></tbody>
+</table>
+````
+
+## table/escaped-pipe-in-element
+
+spec: syntax-blocks#tables syntax-inline#inline-element syntax-inline#ambiguity
+
+Inline elements are not atoms, so a pipe inside `:kbd[…]` in a row must be escaped.
+
+````tern
+| Key | Action |
+|---|---|
+| :kbd[\|] | pipe the selection |
+````
+
+````html
+<table>
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody><tr><td><kbd class="kbd" data-t="kbd">|</kbd></td><td>pipe the selection</td></tr></tbody>
+</table>
+````
+
+## table/unescaped-pipe-in-element-splits
+
+spec: syntax-blocks#tables syntax-inline#inline-element syntax-inline#ambiguity
+
+An unescaped pipe inside `:kbd[…]` splits the cell, which leaves `:kbd[` unclosed in the first cell.
+
+````tern
+| a | b | c |
+|---|---|---|
+| :kbd[|] | pipe |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>
+<tbody><tr><td>:kbd[</td><td>]</td><td>pipe</td></tr></tbody>
+</table>
+````
+
+````diagnostics
+3:7 warning inline.unclosed
+````
+
+## table/escaped-pipe-in-atoms-stays
+
+spec: syntax-blocks#tables syntax-inline#escapes syntax-inline#code-span syntax-inline#inline-math
+
+Inside code and math there are no escapes: `\|` reaches the code span as written and TeX as its norm bar.
+
+````tern
+| Code | Norm |
+|---|---|
+| `a\|b` | $\|x\|$ |
+````
+
+````html
+<table>
+<thead><tr><th>Code</th><th>Norm</th></tr></thead>
+<tbody><tr><td><code>a\|b</code></td><td><span class="t-math">\|x\|</span></td></tr></tbody>
+</table>
+````
+
+## table/pipe-in-verbatim-math
+
+spec: syntax-blocks#tables syntax-inline#verbatim-math
+
+Verbatim math is an atom, so its pipes do not split the row.
+
+````tern
+| Set |
+|---|
+| $`|x|` |
+````
+
+````html
+<table>
+<thead><tr><th>Set</th></tr></thead>
+<tbody><tr><td><span class="t-math">|x|</span></td></tr></tbody>
+</table>
+````
+
+## table/bare-url-stops-at-pipe
+
+spec: syntax-blocks#tables syntax-inline#autolinks
+
+A bare URL stops at `|`, so `|https://a.b|note|` keeps its two cells.
+
+````tern
+| Link | Note |
+|---|---|
+|https://a.b|note|
+````
+
+````html
+<table>
+<thead><tr><th>Link</th><th>Note</th></tr></thead>
+<tbody><tr><td><a href="https://a.b">https://a.b</a></td><td>note</td></tr></tbody>
+</table>
+````
+
+## table/angle-autolink-keeps-pipe
+
+spec: syntax-blocks#tables syntax-inline#autolinks
+
+An angle autolink is an atom, so a pipe inside it does not split the cell.
+
+````tern
+| <https://a.b/x|y> |
+|---|
+````
+
+````json ast
+{"type": "root", "children": [
+  {"type": "table", "children": [
+    {"type": "tableRow", "children": [
+      {"type": "tableCell", "children": [{"type": "link", "url": "https://a.b/x|y"}]}
+    ]}
+  ]}
+]}
+````
+
+## table/raw-html-keeps-pipe
+
+spec: syntax-blocks#tables syntax-inline#raw-inline-html
+
+Inline raw HTML is an atom, so a pipe in an attribute value does not split the cell.
+
+````tern
+| a | b |
+|---|---|
+| <span title="x|y">s</span> | t |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td><span title="x|y">s</span></td><td>t</td></tr></tbody>
+</table>
+````
+
+## table/backticks-pair-across-pipe
+
+spec: syntax-blocks#tables syntax-inline#code-span syntax-inline#residual-lone-backtick
+
+A lone backtick pairs with a later one in the same row, so the code span swallows the pipe between them; the missing second cell is empty.
+
+````tern
+| a | b |
+|---|---|
+| ` | ` |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td><code>|</code></td><td></td></tr></tbody>
+</table>
+````
+
+## table/emphasis-does-not-span-cells
+
+spec: syntax-blocks#tables syntax-inline#algorithm syntax-inline#emphasis
+
+The row is split before inline parsing and emphasis is not an atom, so `*` cannot pair across a pipe.
+
+````tern
+| a | b |
+|---|---|
+| *x | y* |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>*x</td><td>y*</td></tr></tbody>
+</table>
+````
+
+## table/misplaced-separator
+
+spec: syntax-blocks#tables
+
+A delimiter row inside the body renders as a text row and is warned about.
+
+````tern
+| a | b |
+|---|---|
+| 1 | 2 |
+|---|---|
+| 3 | 4 |
+````
+
+````html
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>2</td></tr>
+<tr><td>---</td><td>---</td></tr>
+<tr><td>3</td><td>4</td></tr>
+</tbody>
+</table>
+````
+
+````diagnostics
+4:1 warning table.misplaced-separator
+````
+
+## table/two-delimiter-rows
+
+spec: syntax-blocks#tables
+
+A delimiter row is never a header: two delimiter rows at a block start are a headerless table (form (b)) whose second delimiter row is misplaced and renders as a text row.
+
+````tern
+|---|---|
+|---|---|
+| a | b |
+````
+
+````html
+<table>
+<tbody>
+<tr><td>---</td><td>---</td></tr>
+<tr><td>a</td><td>b</td></tr>
+</tbody>
+</table>
+````
+
+````diagnostics
+2:1 warning table.misplaced-separator
+````
+
+## table/in-container
+
+spec: syntax-blocks#tables syntax-blocks#container
+
+A table nests in a `:::` container, and the container's closer ends it.
+
+````tern
+:::box
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+</div>
+````
+
+## table/in-list-item
+
+spec: syntax-blocks#tables syntax-blocks#lists
+
+A table nests in a list item at its content column; the lookahead reads the next line inside the item.
+
+````tern
+- | a | b |
+  |---|---|
+  | 1 | 2 |
+````
+
+````html
+<ul><li>
+<table>
+<thead><tr><th>a</th><th>b</th></tr></thead>
+<tbody><tr><td>1</td><td>2</td></tr></tbody>
+</table>
+</li></ul>
+````
+
+## table/in-blockquote
+
+spec: syntax-blocks#tables syntax-blocks#blockquote
+
+A table nests in a blockquote; each line's `> ` prefix is stripped first.
+
+````tern
+> | a |
+> |---|
+> | 1 |
+````
+
+````html
+<blockquote>
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+</blockquote>
+````
+
+## table/lookahead-same-container
+
+spec: syntax-blocks#tables syntax-blocks#line-algorithm syntax-blocks#r1
+
+The start's lookahead needs the delimiter row in the same container; here it is outside the quote, so the quote holds a paragraph that the delimiter-shaped line continues lazily. The line above does not end with `\`, so the hint is the first one, also across containers.
+
+````tern
+> | a |
+|---|
+````
+
+````html
+<blockquote><p>| a |
+|---|</p></blockquote>
+````
+
+````diagnostics
+2:1 warning table.stray-delimiter "table rows start with"
+````
+
+## table/caption-merge
+
+spec: elements#table-caption elements#title-slots syntax-blocks#tables
+
+The table-caption example: `:::table[Caption]{#id}` around one pipe table becomes the table, with a numbered `<caption>`.
+
+````tern
+:::table[Phases and exit criteria]{#tbl-phases .wide}
+| Phase | Exit |
+|---|---|
+| P0 | every rule has a case |
+:::
+````
+
+````html
+<table id="tbl-phases" class="t-block table wide" data-t="table">
+<caption class="t-title"><span class="t-label">Table 1</span> Phases and exit criteria</caption>
+<thead><tr><th>Phase</th><th>Exit</th></tr></thead>
+<tbody><tr><td>P0</td><td>every rule has a case</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-untitled
+
+spec: elements#table-caption elements#title-slots
+
+Without a written title the caption still holds the label.
+
+````tern
+:::table{#tbl-a}
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table id="tbl-a" class="t-block table" data-t="table">
+<caption class="t-title"><span class="t-label">Table 1</span></caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-numbering-and-ref
+
+spec: elements#table-caption elements#numbering elements#references
+
+Merged tables are numbered in document order, with or without an id, and `@id` renders the label and number.
+
+````tern
+See @tbl-b.
+:::table[First]
+| a |
+|---|
+| 1 |
+:::
+
+:::table[Second]{#tbl-b}
+| b |
+|---|
+| 2 |
+:::
+````
+
+````html
+<p>See <a class="t-ref" href="#tbl-b">Table 2</a>.</p>
+<table class="t-block table" data-t="table">
+<caption class="t-title"><span class="t-label">Table 1</span> First</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+<table id="tbl-b" class="t-block table" data-t="table">
+<caption class="t-title"><span class="t-label">Table 2</span> Second</caption>
+<thead><tr><th>b</th></tr></thead>
+<tbody><tr><td>2</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-attributes-combined
+
+spec: elements#table-caption syntax-blocks#attribute-line syntax-blocks#merging-and-emission
+
+The container's and the table's attributes are combined; on a conflict the container's value wins, and classes accumulate.
+
+````tern
+:::table[Scores]{#tbl-s data-k=outer}
+{.compact data-k=inner}
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table id="tbl-s" class="t-block table compact" data-t="table" data-k="outer">
+<caption class="t-title"><span class="t-label">Table 1</span> Scores</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-id-and-class-order
+
+spec: elements#table-caption syntax-blocks#merging-and-emission
+
+In the merge the container's `#id` wins over the inner table's, silently, and classes accumulate with the container's last.
+
+````tern
+:::table[Order]{#tbl-outer .c-outer}
+{#tbl-inner .c-inner}
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table id="tbl-outer" class="t-block table c-inner c-outer" data-t="table">
+<caption class="t-title"><span class="t-label">Table 1</span> Order</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-blank-lines
+
+spec: elements#table-caption
+
+Blank lines around the table are not blocks, so the body is still exactly one pipe table.
+
+````tern
+:::table[Spaced]
+
+| a |
+|---|
+| 1 |
+
+:::
+````
+
+````html
+<table class="t-block table" data-t="table">
+<caption class="t-title"><span class="t-label">Table 1</span> Spaced</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-no-schema
+
+spec: elements#table-caption elements#allowlists
+options: schema=none
+
+Without a schema, `table` reaches the element through the container allowlist and still merges, with a caption but no label or number.
+
+````tern
+:::table[Plain]
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table class="t-block table" data-t="table">
+<caption class="t-title">Plain</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-tag-table
+
+spec: elements#table-caption elements#names
+
+The merge keys on the element, not the name: a container whose element is `table` through `{tag=table}` merges too.
+
+````tern
+:::grid[Results]{tag=table}
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table class="t-block grid" data-t="grid">
+<caption class="t-title">Results</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````
+
+## table/caption-merge-table-own-tag
+
+spec: elements#table-caption syntax-blocks#merging-and-emission
+
+In a merged table the container chooses the element; a `tag=` on the pipe table itself (its attribute line) chooses nothing, and gets `tag.not-allowed` at the key instead of being dropped silently.
+
+````tern
+:::table[Results]
+{tag=section .wide}
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table class="t-block table wide" data-t="table">
+<caption class="t-title"><span class="t-label">Table 1</span> Results</caption><thead>
+<tr><th>a</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td></tr>
+</tbody>
+</table>
+````
+
+````diagnostics
+2:2 warning tag.not-allowed
+````
+
+## table/caption-merge-table-own-raw-ref
+
+spec: elements#table-caption syntax-blocks#merging-and-emission syntax-blocks#r7
+
+In a merged table, `raw` and `ref=` on the pipe table's attribute line apply to nothing, and get `attr.malformed` at the key; its `cols=` sets the merged element's grid, as the container's own would.
+
+````tern
+:::table[Results]
+{raw ref=title cols=2}
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table class="t-block table t-cols" data-t="table" style="--t-cols:repeat(2,minmax(0,1fr))">
+<caption class="t-title"><span class="t-label">Table 1</span> Results</caption><thead>
+<tr><th>a</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td></tr>
+</tbody>
+</table>
+````
+
+````diagnostics
+2:2 warning attr.malformed
+2:6 warning attr.malformed
+````
+
+## table/body-paragraph
+
+spec: elements#table-caption elements#allowlists
+
+A `:::table` whose body is not a pipe table falls back to a `div`, with `table.body` at the name. The fallback keeps the schema's label and counter.
+
+````tern
+:::table[Not a table]
+Just prose.
+:::
+````
+
+````html
+<div class="t-block table" data-t="table">
+<div class="t-title"><span class="t-label">Table 1</span> Not a table</div>
+<p>Just prose.</p>
+</div>
+````
+
+````diagnostics
+1:4 warning table.body
+````
+
+## table/body-fallback-consumes-number
+
+spec: elements#table-caption elements#numbering
+
+Because a `table.body` fallback keeps its counter, it takes a table number, and the merged table after it is Table 2.
+
+````tern
+:::table[Prose]
+Just prose.
+:::
+
+:::table[Real]{#tbl-real}
+| a |
+|---|
+| 1 |
+:::
+
+See @tbl-real.
+````
+
+````html
+<div class="t-block table" data-t="table">
+<div class="t-title"><span class="t-label">Table 1</span> Prose</div>
+<p>Just prose.</p>
+</div>
+<table id="tbl-real" class="t-block table" data-t="table">
+<caption class="t-title"><span class="t-label">Table 2</span> Real</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+<p>See <a class="t-ref" href="#tbl-real">Table 2</a>.</p>
+````
+
+````diagnostics
+1:4 warning table.body
+````
+
+## table/body-two-tables
+
+spec: elements#table-caption
+
+Two pipe tables are not "exactly one", so nothing merges: the fallback `div` keeps its label and holds both tables.
+
+````tern
+:::table[Two]
+| a |
+|---|
+| 1 |
+
+| b |
+|---|
+| 2 |
+:::
+````
+
+````html
+<div class="t-block table" data-t="table">
+<div class="t-title"><span class="t-label">Table 1</span> Two</div>
+<table>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+<table>
+<thead><tr><th>b</th></tr></thead>
+<tbody><tr><td>2</td></tr></tbody>
+</table>
+</div>
+````
+
+````diagnostics
+1:4 warning table.body
+````
+
+## table/body-raw-table
+
+spec: elements#table-caption syntax-blocks#raw-html
+
+A raw `<table>` inside `:::table` is not merged; it stays verbatim inside the fallback `div`, which keeps its label and counter, and carries its own caption.
+
+````tern
+:::table[Raw]
+<table>
+<tr><td>1</td></tr>
+</table>
+:::
+````
+
+````html
+<div class="t-block table" data-t="table">
+<div class="t-title"><span class="t-label">Table 1</span> Raw</div>
+<table>
+<tr><td>1</td></tr>
+</table>
+</div>
+````
+
+````diagnostics
+1:4 warning table.body
+````
+
+## table/caption-merge-end-mark-dropped
+
+spec: elements#table-caption elements#output-contract
+
+A merged table has no place for an end mark, so it is left out; the label and caption stay.
+A merged `:::table` has no end mark: HTML allows no `span` between table sections.
+
+````tern
+:::proof[Data]{tag=table}
+| a |
+|---|
+| 1 |
+:::
+````
+
+````html
+<table class="t-block proof" data-t="proof">
+<caption class="t-title"><span class="t-label">Proof</span> Data</caption>
+<thead><tr><th>a</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+````

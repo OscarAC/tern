@@ -1,0 +1,500 @@
+# Links and images
+
+Cases for links and images, fragment-link validation and the `[ ]` and
+`!` rows of the ambiguity rules. Bare spans are in inline.txt.
+
+## link/spelling
+
+spec: syntax-inline#links
+
+An inline link with a double-quoted title.
+
+````tern
+[text](https://x.y "T")
+````
+
+````html
+<p><a href="https://x.y" title="T">text</a></p>
+````
+
+## link/glued-class
+
+spec: syntax-inline#links syntax-blocks#positions
+
+A group glued after the `)` attaches to the link.
+
+````tern
+[t](u){.btn}
+````
+
+````html
+<p><a href="u" class="btn">t</a></p>
+````
+
+## link/image-spelling
+
+spec: syntax-inline#images syntax-blocks#positions
+
+An image takes a title and a glued group; the alt is the bracket text.
+
+````tern
+See ![alt](img.png "T"){width=50%}.
+````
+
+````html
+<p>See <img src="img.png" alt="alt" title="T" width="50%">.</p>
+````
+
+## link/single-quoted-title
+
+spec: syntax-inline#links
+
+A title may be single-quoted.
+
+````tern
+[a](u 'T')
+````
+
+````html
+<p><a href="u" title="T">a</a></p>
+````
+
+## link/paren-title-not-accepted
+
+spec: syntax-inline#links
+
+Only `"…"` and `'…'` titles exist; CommonMark's `(…)` title makes the link fail, and the `]` falls back to text.
+
+````tern
+[a](u (T))
+````
+
+````html
+<p>[a](u (T))</p>
+````
+
+## link/angle-destination
+
+spec: syntax-inline#links
+
+A `<…>` destination may hold an unbalanced parenthesis.
+
+````tern
+[a](<u(v>)
+````
+
+````html
+<p><a href="u(v">a</a></p>
+````
+
+## link/balanced-parens-destination
+
+spec: syntax-inline#links
+
+A bare destination may hold balanced parentheses.
+
+````tern
+[docs](https://x.org/a_(b))
+````
+
+````html
+<p><a href="https://x.org/a_(b)">docs</a></p>
+````
+
+## link/unbalanced-destination-text
+
+spec: syntax-inline#links
+
+With the parentheses unbalanced there is no closing `)`, so no link.
+
+````tern
+[a](f(x)
+````
+
+````html
+<p>[a](f(x)</p>
+````
+
+## link/space-before-paren-text
+
+spec: syntax-inline#links syntax-inline#span
+
+The `(` must follow the `]` immediately.
+
+````tern
+[a] (u)
+````
+
+````html
+<p>[a] (u)</p>
+````
+
+## link/destination-stops-at-whitespace
+
+spec: syntax-inline#links syntax-inline#algorithm
+
+The destination ends at whitespace, and `v` is neither a title nor `)`: no link.
+
+````tern
+[a](u v)
+````
+
+````html
+<p>[a](u v)</p>
+````
+
+## link/ampersand-in-destination
+
+spec: syntax-inline#links syntax-blocks#merging-and-emission
+
+`&` in a destination is escaped in the `href`.
+
+````tern
+[q](/s?a=1&b=2)
+````
+
+````html
+<p><a href="/s?a=1&amp;b=2">q</a></p>
+````
+
+## link/no-reference-links
+
+spec: syntax-inline#links syntax-inline#ambiguity
+
+There are no reference links: `[a][b]` and `[c][]` are text.
+
+````tern
+[a][b] and [c][]
+````
+
+````html
+<p>[a][b] and [c][]</p>
+````
+
+## link/reference-definition-is-text
+
+spec: syntax-inline#links
+
+With no reference links there are no definitions either: the line is a paragraph.
+
+````tern
+[a]: /url
+````
+
+````html
+<p>[a]: /url</p>
+````
+
+## link/no-links-in-links
+
+spec: syntax-inline#links syntax-inline#algorithm
+
+The inner link wins; the outer brackets are text.
+
+````tern
+[a [b](u) c](v)
+````
+
+````html
+<p>[a <a href="u">b</a> c](v)</p>
+````
+
+## link/nested-brackets-in-text
+
+spec: syntax-inline#links syntax-inline#algorithm
+
+Plain brackets nest inside link text.
+
+````tern
+[a [b] c](u)
+````
+
+````html
+<p><a href="u">a [b] c</a></p>
+````
+
+## link/ref-inside-link-text
+
+spec: syntax-inline#links syntax-inline#reference
+
+A reference inside link text is text, so `@bob` does not dangle.
+
+````tern
+## Kernel {#kernel}
+
+[mail @bob](#kernel)
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p><a href="#kernel">mail @bob</a></p>
+````
+
+## link/bare-url-inside-link-text
+
+spec: syntax-inline#links syntax-inline#autolinks
+
+A bare URL inside link text is text: no nested link.
+
+````tern
+[see https://x.org](u)
+````
+
+````html
+<p><a href="u">see https://x.org</a></p>
+````
+
+## link/image-in-link
+
+spec: syntax-inline#images
+
+An image inside link text.
+
+````tern
+[![a](i.png)](u)
+````
+
+````html
+<p><a href="u"><img src="i.png" alt="a"></a></p>
+````
+
+## link/image-alt-plain-text
+
+spec: syntax-inline#images
+
+The alt is the plain text of the bracket content.
+
+````tern
+See ![*a* `b`](i.png).
+````
+
+````html
+<p>See <img src="i.png" alt="a b">.</p>
+````
+
+## link/image-weak-group
+
+spec: syntax-inline#images syntax-blocks#positions
+
+After an image any group attaches, weak ones included.
+
+````tern
+See ![v](x.mp4){controls}.
+````
+
+````html
+<p>See <img src="x.mp4" alt="v" controls>.</p>
+````
+
+## link/glued-group-full
+
+spec: syntax-inline#links syntax-blocks#merging-and-emission
+
+A glued group with an id, a class and a key merges into the link's attributes.
+
+````tern
+[t](u "T"){#l .c k=v}
+````
+
+````html
+<p><a id="l" class="c" href="u" title="T" k="v">t</a></p>
+````
+
+## link/glued-malformed
+
+spec: syntax-inline#links syntax-blocks#positions diagnostics#attr-malformed
+
+A glued group that does not parse stays text after the link, with `attr.malformed` (W) at the first bad column.
+
+````tern
+[t](u){.a "b"}
+````
+
+````html
+<p><a href="u">t</a>{.a "b"}</p>
+````
+
+````diagnostics
+1:11 warning attr.malformed
+````
+
+## link/spaced-group-text
+
+spec: syntax-inline#links syntax-blocks#positions
+
+A group after a space is not glued.
+
+````tern
+[t](u) {.c}
+````
+
+````html
+<p><a href="u">t</a> {.c}</p>
+````
+
+## link/fragment-valid
+
+spec: syntax-inline#reference elements#references
+
+Custom reference text is an ordinary fragment link; its target exists, so nothing is reported.
+
+````tern
+## Kernel {#kernel}
+
+See [the kernel](#kernel).
+````
+
+````html
+<h2 id="kernel">Kernel</h2>
+<p>See <a href="#kernel">the kernel</a>.</p>
+````
+
+## link/fragment-dangling
+
+spec: elements#references syntax-inline#reference diagnostics#ref-dangling
+
+A fragment link whose target does not exist gets `ref.dangling` (W) at the link's `[`, and stays a link.
+
+````tern
+See [the proof](#missing).
+````
+
+````html
+<p>See <a href="#missing">the proof</a>.</p>
+````
+
+````diagnostics
+1:5 warning ref.dangling
+````
+
+## link/escaped-bang
+
+spec: syntax-inline#ambiguity syntax-inline#escape syntax-inline#images
+
+`\!` is the literal spelling of `!`: the escaped `!` does not make an image, and the link remains.
+
+````tern
+\![a](u)
+````
+
+````html
+<p>!<a href="u">a</a></p>
+````
+
+## link/bang-before-span
+
+spec: syntax-inline#images syntax-inline#span syntax-inline#ambiguity
+
+An image needs `(` after its `]`; with a glued group instead, `![a]{.c}` is the text `!` followed by a bare span.
+
+````tern
+![a]{.c}
+````
+
+````html
+<p>!<span class="c">a</span></p>
+````
+
+## link/image-opener-not-before-caret
+
+spec: syntax-inline#images syntax-inline#footnote-reference syntax-inline#algorithm
+
+`![` opens an image only when no `^` follows, so `![^a](x.png)` is `!`, a footnote reference, then the text `(x.png)`.
+
+````tern
+![^a](x.png)
+
+[^a]: Note.
+````
+
+````html
+<p>!<sup class="t-fnref"><a id="fnref-a" href="#fn-a">1</a></sup>(x.png)</p>
+<section class="t-footnotes"><ol>
+<li id="fn-a"><p>Note. <a class="t-fnback" href="#fnref-a">↩</a></p></li>
+</ol></section>
+````
+
+## link/destination-escapes-and-entities
+
+spec: syntax-inline#links syntax-inline#escape syntax-inline#entities
+
+Backslash escapes and entities apply in link destinations and titles, as in CommonMark: an escaped `(` does not count for balance, and `&eacute;` decodes before the destination is percent-encoded.
+
+````tern
+[a](/a\(b "T &amp; U") and [b](/caf&eacute;)
+````
+
+````html
+<p><a href="/a(b" title="T &amp; U">a</a> and <a href="/caf%C3%A9">b</a></p>
+````
+
+## link/destination-normalised
+
+spec: syntax-inline#links
+
+Destinations are normalised as in CommonMark: non-ASCII and unsafe characters such as a space are percent-encoded, an existing `%XX` is kept, and an empty destination gives `href=""`.
+
+````tern
+[a](/é%20x) [b](<c d>) [e]()
+````
+
+````html
+<p><a href="/%C3%A9%20x">a</a> <a href="c%20d">b</a> <a href="">e</a></p>
+````
+
+## link/code-span-in-destination
+
+spec: syntax-inline#links syntax-inline#algorithm syntax-inline#code-span
+
+Code spans bind tighter than link destinations: the backtick inside the destination pairs as code, the code span swallows the `)`, and with no `)` left there is no link.
+
+````tern
+[a](u`x)` b
+````
+
+````html
+<p>[a](u<code>x)</code> b</p>
+````
+
+## link/destination-32-parens
+
+spec: syntax-inline#links syntax-inline#algorithm
+
+A bare destination may nest parentheses 32 deep.
+
+````tern js
+'[a](' + '('.repeat(32) + 'x' + ')'.repeat(32) + ')\n'
+````
+
+````html
+<p><a href="((((((((((((((((((((((((((((((((x))))))))))))))))))))))))))))))))">a</a></p>
+````
+
+## link/destination-33-parens-text
+
+spec: syntax-inline#links syntax-inline#algorithm
+
+At 33 levels the destination fails, so there is no link and everything is text.
+
+````tern js
+'[a](' + '('.repeat(33) + 'x' + ')'.repeat(33) + ')\n'
+````
+
+````html
+<p>[a]((((((((((((((((((((((((((((((((((x))))))))))))))))))))))))))))))))))</p>
+````
+
+## link/image-alt-attribute-wins
+
+spec: syntax-inline#images elements#figures
+
+An `alt=` attribute replaces the bracket text as the alt of any image, not only of an implicit figure.
+`alt=` overrides the bracket text on any image, not only on implicit figures.
+
+````tern
+![Bracket](a.png){alt="Attribute"}
+````
+
+````html
+<p><img src="a.png" alt="Attribute"></p>
+````

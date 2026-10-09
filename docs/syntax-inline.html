@@ -1,0 +1,2281 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Syntax: inline · Tern</title><script src="../tern.js" data-use="docs.js docs.css"></script>
+
+:::meta
+description: Every inline construct of Tern: escapes, hard breaks, code, math, emphasis, strikethrough, highlight, links, images, spans, named elements, references, footnote references, autolinks, raw HTML and entities; the ambiguity rules, the escapes and the residual cases.
+:::
+
+::site-nav
+
+# Syntax: inline {#top}
+
+Inline content is what goes inside a block: the words of a paragraph, a heading, a table cell or a title. This page covers every inline construct: how to write it, what it becomes, its edge cases, the diagnostics it can produce, and how to write its characters literally. It ends with the ambiguity rules, delimiter by delimiter, the escapes, and the residual cases that are accepted by design.
+
+The examples are live: the result, the generated HTML and the diagnostics are computed by the engine in your browser. Unless an example says otherwise, it renders with no schema, as a plain note does. For blocks (paragraphs, headings, tables, containers…), see [Syntax: blocks](syntax-blocks.html#top). This page and the engine's conformance tests are the reference for inline syntax.
+
+::toc
+
+## At a glance {#at-a-glance}
+
+| Construct | You write | Section |
+|---|---|---|
+| escape | `\*`, `\$`, `\[` | [Backslash escapes](#escape) |
+| hard break | `\` at the end of a line | [Hard breaks](#hard-break) |
+| code | `` `code` `` | [Code spans](#code-span) |
+| math | `$x^2$` | [Inline math](#inline-math) |
+| verbatim math | `` $`\$5 + \$10` `` | [Verbatim math](#verbatim-math) |
+| emphasis, strong | `*em*`, `**strong**`, `***both***` | [Emphasis and strong](#emphasis) |
+| strikethrough | `~~gone~~` | [Strikethrough](#strikethrough) |
+| highlight | `==key==` | [Highlight](#highlight) |
+| link | `[text](https://example.com "Title")` | [Links](#links) |
+| image | `![alt text](photo.jpg)` | [Images](#images) |
+| span | `[text]{.class #id}` | [Bare spans](#span) |
+| named element | `:kbd[Ctrl]`, `:abbr[HTML]{title="…"}` | [Named inline elements](#inline-element) |
+| reference | `@thm-rn`, `@thm-rn{ref=title}` | [References](#reference) |
+| footnote reference | `[^label]` | [Footnote references](#footnote-reference) |
+| autolink | `<https://example.com>`, `https://example.com` | [Autolinks](#autolinks) |
+| raw HTML | `<b>bold</b>`, `<!-- comment -->` | [Raw inline HTML](#raw-inline-html) |
+| entity | `&nbsp;`, `&#x2203;` | [Entities](#entities) |
+
+```tern {.live}
+A *short* tour: `code`, $x^2$, ==marked==, ~~struck~~, [a link](https://example.com),
+:kbd[Ctrl]+:kbd[S], a [span]{.term} and https://example.com.
+```
+
+## How inline content is read {#algorithm}
+
+Inline content comes from:
+- paragraphs, including those inside quotes, list items, containers and footnote definitions;
+- headings;
+- titles: a container's `[Title]` and a fence's `[Title]`;
+- leaf content (`::p[…]`) and named inline element content (`:kbd[…]`);
+- table cells.
+
+It is read in two phases. First a tokenizer goes left to right and cuts the text into pieces. Then the brackets and the delimiter runs are paired up. Knowing the order explains every surprising case on this page.
+
+### Phase 1: the tokenizer {#tokenizer}
+
+At each character, the tokenizer tries these rules in order, and the first one that applies wins. When a rule's construct is not there (a `$` that opens nothing, a `<` that is no tag), the character is text and reading moves on.
+
+| # | At | Tries | See |
+|---|---|---|---|
+| 1 | `\` | an escape, or a hard break | [escapes](#escape), [hard breaks](#hard-break) |
+| 2 | a run of backticks | a code span | [code spans](#code-span) |
+| 3 | `$` | followed by backticks: verbatim math if the run closes, else the `$` is text; otherwise inline math, else text | [verbatim math](#verbatim-math), [inline math](#inline-math) |
+| 4 | `<` | an angle autolink, a comment, an inline raw tag; else the text `<` | [autolinks](#autolinks), [raw HTML](#raw-inline-html) |
+| 5 | `&` | an entity | [entities](#entities) |
+| 6 | `http://` or `https://`, in any case | a bare autolink | [autolinks](#autolinks) |
+| 7 | `@` | a reference | [references](#reference) |
+| 8 | `[^` | a footnote reference | [footnote references](#footnote-reference) |
+| 9 | `![` not followed by `^` | an image opener | [images](#images) |
+| 10 | `:NAME[` | a named element opener | [named elements](#inline-element) |
+| 11 | `[` | a bracket opener | [links](#links), [spans](#span) |
+| 12 | `]` | a bracket closer: link, image, span or element | [resolving](#resolve) |
+| 13 | a run of `*`, `~~` or `==` | a delimiter run | [emphasis](#emphasis), [strikethrough](#strikethrough) |
+| 14 | a newline | a soft break | [soft breaks](#soft-break) |
+| 15 | anything else | text | |
+
+Rules 1 to 8 produce **atoms**: escapes, code spans, math, verbatim math, autolinks, raw tags, entities, references and footnote references. An atom is finished as soon as it is read, and nothing inside it is seen by any later rule.
+
+Because rule 2 comes before rule 13, a code span that starts first protects a `*` inside it. The emphasis runs from the first star to the last:
+
+```tern {.live}
+*a `b*` c*
+```
+
+Because rule 2 also comes before rule 12, a backtick inside link text can swallow the `]`. Here the code span runs from `` `link `` to `` /u` ``, so there is no link:
+
+```tern {.live}
+[not a `link](/u`)
+```
+
+Left to right, the first atom wins. A code span that starts first holds a dollar; math that starts first holds a backtick:
+
+```tern {.live}
+`a$` and b$, but $a `b$ c`
+```
+
+Rule 8 comes before rule 9, and rule 9 excludes `![^`. So `Wow![^a]` is the text `Wow!` followed by a footnote reference, as on GitHub:
+
+```tern {.live}
+Wow![^a]
+
+[^a]: An exclamation.
+```
+
+### Phase 2: resolving brackets and delimiters {#resolve}
+
+**Brackets.** Every `[`, `![` and `:NAME[` is put on a stack. A `]` closes the most recent opener still on the stack, and what it becomes depends on the opener and on what follows the `]`:
+
+| Opener | The `]` is followed by | Result |
+|---|---|---|
+| `:NAME[` | anything | the named element; a glued `{…}` group binds to it |
+| `[` | `(`, a destination that parses, `)` | a link |
+| `![` | `(`, a destination that parses, `)` | an image |
+| `[` | `{` and a group that parses | a bare span |
+| `![` | `{` and a group that parses | the text `!` followed by a bare span |
+| `[` or `![` | anything else | both brackets are text |
+
+A `]` with no opener is text, and an opener that is never closed is text. A plain `[` left open is silent; a `:NAME[` left open gets `inline.unclosed`.
+
+Brackets nest, so the inner pair closes first:
+
+```tern {.live}
+[a [b]{.y}]{.x}, [a [b] c](https://example.com) and a]b[c
+```
+
+**Links cannot contain links.** When a link forms, every plain `[` still open before it loses the right to become a link (CommonMark's rule; the inner link wins). It can still become a span. `![` and `:NAME[` openers are not affected, so images, spans and named elements may hold links:
+
+```tern {.live}
+[a [b](u) c](v) is text around a link; [see [x](u) now]{.n} is a span holding one.
+```
+
+**Delimiters.** Runs of `*`, `~~` and `==` are paired with CommonMark 0.31.2's algorithm (`process_emphasis` with `openers_bottom`). The runs inside a bracket construct are paired when that construct closes, so emphasis never crosses a link's or an element's brackets:
+
+```tern {.live}
+*[a*](https://example.com) and *a :kbd[b* c]
+```
+
+**Groups.** A `{…}` group glued right after a construct binds to it; the next section has the details.
+
+### Glued attribute groups {#glued-groups}
+
+A `{…}` group written immediately after an inline construct, with no space, gives it attributes. The grammar of a group (`{#id .class key=value}`) is in [Attributes](syntax-blocks.html#attributes). Inline, a group is *strong* when it holds at least one `#id`, `.class` or `key=value`, and *weak* when it holds only bare keys, such as `{hidden}`.
+
+| Glued after | Accepts | If the group does not parse |
+|---|---|---|
+| a link, an image, a span, a named element | any group | it stays text, with `attr.malformed` at the first bad character |
+| a reference | any group; `{}` ends the reference | it stays text, with `attr.malformed` |
+| a code span, inline or verbatim math, a `*`, `~~` or `==` closer, an autolink, a footnote reference | strong groups only | it stays text; `attr.malformed` only when it starts with `#` or `.` |
+
+```tern {.live}
+[t](https://example.com){.btn}, `x`{.lang-js}, **b**{#key}, :kbd[S]{.big} and $x${#e}.
+```
+
+A weak group after a code span, math or a delimiter is text, silently. A group after a space is never glued:
+
+```tern {.live}
+`x`{hidden}, $f${x} and [x] {.c} are all followed by text.
+```
+
+A few more rules apply everywhere:
+- `{}` is never a group. After a bracket construct it is silent text; after a reference it is consumed as a terminator (see [References](#reference)).
+- A `{` inside the group before its closing `}` means "not a group". The candidate is silent text: `[x]{.a {b}}`.
+- Inside quotes nothing is special and there are no escapes, so `{pattern="\d+"}` is literal.
+- A backtick inside a group that would pair with a later backtick breaks the group, because code spans are read first (see [Residual cases](#residual-backticks)).
+
+```tern {.live expect="attr.malformed"}
+[x]{.a "b"} keeps its brackets as text.
+```
+
+### Reserved keys in an inline group {#reserved-keys}
+
+Four keys are consumed by Tern and never emitted: `tag`, `ref`, `cols` and `raw` (see [Attributes](syntax-blocks.html#attributes)). Each applies to some constructs only. Inline, where one does not apply, the group still binds, the key is dropped, and a diagnostic points at it:
+
+| Key | Applies to | Elsewhere inline |
+|---|---|---|
+| `tag=` | a named element `:name[…]` whose name is not reserved (see [Which element it becomes](#element-resolution)) | on a span, link, image, code span or anything else: [`tag.not-allowed`](diagnostics.html#tag-not-allowed) (warning). On a reserved name: [`attr.malformed`](diagnostics.html#attr-malformed) (warning) |
+| `ref=` | a reference `@id` (see [Choosing the text](#ref-option)) | `attr.malformed` (warning) |
+| `cols=` | a named element, whose grid it sets | `attr.malformed` (warning) |
+| `raw` | containers only | `attr.malformed` (warning) |
+
+```tern {.live expect="tag.not-allowed tag.not-allowed tag.not-allowed tag.not-allowed"}
+[x]{tag=b}, [t](https://example.com){tag=b}, ![a](i.png){tag=b} and `c`{tag=b}
+```
+
+```tern {.live expect="attr.malformed attr.malformed attr.malformed attr.malformed"}
+[x]{ref=title}, :kbd[y]{ref=title}, [z]{raw} and [w]{cols=2}
+```
+
+The rest of the group still applies:
+
+```tern {.live expect="attr.malformed"}
+`x`{.lang-js ref=title}
+```
+
+### Three properties {#properties}
+
+**Atoms are opaque.** Escapes, code spans, math, verbatim math, autolinks, raw tags, entities, references and footnote references hide their content from every other rule. That includes emphasis, brackets, the table-row splitter and the matching of a title's brackets:
+
+```tern {.live}
+[a `]` b](https://example.com), *$a*b$*, https://example.com/?@kernel and &#42;not em&#42;
+```
+
+A `]` inside a code span does not end a container's title:
+
+```tern {.live}
+:::box[a `]` b]
+Body.
+:::
+```
+
+**Nothing recurses.** Nesting comes from the stacks unwinding, not from parsing the inside of a construct again. Deep nesting costs nothing extra.
+
+**Parsing is linear.** No input makes the parser slow:
+- backtick runs are found through a table of runs by length;
+- a `$` looks up the next unescaped `$` in a table, and counts newlines between them;
+- a `<` finds its `>` through a table that skips quoted attribute values, so `>` may appear inside them;
+- an attribute candidate stops at the first unquoted `{` or `}`;
+- a link destination stops at whitespace and allows at most 32 levels of nested parentheses.
+
+## Backslash escapes {#escape}
+
+A backslash before an ASCII punctuation character makes that character literal.
+
+:::syntax
+```tern
+\*  \$  \:  \@  \[  \]  \{  \}  \|  \#  \<  \`  \\  \=  \~  \!  \^  \>  \-  \+  \.
+```
+:::
+
+```tern {.live}
+\*not emphasis\*, \$5, \@alice, \[not a link](u) and a literal \\.
+```
+
+**Rules.**
+- `\` before any of the 32 ASCII punctuation characters `` !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~ `` is that character.
+- `\` before anything else is a literal backslash: a letter, a digit, a space, any non-ASCII character. So `\alpha` and `C:\Users` stay as written.
+- An escaped character cannot start or end anything: an escaped `*` is not a delimiter, an escaped `[` is not a bracket, an escaped `&` cannot begin an entity.
+- An escape is an atom.
+- Escapes work in every kind of inline content: paragraphs, headings, titles, cells, leaf and element content.
+
+Every ASCII punctuation character can be escaped, back to back:
+
+```tern {.live}
+\!\"\#\$\%\&\'\(\)\*\+\,\-\.\/\:\;\<\=\>\?\@\[\\\]\^\_\`\{\|\}\~
+```
+
+A backslash before anything else stays:
+
+```tern {.live}
+\alpha, C:\Users, \1, a \ b, \é and \—
+```
+
+An escaped `~` or `=` breaks its run, and what is left are runs of one, which are text:
+
+```tern {.live}
+\~~a\~~ and \==b\== and \&amp;
+```
+
+**Where there are no escapes.** Inside code spans, math, raw HTML and attribute values, a backslash is just a character (see [Escapes](#no-escapes)). Link destinations and titles do take escapes.
+
+### LaTeX's delimiters: `latex.delimiters` {#latex-delimiters}
+
+LaTeX writes inline math as `\(…\)` and display math as `\[…\]`. In Tern these are escapes: `\(` is `(`, and the content is not math. Math is `$…$` and `$$`. To help when you paste LaTeX, the first one in a note gets [`latex.delimiters`](diagnostics.html#latex-delimiters) (info), at its backslash. It fires once per note, for the first of:
+- `\(` followed later in the same inline content (a paragraph, heading, cell or title) by `\)`, with something between them other than whitespace and escape pairs;
+- `\[` followed later in the same inline content by `\]`, with one of TeX's marks between them (`\` before a letter, `{`, `}`, `^`, `_` or `&`), not counting escape pairs;
+- `\begin{` at the start of a line.
+
+```tern {.live expect="latex.delimiters"}
+\(a + b\) is not math here.
+```
+
+```tern {.live expect="latex.delimiters"}
+\[x^2\]
+```
+
+```tern {.live expect="latex.delimiters"}
+Consider
+\begin{cases} x \end{cases}
+```
+
+The hint fires once per note, however many delimiters follow:
+
+```tern {.live expect="latex.delimiters"}
+\(a\) and \(b\).
+
+\begin{align} x \end{align}
+```
+
+`\[` is the documented escape for `[`, so escaped brackets around prose, an empty pair and escape-only content stay silent. So does `\begin{` in the middle of a line:
+
+```tern {.live}
+See \[not a span\], \(\), \( \) and \[\*\]. Use \begin{align} only in math.
+```
+
+**The fix.** Write `$a + b$`, or a `$$` block for display math (see [Display math](syntax-blocks.html#display-math)). Inside math the backslash belongs to TeX, so `$\{x\}$` and `\begin{aligned}` in a `$$` block are never hinted.
+
+## Hard breaks {#hard-break}
+
+A backslash at the end of a line inside a paragraph is a line break, `<br>`.
+
+:::syntax
+```tern
+first line\
+second line
+```
+:::
+
+```tern {.live}
+Roses are red,\
+violets are blue.
+```
+
+**Rules.**
+- It works in a paragraph inside any container: a quote, a list item, a footnote definition, a `:::` block.
+- It also works inside a named element that crosses a line, because the element is part of the paragraph.
+- Lines are right-trimmed first, so spaces after the backslash do not matter.
+- At the end of a block, on the paragraph's last line, the backslash is literal.
+- In a one-line construct (a heading, a title, a leaf) it is literal.
+- In a table row, a trailing `\` continues the row on the next line (see [Tables](syntax-blocks.html#tables)).
+- In the AST, a `break` includes its line ending.
+
+Trailing spaces are never a break. Two spaces at the end of a line, Markdown's other spelling, are trimmed like any trailing whitespace, and the newline stays a soft break. Nothing in Tern depends on trailing whitespace, so an editor may strip it freely.
+
+The backslash on the last line of a paragraph is literal, and so is one that a heading cuts off:
+
+```tern {.live}
+a\
+b\
+
+c\
+# H
+```
+
+A hard break inside a list item and inside a quote:
+
+```tern {.live}
+- a\
+  b
+
+> c\
+> d
+```
+
+A hard break inside a named element:
+
+```tern {.live}
+Press :kbd[Fn\
+F12].
+```
+
+A heading is one line, so its trailing backslash is literal:
+
+```tern {.live}
+## Title\
+```
+
+### A doubled backslash: `latex.linebreak` {#latex-linebreak}
+
+LaTeX breaks a line with `\\`. In Tern, `\\` is an escaped backslash: at the end of a line it is a literal `\` followed by a soft break, and the line break is lost. That case gets [`latex.linebreak`](diagnostics.html#latex-linebreak) (info) at the first backslash: "a line break is a single trailing `\`".
+
+```tern {.live expect="latex.linebreak"}
+first\\
+second
+```
+
+It fires only when a line break was actually lost, that is, when a soft break follows the `\\`:
+- `\\\` at the end of a line is an escaped backslash followed by a hard break, and is silent;
+- `\\` at the end of a paragraph's last line is a literal backslash with nothing lost, and is silent;
+- `\\` at the end of a table row is a literal backslash, never hinted.
+
+```tern {.live}
+a\\\
+b
+
+c\\
+```
+
+**The fix.** End the line with a single `\`.
+
+## Code spans {#code-span}
+
+A run of backticks around text makes inline code.
+
+:::syntax
+```tern
+`code`
+``code with a ` inside``
+``` `` ` `` ```
+```
+:::
+
+```tern {.live}
+`a < b`, ``a`b`` and ``` `` ` `` ```
+```
+
+**Rules** (CommonMark's):
+- A run of n backticks opens, and the span closes at the next run of exactly n backticks.
+- With no such run, the backticks are literal.
+- A newline inside the span becomes a space.
+- One leading and one trailing space are stripped, when both are there and the content is not all spaces.
+- Lines are right-trimmed before inline parsing, so spaces at the end of a line inside a multi-line span are gone before the newline becomes a space.
+- The content is text, escaped for HTML: no escapes, no entities, no other syntax. The span is an atom.
+- A strong group glued after the closing run binds to the `<code>`. `tag=` in it gets `tag.not-allowed` (see [Reserved keys](#reserved-keys)).
+
+A run closes only at a run of exactly the same length, so a longer run encloses a shorter one, and a single backtick skips a double run:
+
+```tern {.live}
+`a``b` and x ``a` y
+```
+
+One space each side is stripped, only when both are present; content that is all spaces keeps them:
+
+```tern {.live}
+` a ` and `  b  ` and ` c` and `  `
+```
+
+A span may cross a line, and the newline becomes a space:
+
+```tern {.live}
+`a
+b`
+```
+
+No escapes and no entities inside:
+
+```tern {.live}
+`\*` and `&amp;`
+```
+
+A strong group binds to the code; a weak one stays text:
+
+```tern {.live}
+`x`{.lang-js} and `y`{hidden}
+```
+
+A malformed group that starts with `#` or `.` is reported:
+
+```tern {.live expect="attr.malformed"}
+`x`{.a "b"}
+```
+
+**A lone backtick.** A single backtick pairs with the next single backtick in the same paragraph or table row, however far away. Inside a named element this takes the element's `]` with it; write `` \` `` for a literal backtick (see [Residual cases](#residual-lone-backtick)).
+
+**Writing it literally.** Put a backtick inside a longer run, as in ``` ``a`b`` ```, or escape it: `` \` `` is a literal backtick outside code.
+
+## Inline math {#inline-math}
+
+Dollars around TeX make inline math, rendered by KaTeX.
+
+:::syntax
+```tern
+$\sum_{i=1}^{n} x_i^*$
+```
+:::
+
+```tern {.live}
+If $V$ is finite-dimensional, $\dim V = \dim \ker T + \dim \operatorname{im} T$.
+```
+
+The output is `<span class="t-math">` holding the TeX; the runtime adds `data-tex` and renders it with KaTeX (see [KaTeX](publishing.html#katex)). The content is raw TeX and an atom: nothing inside is seen by emphasis, brackets, references or the table-row splitter. So `_`, `^` and `*` inside math are TeX, never Tern.
+
+Dollars are also prices. The rule below decides which dollars are math, so that prose about money stays prose without any escaping, in nearly every case.
+
+:::tip
+Write prices as you normally would: `costs $5 and $10` stays text. Reach for `\$` when a hint tells you a span looks like a price, and for [verbatim math](#verbatim-math) when a formula holds a dollar or a French interval.
+:::
+
+### The dollar rule {#dollar-rule}
+
+This is Pandoc's rule, completed. A `$` is a dollar if it is not escaped.
+
+**The opener** is a dollar that:
+- is not next to another dollar;
+- is followed by a character that is not whitespace;
+- is not followed by any of `)` `]` `}` `,` `.` `;` `:` (the bracket clause, below).
+
+**The candidate closer** is the next unescaped dollar after the opener; the scan skips `\` + any character. It is the only candidate: *the first dollar decides*. It closes the span when:
+- it is preceded by a character that is not whitespace;
+- that character is not an unescaped `(`, `[` or `{` (the bracket clause);
+- it is not followed by a digit or another dollar;
+- at most one line break lies between it and the opener.
+
+**Otherwise** the opener is text, and scanning resumes at the next character. The candidate then gets its own chance to open.
+
+The first dollar after the opener decides, even when a later dollar could have closed:
+
+```tern {.live}
+$x $ y$
+```
+
+A rejected candidate gets its own chance, and here it opens:
+
+```tern {.live}
+$a $b$
+```
+
+### The bracket clause {#bracket-clause}
+
+The bracket clause rejects a dollar that looks like a price next to punctuation:
+- an opener followed by `)`, `]`, `}`, `,`, `.`, `;` or `:`, as in `5$, 6$` or `(US$)`;
+- a closer preceded by an unescaped `(`, `[` or `{`, as in `$100 ($USD)`, where the dollar after `(` cannot close the one before `100`.
+
+The clause is silent for parentheses, which are prices, and for braces. A `]` after the opener or a `[` before the closer is usually French interval notation: that gets the [`math.bracket`](#math-bracket) hint.
+
+```tern {.live}
+$)x$, $}x$, $,x$, $.x$, $;x$, $:x$, $f($ and $f{$
+```
+
+The clause is about those positions only. A `[` after the opener and a `]` or `)` before the closer are fine, so closed and half-open intervals are math:
+
+```tern {.live}
+$[0,1]$ and $(0,1]$
+```
+
+The closer clause rejects only an *unescaped* bracket; after `\{`, `\[` or `\(` the dollar closes:
+
+```tern {.live}
+$\{$, $\[$ and $\($
+```
+
+### Outcomes {#outcomes}
+
+| Input | Result |
+|---|---|
+| `costs $5 and $10` | text |
+| `costs $5 and $x$` | `costs $5 and ` and the math `x` |
+| `$100 ($USD) and $x$` | text and the math `x` |
+| `Cost ($) and revenue ($)` | text |
+| `| Price ($) | Amount ($) |` | two cells, text |
+| `the $0$th, $1$st, $n$th, $2^n$th` | math in all four |
+| `$5/$8`, `$5–$10`, `($5 each, or $8)` | text |
+| `a $x$2 b` | text |
+| `$\$$-valued` | the math `\$` |
+| `$\sum_{i=1}^n` ⏎ `x_i$` | one span (one line break) |
+| `$a` ⏎ `b` ⏎ `c$` | text (two line breaks) |
+| `x$y$z` | `x`, the math `y`, `z` (as Pandoc) |
+| `$]0,1[$` | text, with `math.bracket` |
+
+Each row, live:
+
+**`costs $5 and $10` is text.** The candidate closer, the `$` before `10`, is preceded by a space. It then fails to open, since nothing closes it.
+
+```tern {.live}
+costs $5 and $10
+```
+
+**`costs $5 and $x$`.** The first `$` fails on the candidate before `x`, which then opens and closes at the last dollar.
+
+```tern {.live}
+costs $5 and $x$
+```
+
+**`$100 ($USD) and $x$`.** The bracket clause rejects the candidate after `(`; `$USD` fails on the space before the next dollar; `$x$` is math.
+
+```tern {.live}
+$100 ($USD) and $x$
+```
+
+**`Cost ($) and revenue ($)` is text.** `$)` cannot open, and the bracket clause is silent for parentheses.
+
+```tern {.live}
+Cost ($) and revenue ($)
+```
+
+**A table with dollars in its header.** `$)` cannot open math, so it cannot hide a pipe: the row keeps two cells.
+
+```tern {.live}
+| Price ($) | Amount ($) |
+|---|---|
+| 5 | 10 |
+```
+
+**Ordinals are math.** There is no digit test on the opener, and a letter after the closer is fine.
+
+```tern {.live}
+the $0$th, $1$st, $n$th, $2^n$th
+```
+
+**Price ranges are text.** In `$5/$8` and `$5–$10` the candidate closer is followed by a digit; in `($5 each, or $8)` it is preceded by a space.
+
+```tern {.live}
+$5/$8, $5–$10, ($5 each, or $8)
+```
+
+**A digit after the closer.** `a $x$2 b` is text: the candidate closer is followed by a digit.
+
+```tern {.live}
+a $x$2 b
+```
+
+**An escaped dollar inside.** The closer scan skips `\$`, and the TeX keeps it.
+
+```tern {.live}
+$\$$-valued
+```
+
+**One line break is allowed.** The newline stays in the TeX.
+
+```tern {.live}
+$\sum_{i=1}^n
+x_i$
+```
+
+**Two line breaks are not.** The dollars are text, silently.
+
+```tern {.live}
+$a
+b
+c$
+```
+
+**Glued to words.** Nothing tests the character before the opener or after the closer, as in Pandoc.
+
+```tern {.live}
+x$y$z
+```
+
+**French intervals.** `$]0,1[$` is text, with `math.bracket` and a hint naming the verbatim form.
+
+```tern {.live expect="math.bracket"}
+the interval $]0,1[$ is open
+```
+
+### Content, groups and ids {#math-content}
+
+- The TeX is emitted as written, escaped for HTML. An entity inside math is not decoded, and a tag-shaped `<b>` inside math is TeX.
+- A strong group glued after the closing `$` binds to the span: `$x${#e}` gives it an id. Inline math is never numbered; only a display equation with an id is (see [Numbering](elements.html#numbering)).
+- A weak group after math is text, and so is a group after a space.
+
+```tern {.live}
+$a<b>c$, $a & b$ and $x${#e}, then $f${x} and $y$ {#f}
+```
+
+TeX's marks outside math are plain text, and `\alpha` outside math is a backslash and letters:
+
+```tern {.live}
+$\alpha$ and \alpha; x^2 + y_1 & {z}
+```
+
+Math is an atom: a `|` inside it does not split a table cell, and a `*` inside it does not pair:
+
+```tern {.live}
+| Norm | Value |
+|---|---|
+| $|x|$ | 1 |
+
+$a*b$ and $c*d$
+```
+
+### Diagnostics {#math-diagnostics}
+
+Prices produce no noise: an opener that nothing closes is silent, unless it is followed by a backslash. Three hints cover the cases that are probably mistakes.
+
+**`math.bracket`**{#math-bracket} (info, at the opener): the bracket clause rejected the span *only* because of a `]` after the opener or a `[` before the closer. These are French intervals. Parentheses, which are prices, and braces stay silent. See [`math.bracket`](diagnostics.html#math-bracket).
+
+```tern {.live expect="math.bracket"}
+$[0,1[$
+```
+
+It does not fire when there is another reason too, such as a space before the candidate, or when there is no candidate at all:
+
+```tern {.live}
+$]0,1[ $ and $]0,1[
+```
+
+**`math.unclosed-inline`**{#math-unclosed-inline} (info, at the opener): the opener is followed by `\`, and nothing closes it, either because there is no candidate or because the candidate fails. A dollar followed by a backslash is almost certainly TeX. See [`math.unclosed-inline`](diagnostics.html#math-unclosed-inline).
+
+```tern {.live expect="math.unclosed-inline"}
+$\alpha never closes
+```
+
+```tern {.live expect="math.unclosed-inline"}
+$\alpha + 1 $ more
+```
+
+An unclosed opener not followed by `\` is silent:
+
+```tern {.live}
+$x never closes
+```
+
+**`math.suspect-price`**{#math-suspect-price} (warning, at the opener): the span *is* math, but it looks like two prices. It fires when the opener is followed by a digit and the span holds a run of three or more ASCII letters that follows whitespace and is neither a TeX control word nor inside a braced argument that directly follows a control word (`\text{…}`, `\textrm{…}`, `\mbox{…}`, `\operatorname{…}`, and every argument of a command that takes several, such as both of `\frac{…}{…}`). Hint: "if `$` is a price, write `\$`". See [`math.suspect-price`](diagnostics.html#math-suspect-price).
+
+```tern {.live expect="math.suspect-price"}
+$5 then x$
+```
+
+```tern {.live expect="math.suspect-price"}
+costs $10 at peak hours (US$)
+```
+
+None of these is suspect: a control word, words inside `\text{…}`, words in both arguments of `\frac`, a span that starts with a letter, a run of two letters:
+
+```tern {.live}
+$3 \times 10^{8}$, $5 \text{ per unit}$, $2 \frac{ apples}{ day}$, $x then y$ and $5 kg$
+```
+
+### Writing a dollar {#dollar-literal}
+
+`\$` is a literal dollar. It never opens or closes, and it is not "next to" another dollar:
+
+```tern {.live}
+costs \$5 and \$10; \$5 then x$; \$$x$
+```
+
+Inside math, `\$` is TeX's dollar. For a formula that holds dollars, or that the bracket clause rejects, use [verbatim math](#verbatim-math).
+
+## Verbatim math {#verbatim-math}
+
+A dollar followed by backticks makes math that is always math. It is the escape hatch for formulas that hold a `$`, or that the bracket clause rejects.
+
+:::syntax
+```tern
+$`\$5 + \$10`
+$``a`b``
+```
+:::
+
+```tern {.live}
+Write $`\$5 + \$10` or $`]0,1[`.
+```
+
+**Rules.**
+- `$` immediately followed by a run of n backticks opens. There is no closing dollar.
+- The span closes at the next run of exactly n backticks.
+- The content is trimmed as in a code span: a newline becomes a space, and one leading and one trailing space are stripped when both are there.
+- It is **always math**: no price rules, no bracket clause, no line-break limit. The output is the same `<span class="t-math">` as `$…$`.
+- It is an atom, and a strong group glued after the closing run binds to it.
+- With no closing run, the `$` is text and the backticks are read normally: a lone backtick is literal, and a run with a later partner is a code span.
+
+A double run can hold a single backtick:
+
+```tern {.live}
+$``a`b`` and $`x`{#e}
+```
+
+Nothing inside is Tern:
+
+```tern {.live}
+$`*a* @b [c](d)`
+```
+
+With no closing run, the dollar and the backtick are text:
+
+```tern {.live}
+cost $`5
+
+$`x$
+```
+
+Like a code span's, the closing run may be far away. Here the second `` $` `` holds the backtick that closes the first, so the span is `5, and $`:
+
+```tern {.live}
+cost $`5, and $`x$ too
+```
+
+An escaped dollar before a backtick is a literal dollar, followed by an ordinary code span:
+
+```tern {.live}
+\$`x`
+```
+
+## `$$` in the middle of a line {#inline-display}
+
+Two or more adjacent dollars inside inline content never open anything. They are text, with [`math.inline-display`](diagnostics.html#math-inline-display) (info) at the first dollar, once per run: "display math goes on its own lines; for an inline display style write `$\displaystyle …$`".
+
+```tern {.live expect="math.inline-display math.inline-display"}
+see $$E=mc^2$$ here
+```
+
+A dollar next to another dollar can neither open nor close, so a candidate closer followed by a dollar fails too, and the pair gets the hint:
+
+```tern {.live expect="math.inline-display"}
+a $x$$ b
+```
+
+A `$$` in a line does not disturb math later in the same paragraph:
+
+```tern {.live expect="math.inline-display"}
+a $$ b $x$
+```
+
+**The fix.** Put display math on its own lines (see [Display math](syntax-blocks.html#display-math)), or write `$\displaystyle …$` for a display-style formula inside a sentence. To show two literal dollars without the hint, write `\$\$`.
+
+```tern {.live}
+$\displaystyle \sum_{i=1}^n i$ and a literal \$\$
+```
+
+## Emphasis and strong {#emphasis}
+
+Stars around text make emphasis; two stars make strong emphasis.
+
+:::syntax
+```tern
+*emphasis*  **strong**  ***both***
+```
+:::
+
+```tern {.live}
+*em*, **strong**, ***both***
+```
+
+The algorithm is exactly CommonMark's (version 0.31.2) for `*` runs, so the CommonMark emphasis examples that use only `*` work unchanged. Underscores are never emphasis.
+
+### When a run can open or close {#flanking}
+
+A run of stars can open, close, or both, depending on the characters around it:
+- **It can open** when the character after it is not whitespace, and, if that character is punctuation, the character before the run is whitespace or punctuation.
+- **It can close** when the character before it is not whitespace, and, if that character is punctuation, the character after the run is whitespace or punctuation.
+- The start and the end of the inline content count as whitespace. Whitespace and punctuation are Unicode's: punctuation includes symbols.
+
+So stars with spaces on both sides are text, and a closer with no opener is text:
+
+```tern {.live}
+2 * 3 * 4 and x * a*
+```
+
+Inside a word a run can both open and close, as on GitHub. So `2*3*4` is emphasis (see [Residual cases](#residual-emphasis)):
+
+```tern {.live}
+x*y*z and 2*3*4
+```
+
+Punctuation counts. A star after a letter and before a quote cannot open; a star at the start before a parenthesis can:
+
+```tern {.live}
+a*"b"* is text.
+
+*(a)* is emphasis.
+```
+
+### How runs pair {#pairing}
+
+- A closer pairs with the nearest earlier opener that can take it.
+- When both runs have at least two stars, they make `<strong>` and use two stars each; otherwise `<em>`, using one. What is left of a run pairs again or stays text.
+- `***x***` is `<em><strong>x</strong></em>`.
+- **The rule of three.** When either run can both open and close, they do not pair if the sum of their lengths is a multiple of 3, unless both lengths are.
+- An opener that never meets a closer is text.
+- Emphasis may cross a soft line break, but never a blank line, which ends the paragraph. It never crosses a link's or an element's brackets (see [Phase 2](#resolve)).
+
+Leftover stars stay text:
+
+```tern {.live}
+**a*
+
+*a**
+```
+
+Strong inside emphasis, emphasis inside strong:
+
+```tern {.live}
+*a **b** c*, ***a* b** and ***a** b*
+```
+
+The rule of three: in `*a**b*` the `**` can both open and close, and 1 + 2 is a multiple of 3, so it pairs with neither star. In `*x**y**z*` it keeps the first `**` from closing the `*`:
+
+```tern {.live}
+*a**b* and *x**y**z*
+```
+
+Across a soft break, but not across a blank line:
+
+```tern {.live}
+*one
+line* and *two
+
+paragraphs*
+```
+
+Emphasis may hold any inline content, and atoms protect their own stars:
+
+```tern {.live}
+*[a link](https://example.com), `code*` and $a*b$*
+```
+
+### Underscores are never emphasis {#underscore}
+
+`_` and `__` are never delimiters, in any position. Identifiers, subscripts and URLs stay as written:
+
+```tern {.live}
+snake_case, x_1, _private_, __init__, *snake_case* and https://x.com/_a_/b
+```
+
+### Groups on emphasis {#emphasis-groups}
+
+A strong group glued to the closing run binds to the element. On `***x***` it binds to the outer `<em>`:
+
+```tern {.live}
+*a*{#e}, **b**{.y} and ***x***{.c}
+```
+
+A weak group, or a group after a space, is text. A malformed group that starts with `#` or `.` is reported; one that starts otherwise is silent text:
+
+```tern {.live expect="attr.malformed"}
+**b**{open}, **b** {.y}, **b**{#x "y"} and **b**{x "y"}
+```
+
+**Writing it literally.** `\*` is a literal star. Stars surrounded by spaces need no escape.
+
+## Strikethrough and highlight {#strike-highlight}
+
+Two tildes strike text through; two equals signs highlight it. Both follow one rule.
+
+### Strikethrough {#strikethrough}
+
+:::syntax
+```tern
+~~struck through~~
+```
+:::
+
+```tern {.live}
+The meeting is ~~Tuesday~~ Wednesday.
+```
+
+The result is `<del>`.
+
+### Highlight {#highlight}
+
+:::syntax
+```tern
+==highlighted==
+```
+:::
+
+```tern {.live}
+The ==key point== is this one.
+```
+
+The result is `<mark>`.
+
+### The rule for `~~` and `==` {#tilde-equals-rule}
+
+- A run of **exactly two** `~` or `=` is a delimiter run, with the same flanking as `*`.
+- In addition, it can open only if the character before it is not an ASCII letter or digit, and close only if the character after it is not one.
+- Runs of one, or of three or more, are text.
+- The pairs resolve through the same stack as `*`, so they nest with emphasis and with each other.
+- A strong group glued to the closing run binds to the `<del>` or `<mark>`.
+
+Comparisons, paths and runs glued to words stay text:
+
+```tern {.live}
+If a==b and c==d then x == y; x~~y~~z; ~/.vimrc, ~user and a~b.
+```
+
+Other run lengths are text:
+
+```tern {.live}
+a ~x~ b ===y=== c ~~~z~~~ d ====w====
+```
+
+Glued on the outside, a run can neither open nor close; with a space inside, it is not flanking:
+
+```tern {.live}
+a==b==, ==b==c and == x ==
+```
+
+Punctuation outside is fine:
+
+```tern {.live}
+(==x==) and "~~y~~"
+```
+
+The glue test is ASCII only, on purpose: Chinese, Japanese and Thai have no spaces between words. A non-ASCII letter or `_` next to the run does not block it:
+
+```tern {.live}
+これは==重要==です, 中文~~删除~~中文, α==β==γ and _==x==_
+```
+
+The runs nest with `**`, and share one stack. When the `~~` pair closes, the `==` opener between them is dropped, so the last `==` has nothing to close:
+
+```tern {.live}
+~~**a**~~ and ~~a ==b~~ c==
+```
+
+Groups:
+
+```tern {.live}
+==k=={.x} and ~~g~~{#d}
+```
+
+**Writing it literally.** `\~` and `\=` break a run (see [Backslash escapes](#escape)). Runs that are glued to words or spaced need no escape.
+
+## Links {#links}
+
+Text in brackets followed by a destination in parentheses makes a link.
+
+:::syntax
+```tern
+[text](https://example.com)
+[text](https://example.com "Title")
+[text](<a destination with spaces>)
+[text](https://example.com){.class #id key=value}
+```
+:::
+
+```tern {.live}
+See [the guide](https://example.com/guide "The guide") or [a button](https://example.com){.btn}.
+```
+
+**Rules.**
+- At a `]` whose next character is `(`, the destination is read: `<…>`, or a run of non-whitespace with balanced parentheses.
+- Then an optional title in `"…"` or `'…'`, then `)`. Whitespace, a line break included, may surround the destination and the title.
+- If any of that fails, the `]` is read as for a span, or is text.
+- A group glued after the `)` binds to the `<a>`; any group, weak ones included. Its reserved keys do not apply: `tag=` gets `tag.not-allowed`, and `ref=`, `cols=` and `raw` get `attr.malformed` (see [Reserved keys](#reserved-keys)).
+- The link text is inline content: emphasis, code, math, images, spans and named elements all work inside it.
+
+```tern {.live}
+[link *em* `code` $x$ :kbd[K]](https://example.com){#l hidden}
+```
+
+### Destinations {#destinations}
+
+- **Angle form.** `<…>` may hold spaces and unbalanced parentheses, but not `<`, `>` or a line break.
+- **Bare form.** A run of characters that are not whitespace or control characters. Parentheses must balance, at most 32 levels deep.
+- `[a]()` and `[a](<>)` give `href=""`.
+
+```tern {.live}
+[a](<u(v>), [docs](https://x.org/a_(b)), [empty]() and [spaces](<c d>)
+```
+
+With unbalanced parentheses there is no closing `)`, and a space ends a bare destination, so neither of these is a link:
+
+```tern {.live}
+[a](f(x) and [b](u v)
+```
+
+The `(` must follow the `]` immediately:
+
+```tern {.live}
+[a] (u)
+```
+
+### Titles {#titles}
+
+- A title is `"…"` or `'…'`. CommonMark's `(…)` title is not accepted, and the link fails.
+- It must be separated from the destination by whitespace; otherwise the quotes are part of the destination.
+- After the title, only whitespace and `)` may follow.
+- A title may hold escapes, such as `\"`, and entities.
+
+```tern {.live}
+[a](u 'T'), [b](u "say \"hi\""), [c](u"T") and [d]( u "T" )
+```
+
+```tern {.live}
+[a](u (T)) and [b](u "T" x)
+```
+
+### Escapes, entities and normalisation {#normalisation}
+
+As in CommonMark:
+- Backslash escapes and entities apply in destinations and titles. An escaped `(` does not count for balance.
+- The destination is normalised: unsafe characters (a space, for example) and non-ASCII characters are percent-encoded, and an existing `%XX` is kept.
+- `&` is escaped as `&amp;` in the HTML attribute.
+
+```tern {.live}
+[a](/a\(b "T &amp; U"), [b](/caf&eacute;), [c](/é%20x) and [q](/s?a=1&b=2)
+```
+
+### Links inside links {#nested-links}
+
+Links cannot nest: the inner one wins, and the outer brackets are text (see [Phase 2](#resolve)). Other constructs may hold links, and a link may hold an image:
+
+```tern {.live}
+[a [b](u) c](v), [see [x](u) now]{.n}, :kbd[[a](u)] and [![a](i.png)](u)
+```
+
+References and bare URLs inside link text are text, so nothing dangles and no link nests:
+
+```tern {.live}
+[mail @bob](https://example.com) and [see https://x.org](https://example.com)
+```
+
+### Fragment links {#fragment-links}
+
+A link whose destination is `#id` points into the note. The `refs` transform checks it: when no element has that id, it gets [`ref.dangling`](diagnostics.html#ref-dangling) (warning) at the link's `[`, and it stays a link. This is how to give a reference your own text (see [References](#reference)).
+
+```tern {.live expect="ref.dangling"}
+## Kernel {#kernel}
+
+See [the kernel](#kernel), not [the proof](#missing).
+```
+
+### What is not a link {#not-links}
+
+There are no reference links and no link definitions. `[a][b]` and `[c][]` are text, and so is a line shaped like a definition:
+
+```tern {.live}
+[a][b] and [c][]
+
+[a]: /url
+```
+
+A second pair of parentheses after a link is text:
+
+```tern {.live}
+[a](https://example.com)(v)
+```
+
+A backtick inside a destination that pairs with a later backtick makes a code span first, which breaks the link (see [Residual cases](#residual-backticks)).
+
+**Diagnostics.** A glued group that does not parse stays text after the link, with [`attr.malformed`](diagnostics.html#attr-malformed) (warning); a fragment link with no target gets `ref.dangling`.
+
+```tern {.live expect="attr.malformed"}
+[t](https://example.com){.a "b"}
+```
+
+**Writing it literally.** `\[` keeps a bracket from opening anything: `\[a](u)` is text.
+
+## Images {#images}
+
+A link with a `!` in front is an image.
+
+:::syntax
+```tern
+![alt text](photo.jpg)
+![alt text](photo.jpg "Title"){width=50%}
+![caption](photo.jpg){#fig-id alt="what the image shows"}
+```
+:::
+
+```tern {.live}
+A tern: ![A tern diving](tern.jpg "Sterna hirundo"){width=120}.
+```
+
+**Rules.**
+- The destination and the title follow the [link rules](#destinations).
+- The `alt` is the plain text of the bracket content: emphasis, code and math are reduced to their text.
+- An `alt=` attribute replaces it, on any image.
+- A glued group binds to the `<img>`: any group, including a weak one such as `{hidden}`. As on a link, `tag=` gets `tag.not-allowed` (see [Reserved keys](#reserved-keys)).
+- `![` opens an image only when no `^` follows: `![^a]` is `!` and a footnote reference.
+- `![a]{.c}` is the text `!` followed by a span: an image needs a destination.
+- An image may sit inside a link.
+
+```tern {.live}
+See ![*a* `b`](i.png) and ![Bracket](a.png){alt="Attribute" hidden}.
+```
+
+```tern {.live}
+![a]{.c} and [![logo](logo.png)](https://example.com)
+```
+
+**Implicit figures.** An image that is alone in its paragraph, carries an `#id` (on the image, or on an attribute line before the paragraph) and is not already inside a figure becomes a figure: the bracket text is the caption, and the `alt` is `alt=` or empty, so the caption is read once. An image with an id inside other text stays an image. See [Figures](elements.html#figures).
+
+```tern {.live}
+![An osprey in flight.](osprey.jpg){#fig-osprey alt="An osprey"}
+
+Inline, ![an icon](icon.png){#icon} stays an image.
+```
+
+With the demo schema (see [the demo schema](schema.html#demo-schema)), `figure` is counted, and the figure gets a label:
+
+```tern {.live schema=demo}
+![An osprey in flight.](osprey.jpg){#fig-osprey alt="An osprey"}
+```
+
+**Writing it literally.** `\!` keeps the `!` out of the link: `\![a](u)` is `!` followed by a link.
+
+```tern {.live}
+\![a](https://example.com)
+```
+
+## Bare spans {#span}
+
+Brackets followed by an attribute group make a `<span>` with those attributes.
+
+:::syntax
+```tern
+[the term]{.term #k}
+[answer]{hidden}
+```
+:::
+
+```tern {.live}
+The [kernel]{.term #k} and the [answer]{hidden}.
+```
+
+**Rules.**
+- A `]` immediately followed by a group that parses closes the span: this is the third outcome of a bracket, after links and images.
+- Any group works, weak ones included.
+- The output is `<span>` with the attributes, and no `data-t`: a span has no name. `tag=` cannot change the element: it gets `tag.not-allowed` and is dropped (see [Reserved keys](#reserved-keys)); a named element, `:name[…]{tag=…}`, can.
+- The content is ordinary inline content, and spans nest.
+- Otherwise both brackets are text.
+
+```tern {.live}
+[*a* `b`]{.c}, [a [b]{.y}]{.x} and [see [x](u) now]{.n}
+```
+
+Brackets with nothing glued after them are text, silently. So is `{}`, which is never a group:
+
+```tern {.live}
+[1, 2], f[x], [not a link] f(x), [x] {.c} and [x]{}
+```
+
+A group that fails to parse is reported, except `{}` and an aborted candidate (a `{` inside the group). After a bracket, any `{` is a candidate, so even `{1, 2}` is reported:
+
+```tern {.live expect="attr.malformed attr.malformed"}
+[x]{.a "b"} and [y]{1, 2}, but [z]{.a {b}} is silent.
+```
+
+**Diagnostics.** [`attr.malformed`](diagnostics.html#attr-malformed) (warning) at the first character the grammar rejects.
+
+**Writing it literally.** `\[` or `\{`: `[x]\{.c}` keeps its brackets and braces as text.
+
+```tern {.live}
+[x]\{.c}
+```
+
+## Named inline elements {#inline-element}
+
+A colon, a name and brackets make a named element, such as `<kbd>` or `<abbr>`.
+
+:::syntax
+```tern
+:kbd[Ctrl]
+:abbr[HTML]{title="HyperText Markup Language"}
+:ruby[漢:rt[kan]]
+:name[content]{#id .class key=value}
+```
+:::
+
+```tern {.live}
+Press :kbd[Ctrl]+:kbd[S]. :abbr[HTML]{title="HyperText Markup Language"} has :ruby[漢:rt[kan]].
+```
+
+### Where an element opens {#element-opening}
+
+- A `:` that is not preceded by an ASCII letter, digit, `_`, `:` or `/`;
+- immediately followed by a NAME: a letter of any script, then letters, marks, digits, `_` or `-`;
+- immediately followed by `[`.
+
+The test on the character before is ASCII only, so `漢:rt[kan]` opens an element after a Han character.
+
+None of these opens an element, and all are silent (the last one starts with a bare autolink):
+
+```tern {.live}
+Meet at 10:30[x]. Note: [x], :) :smile: :1[x], :kbd [x], ::before, x_:kbd[S], /users/:id[0] and http://x[1].
+```
+
+### Content and closing {#element-content}
+
+- The content is inline content. Brackets nest inside it, atoms protect a `]`, and it may cross soft line breaks.
+- The element closes at its matching `]`. A group glued after it binds to the element; any group.
+- A `(…)` after the `]` is text: an element is never a link.
+- Elements may hold links, and links may hold elements.
+- Emphasis never crosses the element's brackets.
+
+```tern {.live}
+:kbd[a [b] c], :kbd[`]`], :kbd[Ctrl
+S], :kbd[a]{.big #k hidden} and :kbd[a](u)
+```
+
+```tern {.live}
+:kbd[[a](u)], [:kbd[a]](u) and :kbd[https://x]
+```
+
+### Which element it becomes {#element-resolution}
+
+The name decides the element, through these steps (the full rules are in [Elements and output](elements.html#names)):
+1. A **reserved name** (`script`, `style`, `main`, `tern`, any `t-*` name, and the others listed in [Reserved names](elements.html#reserved)) becomes a plain `span` without the name as its class, with [`name.reserved`](diagnostics.html#name-reserved) (warning). A `tag=` on it is dropped, with `attr.malformed`.
+2. `{tag=x}` picks the element, when `x` is in the inline allowlist. A reserved `x` gets `name.reserved`; any other `x` outside the list gets [`tag.not-allowed`](diagnostics.html#tag-not-allowed) (warning). Either way the next steps decide.
+3. The schema's inline entry for the name, through its `tag`, checked against the same allowlist: a reserved tag gets `name.reserved` at the name, any other outside the list `tag.not-allowed`, and the next steps decide. Only inline entries count: a block entry named `note` does not apply to `:note[…]`.
+4. A valid custom-element name (lower case, starting with `a`–`z`, containing `-`) becomes that element.
+5. A name in the inline allowlist becomes that element.
+6. Anything else is a `span` with the name as its class.
+
+The inline allowlist is `abbr b bdi bdo button cite code data del dfn em i ins kbd mark q rp rt ruby s samp small span strong sub sup time u var wbr`. `a`, `img` and `br` are left out on purpose: links, images and `\` already spell them. See [Allowlists](elements.html#allowlists).
+
+The output is `<TAG id class="NAME …" data-t="NAME" …>content</TAG>`: the name is the first class and the `data-t`, which CSS and `tern.define` key on (see [The output contract](elements.html#output-contract)).
+
+```tern {.live}
+:sub[2] :sup[n] :mark[m] :q[x] :var[v] :small[s]
+```
+
+```tern {.live}
+:a[x] :img[y] :div[w] :aside[note *now*]{#a} :my-chip[x]{a=1} and :x[a]{tag=kbd}
+```
+
+Names are case-sensitive, like every name in Tern: `:KBD[x]` is not `kbd`.
+
+```tern {.live}
+:KBD[x] and :über[x]
+```
+
+```tern {.live expect="tag.not-allowed"}
+:x[a]{tag=div}
+```
+
+```tern {.live expect="name.reserved"}
+:script[x]
+```
+
+```tern {.live expect="name.reserved attr.malformed"}
+:script[x]{tag=kbd}
+```
+
+### Labels on inline elements {#element-labels}
+
+A schema can give an inline name a `label`, and a `counter` to number it. The element then starts with its label as real text, `<span class="t-label">`, followed by a space when there is content. A counted element's label carries its number. A void element gets no label. A reference to a labelled element that has no counter and no title shows the label. How labels and counters are declared is in [Vocabulary and behaviour](schema.html#fields).
+
+No schema these examples can use declares an inline label, so here is the source and its output, without a live example. With this schema:
+
+```js
+window.TERN = {schema: {inline: {
+  term: {label: 'Term'},
+  ex: {counter: 'ex', label: 'Ex.'},
+  def: {tag: 'dfn', label: 'Def.'},
+}}};
+```
+
+this note:
+
+```tern
+:term[kernel], :def[image]{#d}, :ex[one], :ex[two] and :term[]. See @d.
+```
+
+renders as (line breaks added):
+
+```html
+<p><span class="term" data-t="term"><span class="t-label">Term</span> kernel</span>,
+<dfn id="d" class="def" data-t="def"><span class="t-label">Def.</span> image</dfn>,
+<span class="ex" data-t="ex"><span class="t-label">Ex. 1</span> one</span>,
+<span class="ex" data-t="ex"><span class="t-label">Ex. 2</span> two</span> and
+<span class="term" data-t="term"><span class="t-label">Term</span></span>.
+See <a class="t-ref" href="#d">Def.</a>.</p>
+```
+
+### Void elements {#void-elements}
+
+`wbr` is a void element: it holds no content, so `:wbr[]` is how to write it. Content given to it is emitted after the element, with [`leaf.void-content`](diagnostics.html#leaf-void-content) (warning) at the `:`, as for a [void leaf](syntax-blocks.html#leaf):
+
+```tern {.live expect="leaf.void-content"}
+Super :wbr[]califragilistic, and :wbr[x] word.
+```
+
+### Diagnostics {#element-diagnostics}
+
+**`inline.glued`** (info, at the `:`). A `:NAME[` right after an ASCII letter or digit is text. It looks like a missing space, as in `press:kbd[S]`, so it gets a hint: "put a space before `:kbd[`". After `_`, `:` or `/` the text is silent. See [`inline.glued`](diagnostics.html#inline-glued).
+
+```tern {.live expect="inline.glued inline.glued"}
+Then press:kbd[S] to save; a:b[c] too.
+```
+
+**`inline.unclosed`** (warning, at the `[`). An element with no matching `]` stays text; the content after it is still parsed. Each unclosed opener reports at its own `[`. See [`inline.unclosed`](diagnostics.html#inline-unclosed).
+
+```tern {.live expect="inline.unclosed"}
+Press :kbd[Ctrl and *go*.
+```
+
+Brackets nest, so a plain `[` inside takes the only `]`, and the element is left open:
+
+```tern {.live expect="inline.unclosed"}
+:kbd[[x]
+```
+
+An unmatched plain `[` is silent, and the element after it closes normally:
+
+```tern {.live}
+[x and :kbd[y]
+```
+
+**`attr.malformed`** (warning): a glued group that does not parse stays text after the element.
+
+```tern {.live expect="attr.malformed"}
+:kbd[a]{=x}
+```
+
+**`name.unknown`** (info) fires on the `span` fallback only when the schema is strict, and only for a name the schema does not declare at all (see [Vocabulary and behaviour](schema.html#schema)).
+
+**Writing it literally.**
+- `\:` before the name: `\:kbd[x]` is text.
+- `\]` inside the content is a literal bracket, not the closer.
+- `` \` `` inside the content is a literal backtick. A bare one would pair with a later backtick (see [Residual cases](#residual-lone-backtick)).
+- In a table row, a `|` inside an element must be written `\|`: elements are not atoms, so the row splitter sees their pipes.
+
+```tern {.live}
+\:kbd[x], :kbd[\]] and :kbd[\`]
+```
+
+## References {#reference}
+
+An `@` before an id makes a link to that element, with text taken from the target: "Theorem 1", "(2)", a heading's text.
+
+:::syntax
+```tern
+@id
+@id{ref=label}  @id{ref=number}  @id{ref=title}  @id{ref=full}
+@id{}
+```
+:::
+
+This example uses the demo schema, which counts and labels theorems (see [the demo schema](schema.html#demo-schema)). Equations with an id are numbered by the core:
+
+```tern {.live schema=demo}
+:::theorem[Rank–nullity]{#thm-rn}
+If $V$ is finite-dimensional, $\dim V = \dim \ker T + \dim \operatorname{im} T$.
+:::
+
+$$ e^{i\pi} + 1 = 0 $$ {#eq-euler}
+
+By @thm-rn and @eq-euler.
+```
+
+The output is `<a class="t-ref" href="#id">`, filled by the `refs` transform. A reference may come before its target. See [References](elements.html#references) for how the text is made.
+
+### Where a reference starts and ends {#ref-extent}
+
+- **It opens** at an `@` that is not preceded by an ASCII letter, digit, `_`, `-`, `.`, `/` or `@`, and is followed by an IDENT: a letter or `_`, then letters, marks, digits, `_` or `-`. An IDENT has no `:`, no `.` and no `'`.
+- **Trailing hyphens** are given back to the text: `@kernel--` is `@kernel` followed by `--`.
+- **It ends** where the IDENT ends, and the IDENT runs as far as it can, through letters of any script. To end it early, write a space, or `{}`: right after a reference, `{}` is consumed as a terminator with no attributes.
+- **A glued group** binds to the `<a>`; any group. `ref=` in it chooses the text (below). A reference is the only place `ref=` applies: anywhere else it gets `attr.malformed` (see [Reserved keys](#reserved-keys)).
+- **The fragment** is emitted as written (`href="#résumé"`): it is an id, not a URL, so it is not percent-encoded.
+
+```tern {.live}
+## Kernel {#kernel}
+
+See @kernel: (@kernel), "@kernel", [@kernel], —@kernel, @kernel's dimension, the @kernel-- and @kernel{.x}.
+```
+
+The test on the character before is ASCII only, so a reference glued to CJK text before it opens. After it, the IDENT swallows CJK text; end it with a space or `{}`:
+
+```tern {.live}
+## Kernel {#kernel}
+
+これは@kernel です, これは@kernel{}です
+```
+
+IDENT is Unicode:
+
+```tern {.live}
+## Résumé {#résumé}
+
+See @résumé.
+```
+
+### The text {#ref-text}
+
+Unless `ref=` says otherwise, the text depends on the target:
+
+| Target | Text |
+|---|---|
+| a counted block (a theorem, a figure, a titled fence when the schema counts them) | its label and number: `Theorem 1` |
+| an equation | its number in parentheses: `(1)` |
+| a heading | its inline content |
+| a titled block that is not counted | its title |
+| a labelled block that is neither counted nor titled (`:::proof{#pf}`) | its label: `Proof` |
+| anything else | the id |
+
+The text is a copy, flattened so that links never nest: links inside it are unwrapped, footnote references are dropped, and references become their target's plain text. Without a schema, nothing is counted or labelled:
+
+```tern {.live}
+:::theorem[Rank–nullity]{#thm-rn}
+Body.
+:::
+
+The [kernel]{#k} is closed. See @thm-rn and @k.
+```
+
+### Choosing the text: `ref=` {#ref-option}
+
+| `ref=` | Text | Example |
+|---|---|---|
+| `label` | the label and number | `Theorem 1` |
+| `number` | the number alone | `1` |
+| `title` | the title | `Rank–nullity` |
+| `full` | the label, the number and the title | `Theorem 1 (Rank–nullity)` |
+
+With the demo schema:
+
+```tern {.live schema=demo}
+:::theorem[Rank–nullity]{#thm-rn}
+Body.
+:::
+
+@thm-rn · @thm-rn{ref=label} · @thm-rn{ref=number} · @thm-rn{ref=title} · @thm-rn{ref=full}
+```
+
+- Any other value gets [`attr.malformed`](diagnostics.html#attr-malformed) (warning) at the value, and the default text.
+- A part the target lacks (`ref=title` on an untitled block, `ref=number` on a heading) gives the default text, silently.
+- A group after a space is not glued, so it is text and chooses nothing.
+
+```tern {.live expect="attr.malformed"}
+## Kernel {#kernel}
+
+@kernel{ref=number}, @kernel{ref=bogus} and @kernel {ref=title}.
+```
+
+**Your own text.** A reference with custom text is an ordinary fragment link, which the `refs` transform validates too (see [Fragment links](#fragment-links)):
+
+```tern {.live}
+## Kernel {#kernel}
+
+See [the null space](#kernel).
+```
+
+### What is not a reference {#not-references}
+
+E-mail addresses, numbers, an `@` before a space, an `@` after a slash, and `@` inside code, math or link text:
+
+```tern {.live}
+Write to me@x.org. In @2024 we met @ noon at a/@b. `@alice`, $@alice$ and [mail @bob](https://example.com).
+```
+
+### Dangling references {#ref-dangling}
+
+A reference whose id names nothing in the note stays literal text, with [`ref.dangling`](diagnostics.html#ref-dangling) (warning) at the `@`. The hint is the escape: `\@alice`.
+
+```tern {.live expect="ref.dangling"}
+Thanks @alice!
+```
+
+**Writing it literally.** `\@` is a literal `@`:
+
+```tern {.live}
+Thanks \@alice!
+```
+
+## Footnote references {#footnote-reference}
+
+A caret label in brackets refers to a footnote, defined elsewhere in the note with `[^label]:` (see [Footnote definitions](syntax-blocks.html#footnote-definition)).
+
+:::syntax
+```tern
+text.[^label]
+
+[^label]: The footnote.
+```
+:::
+
+```tern {.live}
+Both are subspaces.[^subspace]
+
+[^subspace]: Closed under addition and scaling.
+```
+
+**Rules.**
+- It is exactly `[^LABEL]`. A LABEL is letters, marks, digits, `_` and `-`; digits may come first.
+- It is an atom, rendered as `<sup class="t-fnref"><a id="fnref-LABEL" href="#fn-LABEL">N</a></sup>`.
+- Footnotes are numbered, and listed at the end of the note, in order of first reference.
+- A repeated reference shows the same number and gets the id `fnref-LABEL-2`, then `-3`, and so on.
+- It may follow `!`: `Wow![^a]` is `Wow!` and a reference.
+- A strong group glued after it binds to the `<sup>`.
+- `[^]` and `[^ x]` are text.
+
+```tern {.live}
+Cites b[^b] then a[^a], and b[^b]{.again} again.
+
+[^a]: Note A.
+[^b]: Note B.
+```
+
+**Labels are case-insensitive.** Two labels match when their `label.toLowerCase().toUpperCase()` are equal, so `[^A]` reaches `[^a]:`, and `[^ß]` reaches `[^ss]:`. The ids use the *definition's* label as written:
+
+```tern {.live}
+Once[^KERNEL], twice[^kernel], and Straße[^ß].
+
+[^Kernel]: Mixed case.
+[^ss]: Folded.
+```
+
+```tern {.live}
+One[^1], two[^2b], three[^x_3-c]; empty [^] and spaced [^ x] stay text.
+
+[^1]: Digits only.
+[^2b]: Digit first.
+[^x_3-c]: Letters, digits, underscore and hyphen.
+```
+
+**Diagnostics.**
+- [`footnote.undefined`](diagnostics.html#footnote-undefined) (warning, at the `[`): no definition has the label. The reference stays literal.
+- [`footnote.nested`](diagnostics.html#footnote-nested) (warning): a reference inside a footnote definition stays literal. Footnotes cannot nest.
+
+```tern {.live expect="footnote.undefined"}
+See the note[^missing].
+```
+
+```tern {.live expect="footnote.nested"}
+Text.[^a] More.[^b]
+
+[^a]: See also[^b].
+[^b]: The other.
+```
+
+**Writing it literally.** `\[^x]` or `[\^x]`; neither draws the LaTeX hint.
+
+```tern {.live}
+\[^x] and [\^x]
+```
+
+## Autolinks {#autolinks}
+
+A URL becomes a link by itself, in angle brackets or bare.
+
+:::syntax
+```tern
+<https://example.com/a?b=1>
+<someone@example.com>
+https://example.com/a
+```
+:::
+
+```tern {.live}
+<https://a.b/c?d=1&e=2>, <me@x.org> and https://example.com/docs.
+```
+
+### Angle autolinks {#angle-autolinks}
+
+CommonMark's rule:
+- `<`, a scheme (a letter, then 1 to 31 letters, digits, `+`, `.` or `-`), `:`, then no spaces, `<`, `>` or control characters, then `>`. Any scheme works.
+- Or `<`, an e-mail address, `>`, which gets `mailto:`.
+- The text is the URL as written. `&` is escaped in both the `href` and the text.
+- It is an atom: nothing inside is Tern.
+- A strong group glued after the `>` binds to the `<a>`.
+
+```tern {.live}
+<ftp://x.org/f>, <mailto:me@x.org>, <ab:c>, <https://x.org/*a*> and <https://x.org>{.ext}
+```
+
+A space ends any chance of an angle autolink, and a one-letter scheme is not one:
+
+```tern {.live}
+<https://a b> and <a:b>
+```
+
+### Bare URLs {#bare-urls}
+
+- **Starts.** `http://` or `https://`, in any case, at the start of the inline content, or after whitespace or one of `(` `[` `|` `*` `~` `=` `"` `'` `>`. So `(https://…)` and `<b>https://…</b>` link. After a letter, a digit or anything else, it is text.
+- **Stops** at whitespace or any of `<` `>` `[` `]` `{` `}` `|` `"` and the backtick.
+- **Trimmed.** Trailing `.` `,` `:` `;` `!` `?` `'` `*` `~` `=` `\` are left out, and so is a final `)` that has no partner inside the URL. Trimming repeats until nothing changes.
+- **Empty.** A scheme with nothing after it (once trimmed) is text: `http://` alone.
+- **Atom.** It never consumes a bracket, brace or pipe, so the structure around it holds.
+- **Group.** It stops at `{`, so a strong group glued there binds to the link; a weak one stays text.
+- The text and the `href` are the URL as written.
+
+```tern {.live}
+See https://x.com/_a_/docs. Or https://x.org/a, https://x.org/b; maybe https://x.org/c? (https://x.org/d)
+```
+
+Balanced parentheses stay, an unbalanced final one is trimmed, and trimming repeats:
+
+```tern {.live}
+https://en.wikipedia.org/wiki/Foo_(bar) and (see https://x.org).
+```
+
+The trim set includes `*`, `~`, `=` and `\`, so a URL gives back a closing delimiter or a hard break:
+
+```tern {.live}
+**https://x.org**, ==https://x.org== and https://x.org\
+next line
+```
+
+It starts after quotes and a tag's `>`, and stops at the characters that structure the text around it:
+
+```tern {.live}
+"https://a.b" and 'https://a.b', <b>https://x.org</b>, [https://x.org]{.u}, :kbd[https://x], https://a.b/c<d and https://a.b/g`h`
+```
+
+```tern {.live}
+| URL | Note |
+|---|---|
+|https://a.b|note|
+```
+
+The scheme is matched in any case. Other schemes, `www.` addresses and URLs glued to a word are text:
+
+```tern {.live}
+HTTPS://x.org and Http://y.org; ftp://x.org, www.example.com, xhttps://a.b; http:// alone.
+```
+
+A bare URL is an atom, so stars, tildes and an `@` inside it are not syntax, and a strong group glued after it binds to it:
+
+```tern {.live}
+https://x.org/a*b*c, https://x.org/?@kernel and https://x.org{.ext}
+```
+
+Inside link text, code and math, a URL is not a link:
+
+```tern {.live}
+[see https://x.org](https://example.com), `https://x.org` and $https://x.org$
+```
+
+**Writing it literally.** `https\://x` is text: the escaped colon breaks the scheme. For an angle form, `\<`.
+
+```tern {.live}
+https\://x.org and \<https://x.org>
+```
+
+## Raw inline HTML {#raw-inline-html}
+
+Lower-case phrasing tags, custom-element tags and comments pass through unchanged.
+
+:::syntax
+```tern
+x <b class="y">z</b> <br> <span style="color:red">r</span> <!-- c -->
+```
+:::
+
+```tern {.live}
+x <b class="y">z</b> <br> <span style="color:red">r</span> <!-- c -->
+```
+
+### What passes through {#inline-tags}
+
+- An open tag, a closing tag or a comment that matches CommonMark's tag grammar. A `>` may appear inside a quoted attribute value.
+- The name must be lower case, and either a phrasing element or a valid custom-element name (lower case, starting with `a`–`z`, containing `-`).
+- The phrasing elements are: `a abbr audio b bdi bdo br button canvas cite code data datalist del dfn em embed i iframe img input ins kbd label mark meter object optgroup option output picture progress q rp rt ruby s samp select small source span strong sub sup time track u var video wbr`.
+- Each tag or comment is its own atom: an `html` node with `data.tern.kind: "inline"`. The content *between* an opening and a closing tag is ordinary Tern.
+- A comment is `<!--` up to `-->`; `<!-->` and `<!--->` are complete comments. A comment with no `-->` in the same inline content is text.
+- A line that starts with a phrasing tag begins a paragraph (block-level tags start a [raw HTML block](syntax-blocks.html#raw-html) instead).
+
+```tern {.live}
+Press <kbd>*Ctrl*</kbd> now. A <span title="a > b">tip</span>, <tide-clock station="leith"></tide-clock>, a<br>b and <a href="https://example.com">a raw link</a>.
+```
+
+Form controls are phrasing, so a small form works inline:
+
+```tern {.live}
+<label>Size <select name="s"><option>M</option><option>L</option></select></label> <input name="q"> <button>Go</button>
+```
+
+```tern {.live}
+a <!--> b <!---> c, and an unclosed <!-- comment is text
+```
+
+### `svg`, `math` and `textarea` {#verbatim-tags}
+
+An inline `<svg …>`, `<math …>` or `<textarea …>` is taken verbatim up to its own closing tag, as one node: nothing inside is parsed. The closing tag matches in any case, with optional whitespace before its `>` (`</svg >`). Without that closing tag in the same inline content, the `<` is text, with `html.inline-escaped`.
+
+```tern {.live}
+A dot <svg width="8" height="8"><circle cx="4" cy="4" r="4"/></svg > and <textarea name="n">*raw* <div> @x</textarea>.
+```
+
+```tern {.live expect="html.inline-escaped html.inline-escaped"}
+A <svg width="8"> and a <textarea> are *never* closed.
+```
+
+### Everything else is text {#inline-html-text}
+
+Everything else is text, with `<` escaped as `&lt;`:
+- comparisons and generics: `a < b`, `<3`, `Vec<T>`, `List<int>`, `Box<A>`;
+- non-phrasing names (`<div>`, `<p>`) and obsolete ones (`<center>`);
+- any name with an upper-case letter: `<B>`, `<Span>`;
+- processing instructions, declarations and CDATA.
+
+Lower case only is on purpose. Single-capital generics (`<A>`, `<B>`, `<I>`, `<S>`, `<U>`, `<Q>`) would otherwise open `a`, `b`, `i`, `s`, `u` and `q`.
+
+```tern {.live}
+a < b, <3, Vec<T>, List<int>, Rust's Box<A>, old <center>x</center>, <?php x ?> and <!DOCTYPE html>.
+```
+
+### Diagnostics {#inline-html-diagnostics}
+
+**`html.inline-escaped`** (info, at the `<`). An escaped *start* tag that names a current HTML element, never an end tag. It fires on:
+- a lower-case non-phrasing name (`<div>`, `<body …>`, `<p>`). Hint: "put block HTML on its own line";
+- a name with an upper-case letter and two or more characters (`<DIV>`, `<Span>`, `<EM>`, `<H1>`), always. Hint: "inline tags are lower-case: write `<b>`" (with the name in lower case);
+- a single upper-case letter (`<A>`, `<B>`, `<I>`, `<Q>`, `<S>`, `<U>`) only when a matching end tag (`</B>`, compared case-insensitively) follows it in the same inline content. So `<B>bold</B>` gets the hint, and `Box<A>`, `Vec<T>` and `List<B>` stay silent.
+
+See [`html.inline-escaped`](diagnostics.html#html-inline-escaped).
+
+```tern {.live expect="html.inline-escaped"}
+Wrap it in a <div>x</div> first.
+```
+
+```tern {.live expect="html.inline-escaped html.inline-escaped html.inline-escaped"}
+An <EM>old</EM> tag, a <Div> and an <H1> too.
+```
+
+```tern {.live expect="html.inline-escaped"}
+Old pages wrote <B>bold</B>, but List<B> is a type.
+```
+
+**`html.inline-unclosed`** (warning, at the tag). Inline content opens a non-void phrasing tag, or a custom element, and never closes it. The browser would carry a formatting tag such as `<b>` into the following paragraphs. Void elements (`br`, `img`, `input`, `wbr` …) and those whose end tag HTML lets you omit (`rt`, `rp`, `option`, `optgroup`) are exempt. A tag closed in the next paragraph is still unclosed in its own. See [`html.inline-unclosed`](diagnostics.html#html-inline-unclosed).
+
+```tern {.live expect="html.inline-unclosed"}
+This is <b>bold forever. But a<br>b, <img src="x.png" alt=""> and <wbr> are fine.
+```
+
+```tern {.live expect="html.inline-unclosed"}
+The tide is <tide-clock station="leith">never closed.
+```
+
+**`html.stray-closer`** (info, at the `<`). An end tag that passes through has no matching open tag before it in the same inline content. The tag still passes through. As for `html.inline-unclosed`, void elements and those whose end tag HTML lets you omit are exempt: `</br>`, `</wbr>`, `</rt>` and `</option>` are silent. An escaped end tag (`</div>`, `</B>`) is text, with no diagnostic. See [`html.stray-closer`](diagnostics.html#html-stray-closer).
+
+```tern {.live expect="html.inline-unclosed html.stray-closer"}
+Start <b>bold
+
+end</b> here.
+```
+
+```tern {.live expect="html.stray-closer"}
+A stray </b> here; </br>, </wbr>, </rt> and </option> are exempt.
+```
+
+**A residual.** `x <b and c> y` matches CommonMark's tag grammar (a `b` tag with the attributes `and` and `c`), so it is a raw `<b>` tag. See [Residual cases](#residual-inline-html).
+
+**Safe mode.** With `safe: true`, every raw tag and comment is escaped and shown as text (see [Safe rendering](elements.html#safe)).
+
+**Writing it literally.** `\<` is a literal `<` that opens nothing.
+
+```tern {.live}
+\<b>not bold\</b>
+```
+
+## Entities {#entities}
+
+HTML character references work as in HTML.
+
+:::syntax
+```tern
+&nbsp;  &copy;  &#8704;  &#x2203;
+```
+:::
+
+```tern {.live}
+AT&T, 10&nbsp;km, &copy; 2026, &#8704; and &#x2203;
+```
+
+**Rules.**
+- A well-formed reference passes through as written: a decimal one (`&#` and 1 to 7 digits and `;`), a hexadecimal one (`&#x` and 1 to 6 hex digits and `;`), or a named one that HTML defines.
+- Any other `&` is escaped as `&amp;`: a name HTML does not define, a missing `;`, a reference with no digits.
+- An entity is an atom: `&#42;` is a star in the text, never a delimiter, and `&#91;` never opens a link.
+- `&nbsp;` is the documented non-breaking space.
+- Inside code and math an entity is not decoded. In link destinations and titles it is.
+- In the AST, an entity is a `text` node whose `value` is the decoded character, and whose `data.tern.entity` is the spelling, which the emitter writes back.
+
+```tern {.live}
+&copy 2026, &#x;, &foo; and &bogus; are text; &amp; is an entity.
+```
+
+```tern {.live}
+&#42;not em&#42; and &#91;not a link&#93;(u); `&amp;` and $a &amp; b$.
+```
+
+**Writing it literally.** `\&` is a literal `&` that cannot start an entity:
+
+```tern {.live}
+\&amp; shows the spelling.
+```
+
+## Soft breaks and text {#soft-break}
+
+- A newline inside inline content is a soft break, emitted as a newline; the browser shows it as a space.
+- Each line of a paragraph loses its leading and trailing whitespace.
+- `<`, `>`, `&` and `"` in text are escaped.
+- In the AST, adjacent text and soft breaks merge into one `text` node holding the `\n` (see [The AST](api.html#ast)).
+
+```tern {.live}
+one
+  two
+a < b & c > d "e"
+```
+
+`#`, `%`, a lone `~` or `^`, and TeX's marks outside math are plain text:
+
+```tern {.live}
+Use C# and #tags; see #1. x^2, a ~ b, ~x~, ^y^ and 100% stay text.
+```
+
+## The ambiguity rules, delimiter by delimiter {#ambiguity}
+
+Every special character, when it is syntax, when it is text, how to write it literally, and the cases that are accepted although they may surprise. The rows about line starts are covered in detail in [Syntax: blocks](syntax-blocks.html#line-algorithm).
+
+| Delimiter | Is syntax when | Is text when | Literal | Known residual |
+|---|---|---|---|---|
+| `\` | before ASCII punctuation (an escape); at the end of a paragraph line (a break); at the end of a table row (a continuation) | before anything else; at the end of a block or a one-line construct | `\\` | `\\` at the end of a line is a literal `\` ([`latex.linebreak`](#latex-linebreak)) |
+| a backtick run | a run of the same length follows in the same paragraph, row or title | no match | a longer run around it | a [lone backtick](#residual-lone-backtick) pairs with a later one; a backtick in a [destination or attribute value](#residual-backticks) pairs as code |
+| `` $` `` | always opens verbatim math | no closing run | `\$` | — |
+| `$` | [the dollar rule](#dollar-rule): opener, first-dollar-decides closer, bracket clause, at most one line break | everything else | `\$` | `$5 then x$`, `$100 (US$)`, `$5-$x$` are math; `math.suspect-price` flags the first ([dollars](#residual-dollars)) |
+| `$$` at line start | a display block | text follows the closing `$$` on the same line | `\$$` | — |
+| `$$` mid-line | never | always (`math.inline-display`) | — | — |
+| `*` | CommonMark delimiter runs | surrounded by spaces; unmatched | `\*` | `2*3*4` is `2<em>3</em>4` ([emphasis](#residual-emphasis)) |
+| `_` | never | always | — | — |
+| `~~`, `==` | runs of exactly 2, flanking, not glued to an ASCII letter or digit on the outside | `a==b`, `x == y`, other run lengths | `\~`, `\=` | — |
+| `~`, `^` alone | never (except in `[^`) | always | — | — |
+| `[` `]` | `](` gives a link or an image; `]{` gives a span; `[^LABEL]` is a footnote reference (also after `!`); `:NAME[` is an element | anything else, `[x]{}` included | `\[` | — |
+| `{` inline | glued after a closed construct; `{}` after a reference ends it, with no attributes | everywhere else | `\{` | — |
+| `{` alone on a line | a strong group: an attribute line | weak or unparsable: a paragraph | `\{` | — |
+| `{` at the end of a block line | on a heading: a strong group; on an opener, a leaf, a fence, a `$$` closer or `+++`: any group | otherwise heading text | — | — |
+| `:` inline | `:NAME[`, with the `:` not after an ASCII letter, digit, `_`, `:` or `/` | `a:b[c]`, `10:30[x]`, `http://x[1]`, `:)` | `\:` | `press:kbd[S]` is text ([`inline.glued`](#element-diagnostics)) |
+| `::` at line start | the whole line is a leaf | anything else (`leaf.demoted`) | `\::` | — |
+| `:::` at line start | a `:::NAME…` opener; a `:::` or `:::/NAME` closer | `::: name` and `:::{…}` are paragraphs, with a warning | `\:::` | a prose line starting `:::word` opens a block, by design ([below](#residual-colons)) |
+| `@` | `@IDENT`, not after an ASCII letter, digit, `_`, `-`, `.`, `/` or `@` | e-mail addresses, `@2024`, `@ x` | `\@` | a [mention](#residual-mentions) `@alice` is text with `ref.dangling`; `これは@kernelです` references `kernelです` ([CJK](#residual-cjk)) |
+| `#` | a heading at line start followed by a space; `#IDENT` inside braces | `#tag`, `#1`, `C#`, CSS inside `<style>` | `\#` | — |
+| `|` at line start | a table row (the start needs a delimiter row on the next line) | a `|` line with no delimiter row after it; `a | b` | `\|` | `| $a | b$ |` is one cell ([math across a pipe](#residual-pipe)) |
+| `|` in a row | a cell separator outside atoms | inside code, math, autolinks and raw tags | `\|` | inside `:kbd[…]` a pipe must be escaped ([below](#residual-element-pipe)) |
+| `+++` | alone, with optional attributes, inside a container | outside containers (`cell.orphan`); `+++ x`; `++` | `\+++` | — |
+| `---` `***` `___` | alone on a line: a thematic break | `|---|` (a table); `-- x` | `\---` | — |
+| `-` `*` `+`, `1.` `1)` | a list item at a block start, followed by a space | `2019. was` in the middle of a paragraph | `\-`, `2019\.` | `2019. was` after a blank line is a list ([lists in prose](#residual-lists)) |
+| `>` | a quote at line start, followed by a space or the end of the line | `>5`, `>=`, `a > b` | `\>` | — |
+| `<` at line start | a raw block for `<!--`, raw-text tags, block-level or custom tags | phrasing tags (a paragraph); `<3`; `< 5` | `\<` | a forgotten `</div>` makes [HTML soup](#residual-html-soup) up to the next `:::` line or the end (`html.unclosed`) |
+| `<` inline | an autolink, a comment, or a lower-case phrasing or custom tag | `a < b`, `Vec<T>`, upper case, non-phrasing tags (`html.inline-escaped` on some) | `\<` | `x <b and c> y` is a raw `<b>` tag ([inline HTML](#residual-inline-html)) |
+| `&` | a well-formed entity | otherwise | `\&` | — |
+| `http(s)://` | a bare autolink | inside link text, code or math; after a letter | `https\://` | — |
+| `!` | `![` not followed by `^` | elsewhere; `![^a]` is `!` and a footnote reference | `\!` | — |
+| `^` | `[^LABEL]` | elsewhere | `\^` | — |
+| `%` | never (a TeX comment inside math belongs to TeX) | always | — | — |
+
+Most residuals are shown live in [Residual cases](#residuals). Two are not in that list.
+
+### A prose line that starts with `:::word` {#residual-colons}
+
+A line starting with three colons and a name opens a container, wherever it appears, by design: `:::` at a line start is always structure.
+
+:::warning
+The rest of such a line is junk, shown as an error paragraph, and the container runs to the end of its parent, taking what follows with it.
+:::
+
+```tern {.live expect="block.unclosed block.opener-junk"}
+:::note
+Text
+
+:::warning about this
+:::
+```
+
+Write `\:::` at the start of such a line (see [Containers](syntax-blocks.html#container)).
+
+### A pipe inside a named element in a table row {#residual-element-pipe}
+
+Named elements are not atoms, so the row splitter sees a pipe inside one. Escape it as `\|`:
+
+```tern {.live expect="inline.unclosed table.extra-cell"}
+| A | B |
+|---|---|
+| :kbd[a|b] | c |
+```
+
+```tern {.live}
+| A | B |
+|---|---|
+| :kbd[a\|b] | c |
+```
+
+## Escapes {#escapes}
+
+A summary of where a backslash escapes, where it does not, and the escapes that keep a line from starting a block.
+
+### In prose {#escapes-prose}
+
+In paragraphs, headings, titles, cells, and leaf and element content:
+- `\` before ASCII punctuation is that character;
+- before anything else it is a literal backslash;
+- at the end of a paragraph line it is a hard break.
+
+See [Backslash escapes](#escape) and [Hard breaks](#hard-break).
+
+```tern {.live}
+## a\*b\* {#ab}
+
+| A |
+|---|
+| a\*b |
+
+::p[a\*b\*]
+```
+
+### At the start of a line {#line-start-escapes}
+
+These escapes turn a line that would start a block into text. Each one is shown below.
+
+| Escape | Keeps the line from being |
+|---|---|
+| `\#` | a heading |
+| `\>` | a blockquote |
+| `\-`, `\+`, `\*`, `1\.` | a list item |
+| `\|` | a table row |
+| `\:::`, `\::` | a container, a leaf |
+| `\$$` | display math |
+| `\{` | an attribute line |
+| `\<` | a raw HTML block |
+| `\[^x]:` | a footnote definition |
+| `\+++` | a cell separator |
+| `\---` | a thematic break |
+| ```` \``` ```` | a fence |
+
+A heading:
+
+```tern {.live}
+\# Not a heading
+```
+
+A quote:
+
+```tern {.live}
+\> Not a quote
+```
+
+The four list markers, each at the start of a line:
+
+```tern {.live}
+\- not a bullet
+\+ not a bullet
+\* not a bullet
+1\. not an item
+```
+
+A table: escape every line that would be read as a row, the delimiter row included. An unescaped delimiter row under a text line gets `table.stray-delimiter`.
+
+```tern {.live}
+\| a | b |
+\|---|---|
+```
+
+A container and a leaf:
+
+```tern {.live}
+\:::note is not a block.
+
+\::toc is not a leaf.
+```
+
+Display math:
+
+```tern {.live}
+\$$ is not display math
+```
+
+An attribute line:
+
+```tern {.live}
+\{#intro}
+Text
+```
+
+A raw HTML block:
+
+```tern {.live}
+\<div> is a tag name.
+```
+
+A footnote definition:
+
+```tern {.live}
+\[^x]: not a definition.
+```
+
+A cell separator, inside a container:
+
+```tern {.live}
+:::box
+One
+\+++
+Two
+:::
+```
+
+A thematic break; unescaped, `---` under a line of text is a rule, since Tern has no setext headings:
+
+```tern {.live}
+Text
+\---
+```
+
+A fence:
+
+````tern {.live}
+\```js is not a fence
+````
+
+### Where there are no escapes {#no-escapes}
+
+A backslash is an ordinary character:
+- inside code spans;
+- inside fences, the info's language and junk included;
+- inside raw HTML, block or inline;
+- inside raw bodies (`:::meta`, `:::macros`, `{raw}` containers);
+- inside attribute values, quoted or not: quoted values are literal, so `{pattern="\d+"}` means what it says.
+
+Link destinations and titles *do* take escapes and entities, as in CommonMark (see [Links](#normalisation)).
+
+```tern {.live}
+`\*`, [x]{title="a\*b" data-k=\.} and <span title="\*">b</span>
+```
+
+````tern {.live}
+```
+\*
+```
+````
+
+### In math {#escapes-math}
+
+Inside `$…$`, `$$` and `:::macros`, the backslash belongs to TeX. When looking for the closing dollar, the scanner only skips `\` + any character, so `\$` inside math is TeX's dollar, and `\\` is a pair that does not hide the dollar after it:
+
+```tern {.live}
+$\{x\}$, $\$$ and $a\\$ then $b$
+```
+
+### In table rows {#escapes-rows}
+
+- `\|` is a literal pipe in a row. It is not needed inside code or math, which are atoms.
+- A single `\` at the end of a row continues the row on the next line.
+- `\\` at the end of a row is a literal backslash, with no `latex.linebreak`.
+
+See [Tables](syntax-blocks.html#tables).
+
+```tern {.live}
+| A | B |
+|---|---|
+| `a|b` | c\|d |
+| one \
+  two | e\\ |
+```
+
+## Residual cases {#residuals}
+
+These cases are accepted and documented: the rules produce them on purpose, or the fix would cost more than it saves. Each comes with its fix.
+
+### Dollars {#residual-dollars}
+
+`$5 then x$`, `$100 (US$)` and `$5-$x$` are math: this is Pandoc's residue. `math.suspect-price` flags spans like the first. The fix is `\$`.
+
+```tern {.live expect="math.suspect-price"}
+$5 then x$
+```
+
+```tern {.live}
+$100 (US$) and $5-$x$
+```
+
+```tern {.live}
+\$5 then x$, \$100 (US$) and \$5-$x$
+```
+
+`$]0,1[$` and `$[0,1[$` are text, with `math.bracket`. Write verbatim math:
+
+```tern {.live expect="math.bracket math.bracket"}
+$]0,1[$ and $[0,1[$
+```
+
+```tern {.live}
+$`]0,1[` and $`[0,1[`
+```
+
+### Emphasis {#residual-emphasis}
+
+`2*3*4` is `2<em>3</em>4`, as in CommonMark, so CommonMark's examples import unchanged. Write it with spaces, in math, or with escaped stars:
+
+```tern {.live}
+2*3*4, but 2 * 3 * 4, $2 \cdot 3 \cdot 4$ and 2\*3\*4
+```
+
+### Inline HTML {#residual-inline-html}
+
+`x <b and c> y` is a raw `<b>` tag: it matches CommonMark's tag grammar, with the attributes `and` and `c`. It is loud, since the tag is never closed. Write `\<`, or use math:
+
+```tern {.live expect="html.inline-unclosed"}
+x <b and c> y
+```
+
+```tern {.live}
+x \<b and c> y, or $x < b$
+```
+
+### A lone backtick {#residual-lone-backtick}
+
+A lone backtick pairs with the next single backtick in the same paragraph or row. Inside a named element, the code span then swallows the element's `]`:
+
+```tern {.live expect="inline.unclosed"}
+Press :kbd[`] then type `x`.
+```
+
+Write `` \` ``:
+
+```tern {.live}
+Press :kbd[\`] then type `x`.
+```
+
+### Backticks in destinations and values {#residual-backticks}
+
+Code spans bind tighter than link destinations and attribute values, as in CommonMark. A backtick inside them pairs with a later backtick as code, and the link or the group is lost:
+
+```tern {.live}
+[a](x`y) `z`
+```
+
+```tern {.live}
+[w]{title="a`b"} `c`
+```
+
+Write `%60` in a destination, or `&#96;` in a quoted value:
+
+```tern {.live}
+[a](x%60y) `z` and [w]{title="a&#96;b"} `c`
+```
+
+### References in CJK text {#residual-cjk}
+
+`これは@kernelです` references `kernelです`, because an IDENT runs on through letters of any script. Write a space, or `{}`, which after a reference is a terminator with no attributes:
+
+```tern {.live expect="ref.dangling"}
+## Kernel {#kernel}
+
+これは@kernelです
+```
+
+```tern {.live}
+## Kernel {#kernel}
+
+これは@kernel です, これは@kernel{}です
+```
+
+### Math across a pipe {#residual-pipe}
+
+`| $a | b$ |` is one cell: the math span contains the pipe, and atoms are opaque to the row splitter.
+
+```tern {.live}
+| A | B |
+|---|---|
+| $a | b$ | c |
+```
+
+### Mentions {#residual-mentions}
+
+`@alice` is a reference. With no element of that id it stays text, with `ref.dangling`. Write `\@alice`:
+
+```tern {.live expect="ref.dangling"}
+Thanks @alice!
+```
+
+```tern {.live}
+Thanks \@alice!
+```
+
+### Lists in prose {#residual-lists}
+
+`2019. was a year` after a blank line is a list, as in CommonMark. Write `2019\.`:
+
+```tern {.live}
+Busy.
+
+2019. was a year
+
+2019\. was a year
+```
+
+A wrapped prose line that starts with `+ ` or `- ` interrupts the paragraph as a bullet. Write `\+` or `\-`:
+
+```tern {.live}
+The total is 5
++ 3 more.
+
+The total is 5
+\+ 3 more.
+```
+
+### HTML soup {#residual-html-soup}
+
+A forgotten `</div>` turns everything up to the next `:::` line, the parent's end or the end of the note into raw HTML. This is loud: `html.unclosed` at the tag, and visible soup. Here the Tern line inside also gets `html.wrapper`, and the `:::note` line ends the soup. See [Raw HTML blocks](syntax-blocks.html#raw-html).
+
+```tern {.live expect="html.unclosed html.wrapper"}
+<div class="box">
+Some *text*.
+:::note
+Back in Tern.
+:::
+```
+
+### Unclosed fences, comments and raw-text elements {#residual-fences}
+
+An unclosed fence, comment or raw-text element (such as `<script>`) runs to the end of its parent's prefix (a quote, a list item, a footnote) or to the end of the note, *through* `:::` closers, because each may legitimately contain them. The fence shows the rest as code; the comment and the raw-text element show it as escaped source in `<pre class="t-error">`.
+
+````tern {.live expect="block.unclosed block.unclosed-fence"}
+:::box
+```
+code
+:::
+after
+````
+
+```tern {.live expect="html.unclosed"}
+<!-- a note to self
+
+## Heading
+```
+
+```tern {.live expect="html.unclosed"}
+<script>
+let x = 1;
+:::
+```

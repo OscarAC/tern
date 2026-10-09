@@ -1,0 +1,722 @@
+# Lists (and the list-item prefix of the line algorithm)
+
+CommonMark's list rules, restated: markers, content columns, membership,
+one list or two, tight and loose, start numbers, task items, and which items
+may interrupt a paragraph.
+
+## list/task
+
+spec: syntax-blocks#lists
+
+The lists example: task items, and an ordered list nested at the item's content column.
+
+````tern
+- [x] Motions
+- [ ] Operators
+  1. inner vs around
+  2. counts
+````
+
+````html
+<ul>
+<li class="t-task"><input type="checkbox" checked disabled> Motions</li>
+<li class="t-task"><input type="checkbox" disabled> Operators<ol><li>inner vs around</li><li>counts</li></ol></li>
+</ul>
+````
+
+## list/task-forms
+
+spec: syntax-blocks#lists
+
+`[X]` checks the box like `[x]`, and an ordered item can be a task item too.
+
+````tern
+- [X] Upper-case x
+1. [x] Ordered
+````
+
+````html
+<ul><li class="t-task"><input type="checkbox" checked disabled> Upper-case x</li></ul>
+<ol><li class="t-task"><input type="checkbox" checked disabled> Ordered</li></ol>
+````
+
+## list/not-task
+
+spec: syntax-blocks#lists
+
+Only `[ ]`, `[x]` or `[X]` followed by a space or the end of the line make a task item: `[x]Done` is glued to its text and `[-]` is not a checkbox.
+
+````tern
+- [x]Done
+- [-] Partial
+````
+
+````html
+<ul><li>[x]Done</li><li>[-] Partial</li></ul>
+````
+
+## list/task-empty-at-line-end
+
+spec: syntax-blocks#lists
+
+`- [ ]` at the end of a line (after trimming) is a task item with no text, as on GitHub, so an empty checklist line in a template is a checkbox.
+
+````tern
+- [ ]
+- [x]
+````
+
+````html
+<ul><li class="t-task"><input type="checkbox" disabled></li><li class="t-task"><input type="checkbox" checked disabled></li></ul>
+````
+
+## list/marker-change-new-list
+
+spec: syntax-blocks#lists
+
+Items with the same bullet character form one list; a different bullet starts a new list.
+
+````tern
+- dash
+- dash
++ plus
+* star
+````
+
+````html
+<ul><li>dash</li><li>dash</li></ul>
+<ul><li>plus</li></ul>
+<ul><li>star</li></ul>
+````
+
+## list/delimiter-change-new-list
+
+spec: syntax-blocks#lists
+
+The same holds for the ordered delimiter: `1)` after `1.` items starts a new list.
+
+````tern
+1. foo
+1. bar
+1) baz
+````
+
+````html
+<ol><li>foo</li><li>bar</li></ol>
+<ol><li>baz</li></ol>
+````
+
+## list/ordered-siblings
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+`2.` and `3.` after `1.` are further items of the same list (CommonMark).
+The interrupt restrictions apply only when every prefix matched (the lazy-continuation rule).
+
+````tern
+1. one
+2. two
+3. three
+````
+
+````html
+<ol><li>one</li><li>two</li><li>three</li></ol>
+````
+
+## list/empty-sibling
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+An empty item between two items is a third item (CommonMark).
+The interrupt restrictions apply only when every prefix matched (the lazy-continuation rule).
+
+````tern
+- one
+-
+- three
+````
+
+````html
+<ul><li>one</li><li></li><li>three</li></ul>
+````
+
+## list/same-number-siblings
+
+spec: syntax-blocks#lists
+
+Numbers need not increase; `1.` items are siblings (and each would interrupt a paragraph anyway).
+
+````tern
+1. a
+1. b
+1. c
+````
+
+````html
+<ol><li>a</li><li>b</li><li>c</li></ol>
+````
+
+## list/start-number
+
+spec: syntax-blocks#lists
+
+An ordered list starting at n ≠ 1 gets `start="n"`, zero included.
+
+````tern
+0. zero
+
+3) three
+````
+
+````html
+<ol start="0"><li>zero</li></ol>
+<ol start="3"><li>three</li></ol>
+````
+
+## list/leading-zeros
+
+spec: syntax-blocks#lists
+
+Leading zeros are digits of the marker; the start is the number.
+
+````tern
+007. bond
+````
+
+````html
+<ol start="7"><li>bond</li></ol>
+````
+
+## list/digit-limit
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+An ordered marker has 1 to 9 digits; ten digits make a paragraph.
+
+````tern
+123456789. nine
+
+1234567890. ten
+````
+
+````html
+<ol start="123456789"><li>nine</li></ol>
+<p>1234567890. ten</p>
+````
+
+## list/marker-needs-space
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+A marker must be followed by a space, a tab or the end of the line.
+
+````tern
+-foo
++bar
+1.baz
+2)qux
+````
+
+````html
+<p>-foo
++bar
+1.baz
+2)qux</p>
+````
+
+## list/marker-tab
+
+spec: syntax-blocks#lists
+options: escaped
+
+A tab may follow the marker.
+
+````tern
+-\tfoo
+````
+
+````html
+<ul><li>foo</li></ul>
+````
+
+## list/empty-item
+
+spec: syntax-blocks#lists
+
+A marker alone on its line is an empty item.
+
+````tern
+-
+
+1.
+````
+
+````html
+<ul><li></li></ul>
+<ol><li></li></ol>
+````
+
+## list/content-column
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm syntax-blocks#r2
+
+After a blank line, a line belongs to the item only when indented to the content column (marker width plus spaces: 2 here).
+
+````tern
+- a
+
+  b
+
+ c
+````
+
+````html
+<ul><li><p>a</p><p>b</p></li></ul>
+<p>c</p>
+````
+
+## list/content-column-ordered
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+The content column of `10. a` is 4: four spaces belong to the item, three do not.
+
+````tern
+10. a
+
+    b
+
+   c
+````
+
+````html
+<ol start="10"><li><p>a</p><p>b</p></li></ol>
+<p>c</p>
+````
+
+## list/content-column-wide-gap
+
+spec: syntax-blocks#lists syntax-blocks#r2
+
+With more than four spaces after the marker the content column is the marker width plus one, and the extra spaces are just leading whitespace (no indented code).
+
+````tern
+-      a
+
+  b
+````
+
+````html
+<ul><li><p>a</p><p>b</p></li></ul>
+````
+
+## list/content-column-four-spaces
+
+spec: syntax-blocks#lists
+
+With exactly four spaces after the marker they all count: the content column is 5, so a line indented 2 is outside the item.
+
+````tern
+-    a
+
+  b
+````
+
+````html
+<ul><li>a</li></ul>
+<p>b</p>
+````
+
+## list/indented-marker
+
+spec: syntax-blocks#lists syntax-blocks#r2
+
+Indentation before the marker counts toward the content column (as in CommonMark): it is 5 here, so `b`, indented 2, is outside the item.
+
+````tern
+   - a
+
+  b
+````
+
+````html
+<ul><li>a</li></ul>
+<p>b</p>
+````
+
+## list/empty-first-line
+
+spec: syntax-blocks#lists
+
+An item may start empty and get its content on the next line, indented to its content column.
+
+````tern
+-
+  foo
+````
+
+````html
+<ul><li>foo</li></ul>
+````
+
+## list/empty-first-line-one-space
+
+spec: syntax-blocks#lists
+
+An item whose first line is empty has content column = marker width + 1 (as in CommonMark), 2 here, so a line indented one space does not belong to it; with no paragraph open in the item it is not lazy either.
+
+````tern
+-
+ foo
+````
+
+````html
+<ul><li></li></ul>
+<p>foo</p>
+````
+
+## list/empty-item-one-blank-line
+
+spec: syntax-blocks#lists
+
+At most one blank line may open an item (as in CommonMark): a marker alone, a blank line, then an indented line is an empty item followed by a paragraph.
+
+````tern
+-
+
+  foo
+````
+
+````html
+<ul><li></li></ul>
+<p>foo</p>
+````
+
+## list/lazy-continuation
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+A paragraph line that is not indented continues the item's paragraph lazily.
+
+````tern
+- a
+b
+````
+
+````html
+<ul><li>a
+b</li></ul>
+````
+
+## list/loose-between-items
+
+spec: syntax-blocks#lists
+
+A blank line between items makes the list loose: item paragraphs get `<p>`.
+
+````tern
+- a
+
+- b
+````
+
+````html
+<ul><li><p>a</p></li><li><p>b</p></li></ul>
+````
+
+## list/loose-inside-item
+
+spec: syntax-blocks#lists
+
+A blank line inside one item makes the whole list loose.
+
+````tern
+- a
+
+  b
+- c
+````
+
+````html
+<ul><li><p>a</p><p>b</p></li><li><p>c</p></li></ul>
+````
+
+## list/nested-blank-loosens-inner-only
+
+spec: syntax-blocks#lists
+
+A blank line inside a nested item makes the nested list loose, not the outer one: "loose" means a blank line directly inside an item (as in CommonMark).
+
+````tern
+- a
+  - b
+
+    c
+- d
+````
+
+````html
+<ul><li>a<ul><li><p>b</p><p>c</p></li></ul></li><li>d</li></ul>
+````
+
+## list/trailing-blank-stays-tight
+
+spec: syntax-blocks#lists
+
+A blank line after the last item, before a paragraph that does not belong, leaves the list tight.
+
+````tern
+- a
+- b
+
+After
+````
+
+````html
+<ul><li>a</li><li>b</li></ul>
+<p>After</p>
+````
+
+## list/nested-by-content-column
+
+spec: syntax-blocks#lists syntax-blocks#r2
+
+Indentation to the content column nests; a marker below it returns to the outer list.
+
+````tern
+- a
+  - b
+    - c
+- d
+````
+
+````html
+<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li><li>d</li></ul>
+````
+
+## list/bullet-interrupts-paragraph
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+A non-empty bullet item interrupts a paragraph.
+
+````tern
+Some prose
+- item
+````
+
+````html
+<p>Some prose</p>
+<ul><li>item</li></ul>
+````
+
+## list/ordered-1-interrupts
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+A non-empty ordered item numbered 1 interrupts a paragraph, with either delimiter.
+
+````tern
+Some prose
+1) first
+````
+
+````html
+<p>Some prose</p>
+<ol><li>first</li></ol>
+````
+
+## list/ordered-non-1-after-blank
+
+spec: syntax-blocks#lists syntax-inline#residual-lists
+
+After a blank line, `2019. was a year` is a list, as in CommonMark.
+
+````tern
+Some prose
+
+2019. was a year
+````
+
+````html
+<p>Some prose</p>
+<ol start="2019"><li>was a year</li></ol>
+````
+
+## list/escaped-ordered
+
+spec: syntax-blocks#lists syntax-inline#escapes syntax-inline#residual-lists
+
+`2019\.` keeps a line-start year as prose.
+
+````tern
+2019\. was a year
+````
+
+````html
+<p>2019. was a year</p>
+````
+
+## list/plus-interrupts-prose
+
+spec: syntax-blocks#lists syntax-inline#residual-lists
+
+A wrapped prose line starting `+ ` interrupts the paragraph as a bullet (a documented residual case).
+
+````tern
+The total is the base price
++ tax, rounded up.
+````
+
+````html
+<p>The total is the base price</p>
+<ul><li>tax, rounded up.</li></ul>
+````
+
+## list/non-1-inside-item
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+Inside an item, an ordered marker other than 1 does not interrupt the item's paragraph either.
+
+````tern
+- a
+  2. b
+````
+
+````html
+<ul><li>a
+2. b</li></ul>
+````
+
+## list/nests-container
+
+spec: syntax-blocks#lists syntax-blocks#container
+options: schema=none
+
+A container may nest in an item at its content column; tightness unwraps only paragraphs that are direct children of an item, so the container keeps its `<p>`.
+
+````tern
+- :::box
+  Inside.
+  :::
+- next
+````
+
+````html
+<ul><li><div class="t-block box" data-t="box"><p>Inside.</p></div></li><li>next</li></ul>
+````
+
+## list/nests-table-and-math
+
+spec: syntax-blocks#lists syntax-blocks#tables syntax-blocks#display-math
+
+Tables and display math nest in items at the content column.
+
+````tern
+- | a | b |
+  |---|---|
+  | 1 | 2 |
+- $$
+  x^2
+  $$
+````
+
+````html
+<ul>
+<li><table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table></li>
+<li><div class="t-eq"><span class="t-math" data-display>x^2</span></div></li>
+</ul>
+````
+
+## list/nests-quote
+
+spec: syntax-blocks#lists syntax-blocks#blockquote
+
+A quote nests in an item; the item's prefix is matched first, then the quote's.
+
+````tern
+- > a
+  > b
+````
+
+````html
+<ul><li><blockquote><p>a
+b</p></blockquote></li></ul>
+````
+
+## list/deep-indent-not-code
+
+spec: syntax-blocks#lists syntax-blocks#r2
+
+Indentation beyond the content column is ignored inside the item: six spaces give a heading, not indented code.
+
+````tern
+- a
+
+      # Heading
+````
+
+````html
+<ul><li><p>a</p><h1 id="heading">Heading</h1></li></ul>
+````
+
+## list/nesting-limit
+
+spec: syntax-blocks#lists syntax-blocks#line-algorithm
+
+The 65th nested list item would make the stack deeper than 64, so from there the line is paragraph text, with `nesting.limit` at that marker. Items count toward the depth, `list` nodes and the root do not; if lists counted, the 33rd item would be refused (column 65).
+
+````tern js
+'- '.repeat(65) + 'x\n'
+````
+
+````diagnostics
+1:129 error nesting.limit
+````
+
+## list/blank-lines-end-item-before-open-fence
+
+spec: syntax-blocks#lists syntax-blocks#fence
+
+The blank lines before `- next` end the first item and belong to nothing, so the fence left open in the item ends before them: its code is `code` alone, and it is unclosed at its opener.
+
+````tern
+- item
+
+  ```
+  code
+
+
+- next
+````
+
+````json ast
+{"children": [{"type": "list", "children": [
+  {"type": "listItem", "children": [{"type": "paragraph"}, {"type": "code", "value": "code"}]},
+  {"type": "listItem", "children": [{"type": "paragraph"}]}]}]}
+````
+
+````diagnostics
+3:3 error block.unclosed-fence
+````
+
+## list/task-loose
+
+spec: syntax-blocks#lists
+
+In a loose list the checkbox goes inside the item's first paragraph, as on GitHub.
+In a loose list the checkbox goes inside the item's first paragraph, as on GitHub.
+
+````tern
+- [x] Done
+
+- [ ] Todo
+````
+
+````html
+<ul>
+<li class="t-task"><p><input type="checkbox" checked disabled> Done</p></li>
+<li class="t-task"><p><input type="checkbox" disabled> Todo</p></li>
+</ul>
+````

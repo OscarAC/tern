@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="The estuary at low water: sandbanks between two channels">
+  <rect width="640" height="360" fill="#dbe7ef"/>
+  <path d="M0 150 Q160 120 320 150 T640 150 V360 H0Z" fill="#6f8796"/>
+  <path d="M40 220 Q200 180 360 230 T620 210 Q500 260 330 262 T40 220Z" fill="#e5d3a8"/>
+  <path d="M120 300 Q260 280 420 300 T600 300 Q480 330 300 330 T120 300Z" fill="#e5d3a8"/>
+  <g fill="#3b3f46" font-family="system-ui, sans-serif" font-size="22">
+    <text x="24" y="44">Ebb tide, 40 s at 8×</text>
+  </g>
+</svg>

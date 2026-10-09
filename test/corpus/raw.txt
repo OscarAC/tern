@@ -1,0 +1,347 @@
+# Raw-body containers
+
+Raw bodies: `:::macros` and `{raw}` containers, whose body is verbatim and ends only at a line that is exactly a closer (`:::meta` shares the rule; its cases are in the meta area). `chart` and `mermaid` have no schema entry.
+
+## raw/macros-basic
+
+spec: syntax-blocks#macros
+
+A macros block is emitted as a hidden `div.t-macros` holding its TeX.
+
+````tern
+:::macros
+\gdef\R{\mathbb{R}}
+:::
+````
+
+````html
+<div class="t-macros" hidden>\gdef\R{\mathbb{R}}</div>
+````
+
+## raw/core-block-attributes-carried
+
+spec: syntax-blocks#raw-body syntax-blocks#container syntax-blocks#merging-and-emission syntax-blocks#r7
+
+`:::macros` and the reserved `:::script`, `:::style` and `:::html` produce an element (`div.t-macros`, `pre.t-error`), which carries the author's id, classes and keys as any element does, after tern's own class; `hidden` stays tern's. So `@m` reaches it.
+
+````tern
+:::macros{#m .defs data-set=algebra}
+\newcommand{\R}{\mathbb{R}}
+:::
+
+:::script{#s .shown}
+let x = 1;
+:::
+
+See @m and @s.
+````
+
+````html
+<div id="m" class="t-macros defs" hidden data-set="algebra">\newcommand{\R}{\mathbb{R}}</div>
+<pre id="s" class="t-error shown">let x = 1;</pre>
+<p>See <a class="t-ref" href="#m">m</a> and <a class="t-ref" href="#s">s</a>.</p>
+````
+
+````diagnostics
+5:4 warning name.reserved
+````
+
+## raw/macros-verbatim-body
+
+spec: syntax-blocks#macros syntax-blocks#lines
+
+Nothing inside a macros body is Tern: a blank line, a `#` line and an opener line are content, and the body is escaped on output.
+
+````tern
+:::macros
+\gdef\less{<}
+
+# not a heading
+:::box
+:::
+````
+
+````html
+<div class="t-macros" hidden>\gdef\less{&lt;}
+
+# not a heading
+:::box</div>
+````
+
+## raw/macros-named-closer
+
+spec: syntax-blocks#macros syntax-blocks#closer
+
+`:::/macros` is exactly a closer, so it ends the body.
+
+````tern
+:::macros
+\gdef\R{x}
+:::/macros
+````
+
+````html
+<div class="t-macros" hidden>\gdef\R{x}</div>
+````
+
+````diagnostics
+````
+
+## raw/macros-unclosed-swallows
+
+spec: syntax-blocks#macros syntax-blocks#closer
+
+Without an exact closer the body runs to the end of the note, swallowing the heading and paragraph after it; the opener gets `block.unclosed`.
+
+````tern
+:::macros
+\gdef\R{x}
+
+# Heading
+Text.
+````
+
+````html
+<div class="t-macros" hidden>\gdef\R{x}
+
+# Heading
+Text.</div>
+````
+
+````diagnostics
+1:1 error block.unclosed
+````
+
+## raw/macros-inside-container
+
+spec: syntax-blocks#macros
+
+A macros block may sit inside another container (only `:::meta` is restricted to the top level); its closer closes it, not the outer box.
+
+````tern
+:::box
+:::macros
+\gdef\R{x}
+:::
+Text.
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-macros" hidden>\gdef\R{x}</div>
+<p>Text.</p>
+</div>
+````
+
+## raw/macros-in-list-item
+
+spec: syntax-blocks#macros syntax-blocks#line-algorithm
+
+Inside a list item the verbatim body receives each line after the item's prefix is stripped, so a closer indented to the content column ends it.
+
+````tern
+- :::macros
+  \gdef\R{x}
+  :::
+````
+
+````html
+<ul>
+<li><div class="t-macros" hidden>\gdef\R{x}</div></li>
+</ul>
+````
+
+## raw/macros-prefix-fails
+
+spec: syntax-blocks#macros syntax-blocks#line-algorithm
+
+When the enclosing quote's prefix fails (a blank line), the raw body closes as unclosed together with the quote.
+
+````tern
+> :::macros
+> \gdef\R{x}
+
+Text.
+````
+
+````html
+<blockquote>
+<div class="t-macros" hidden>\gdef\R{x}</div>
+</blockquote>
+<p>Text.</p>
+````
+
+````diagnostics
+1:3 error block.unclosed
+````
+
+## raw/closer-trailing-whitespace
+
+spec: syntax-blocks#raw-body syntax-blocks#r3
+options: escaped
+
+Trailing whitespace never matters (editors may trim freely), so `:::` followed by a space and a tab is still exactly a closer.
+
+````tern
+:::macros
+\\gdef\\R{x}
+:::\u0020\t
+````
+
+````html
+<div class="t-macros" hidden>\gdef\R{x}</div>
+````
+
+````diagnostics
+````
+
+## raw/closer-indented
+
+spec: syntax-blocks#raw-body syntax-blocks#r2
+
+An indented closer ends the raw body: leading whitespace does not stop `  :::` from being exactly a closer, as container bodies may be indented freely.
+
+````tern
+:::macros
+\gdef\R{x}
+  :::
+````
+
+````html
+<div class="t-macros" hidden>\gdef\R{x}</div>
+````
+
+## raw/other-named-closer-is-content
+
+spec: syntax-blocks#raw-body syntax-blocks#closer
+
+A raw body ends only at a bare closer or at `:::/` plus its own name. Any other closer line is content, even one naming a container that is open outside: `:::/box` stays in the macros body, and the two bare closers then close the macros block and the box.
+
+````tern
+:::box
+:::macros
+\gdef\R{x}
+:::/box
+:::
+:::
+````
+
+````html
+<div class="t-block box" data-t="box">
+<div class="t-macros" hidden>\gdef\R{x}
+:::/box</div>
+</div>
+````
+
+````diagnostics
+````
+
+## raw/raw-container
+
+spec: syntax-blocks#raw-attribute syntax-blocks#merging-and-emission
+
+`{raw}` on any container makes its body one verbatim text node, emitted escaped inside the element; the `raw` key itself is never emitted.
+
+````tern
+:::mermaid{raw}
+graph TD
+  A --> B
+:::
+````
+
+````html
+<div class="t-block mermaid" data-t="mermaid">graph TD
+  A --&gt; B</div>
+````
+
+## raw/raw-container-title
+
+spec: syntax-blocks#raw-attribute elements#output-contract
+
+A raw container keeps its title slot before the verbatim body.
+
+````tern
+:::mermaid[Flow]{raw}
+graph TD
+:::
+````
+
+````html
+<div class="t-block mermaid" data-t="mermaid">
+<div class="t-title">Flow</div>graph TD</div>
+````
+
+## raw/raw-body-escaped
+
+spec: syntax-blocks#raw-attribute
+
+Tags and `&` in a raw body are text, escaped on output.
+
+````tern
+:::chart{raw}
+<b>x</b> & y
+:::
+````
+
+````html
+<div class="t-block chart" data-t="chart">&lt;b&gt;x&lt;/b&gt; &amp; y</div>
+````
+
+## raw/raw-opener-does-not-nest
+
+spec: syntax-blocks#raw-attribute syntax-blocks#closer
+
+An opener line inside a raw body is content, so the first exact closer ends the raw body and the next closer is stray.
+
+````tern
+:::chart{raw}
+:::note
+*a*
+:::
+:::
+````
+
+````html
+<div class="t-block chart" data-t="chart">:::note
+*a*</div>
+<p>:::</p>
+````
+
+````diagnostics
+5:1 warning block.stray-closer
+````
+
+## raw/raw-with-other-attributes
+
+spec: syntax-blocks#raw-attribute syntax-blocks#merging-and-emission
+
+Only `raw` is consumed; the id, classes and other keys of the same group are emitted as usual.
+
+````tern
+:::chart{raw #c .wide k=v}
+a
+:::
+````
+
+````html
+<div id="c" class="t-block chart wide" data-t="chart" k="v">a</div>
+````
+
+## raw/raw-body-value
+
+spec: syntax-blocks#raw-attribute syntax-blocks#lines
+
+The verbatim body keeps blank lines and indentation byte for byte; in the AST it is the container's `value`.
+
+````tern
+:::chart{raw}
+graph TD
+
+  A --> B
+:::
+````
+
+````json ast
+{"type": "root", "children": [{"type": "containerDirective", "name": "chart", "value": "graph TD\n\n  A --> B"}]}
+````
