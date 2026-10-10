@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MIT */
+/* Dracula for Tern, after Dracula (https://draculatheme.com).
+   Dark for every reader. Use: <script src="tern.js" data-use="themes/dracula.css"></script>
+   Raised to 4.5:1 contrast: muted, error.
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: dark;
+  --t-bg: #282a36; --t-fg: #f8f8f2; --t-muted: #97a2c3; --t-line: #44475a; --t-soft: #343746;
+  --t-link: #8be9fd; --t-mark: #5a6204; --t-error: #ff7e7e; --t-error-bg: #4f323c; --t-warn: #ffb86c;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

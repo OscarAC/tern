@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: MIT */
+/* High contrast for Tern, after black and white, for low vision.
+   Light or dark, by the reader's system setting. Use: <script src="tern.js" data-use="themes/high-contrast.css"></script>
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light dark;
+  --t-bg: #ffffff; --t-fg: #000000; --t-muted: #3b3b3b; --t-line: #767676; --t-soft: #f0f0f0;
+  --t-link: #0033b3; --t-mark: #ffff00; --t-error: #a00000; --t-error-bg: #ffe8e8; --t-warn: #6b4400;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-bg: #000000; --t-fg: #ffffff; --t-muted: #d0d0d0; --t-line: #8a8a8a; --t-soft: #1a1a1a;
+    --t-link: #a8ccff; --t-mark: #5c5000; --t-error: #ff8f8f; --t-error-bg: #3a0000; --t-warn: #ffd24d;
+  }
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

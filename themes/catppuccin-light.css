@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MIT */
+/* Catppuccin for Tern, after Catppuccin Latte (light) and Mocha (dark) (https://catppuccin.com/palette).
+   Light for every reader. Use: <script src="tern.js" data-use="themes/catppuccin-light.css"></script>
+   Raised to 4.5:1 contrast: muted, link, error, warn.
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light;
+  --t-bg: #eff1f5; --t-fg: #4c4f69; --t-muted: #63667a; --t-line: #ccd0da; --t-soft: #e6e9ef;
+  --t-link: #1c5ee1; --t-mark: #f3d0a0; --t-error: #c10e34; --t-error-bg: #ecdae2; --t-warn: #bc4a08;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

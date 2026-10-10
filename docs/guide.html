@@ -1679,9 +1679,19 @@ The base stylesheet reads its colours, fonts and sizes from custom properties. S
 
 The base stylesheet follows the reader's light or dark preference. Set your dark colours inside `prefers-color-scheme: dark`, as above.
 
+### Themes {#themes}
+
+For a ready-made palette, list a theme from Tern's `themes/` folder as an add-on: Solarized, Gruvbox, Nord, Dracula, One, GitHub, Catppuccin, Tokyo Night, Rosé Pine, Monokai, Everforest, Kanagawa, Sepia and High contrast.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js" data-use="themes/gruvbox.css"></script>
+```
+
+`gruvbox.css` follows the reader's light or dark preference; `gruvbox-light.css` and `gruvbox-dark.css` keep one palette for everyone. A theme sets only colours, and your own CSS still wins over it.
+
 An add-on adds CSS with `tern.style(css)`, or with the `css` field of a schema entry.
 
-**Reference:** [styling](schema.html#styling), [`tern.style`](api.html#style).
+**Reference:** [styling](schema.html#styling), [themes](schema.html#themes), [`tern.style`](api.html#style).
 
 ## Diagnostics and the panel {#diagnostics}
 

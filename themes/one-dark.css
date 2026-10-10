@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MIT */
+/* One for Tern, after Atom's One Light and One Dark (https://github.com/atom/atom/tree/master/packages/one-dark-syntax).
+   Dark for every reader. Use: <script src="tern.js" data-use="themes/one-dark.css"></script>
+   Raised to 4.5:1 contrast: muted, error.
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: dark;
+  --t-bg: #282c34; --t-fg: #abb2bf; --t-muted: #90959e; --t-line: #3e4451; --t-soft: #21252b;
+  --t-link: #61afef; --t-mark: #594012; --t-error: #e78f96; --t-error-bg: #493840; --t-warn: #d19a66;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

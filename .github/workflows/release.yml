@@ -1,6 +1,6 @@
 # The release job. Pushing a tag vX.Y.Z runs every test, checks that the tag
 # matches tern.version and that tern.js is the build of src/, and publishes
-# the site (index.html, docs/, examples/, tern.js, tern.css) to GitHub Pages.
+# the site (index.html, docs/, examples/, themes/, tern.js, tern.css) to GitHub Pages.
 # The release itself is created by hand.
 name: release
 
@@ -49,7 +49,7 @@ jobs:
       - name: the site
         run: |
           mkdir -p _site
-          cp -r index.html docs examples tern.js tern.css LICENSE .nojekyll _site/
+          cp -r index.html docs examples themes tern.js tern.css LICENSE .nojekyll _site/
           rm -f _site/docs/README.md
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

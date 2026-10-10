@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MIT */
+/* Gruvbox for Tern, after Pavel Pertsev's gruvbox (https://github.com/morhetz/gruvbox).
+   Light for every reader. Use: <script src="tern.js" data-use="themes/gruvbox-light.css"></script>
+   Raised to 4.5:1 contrast: muted.
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light;
+  --t-bg: #fbf1c7; --t-fg: #3c3836; --t-muted: #6b5f56; --t-line: #d5c4a1; --t-soft: #ebdbb2;
+  --t-link: #076678; --t-mark: #efd299; --t-error: #9d0006; --t-error-bg: #f2d9b4; --t-warn: #af3a03;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}
