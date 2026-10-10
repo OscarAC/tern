@@ -10,9 +10,8 @@
 //   class         classes put before the author's
 //   attrs         default attributes, under the author's
 //   counter       a counter name; names that share it share one sequence
-//   within        'h2' would restart the counter per section. Accepted and
-//                 kept in the registry, but not applied: numbering is
-//                 document-wide
+//   within        'h2': the counter restarts at each section of that level,
+//                 and its numbers read "2.3" (withins below)
 //   label         'Theorem', {en: 'Lemma', fr: 'Lemme'} picked by language, or
 //                 (n, node) => text, which returns the whole label ("Satz 4.1")
 //   ref           a reference template over {label} {n} {title} {id}
@@ -127,12 +126,35 @@ function slotFor(title, tag) {
   return SLOT_OF_TAG[tag] || 'div';
 }
 
+// ---------------------------------------------------------------- within
+
+// The heading level (1-6) each counter restarts at, from `within: 'hN'` on
+// the entries with a counter. It belongs to the counter: entries that share
+// one share its restarts, and when they disagree the first entry with a
+// `within` decides (block, leaf, then inline, each in definition order).
+// Any other value is ignored.
+function withins(s) {
+  const out = new Map();
+  for (const level of ['block', 'leaf', 'inline']) {
+    const reg = s && s[level];
+    if (!reg || typeof reg !== 'object') continue;
+    for (const name of Object.keys(reg)) {
+      const e = reg[name];
+      if (!e || typeof e !== 'object' || e.counter == null || e.counter === '') continue;
+      const m = typeof e.within === 'string' ? /^h([1-6])$/i.exec(e.within.trim()) : null;
+      if (m && !out.has(String(e.counter))) out.set(String(e.counter), Number(m[1]));
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- labels
 
 // The label of an element of `spec` numbered n (undefined when it is not
-// counted), in `lang`: {word, text}. `text` is data.tern.text ("Theorem 2",
-// "Proof", or "2" when counted without a label); `word` is what {label}
-// stands for in a ref template. A label function's result is both.
+// counted; "2.3" under `within`), in `lang`: {word, text}. `text` is
+// data.tern.text ("Theorem 2", "Proof", or "2" when counted without a label);
+// `word` is what {label} stands for in a ref template. A label function's
+// result is both.
 function label(spec, n, node, lang) {
   const l = spec ? spec.label : null;
   if (typeof l === 'function') {
@@ -173,5 +195,6 @@ module.exports = {
   resolve,
   namePosition,
   slotFor,
+  withins,
   label,
 };

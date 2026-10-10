@@ -93,11 +93,11 @@ function walk(root, enter, leave) {
 // What the model transforms read, collected by one walk into one list per
 // reader, each in document order (pre-order, so an element comes before what
 // it holds): `attrs` (attributes, named elements, fences), `ids` (attributes,
-// headings, footnote nodes), `nums` (named elements, fences, display math),
-// `refs` (references, fragment links), `fns` (footnote nodes) and `heads`
-// (headings, leaves). `inDef` maps a node inside a footnote definition to it,
-// as a dropped definition's content counts for nothing. Rebuilt after a
-// custom transform, which may have changed the tree.
+// headings, footnote nodes), `nums` (named elements, fences, display math,
+// headings), `refs` (references, fragment links), `fns` (footnote nodes) and
+// `heads` (headings, leaves). `inDef` maps a node inside a footnote
+// definition to it, as a dropped definition's content counts for nothing.
+// Rebuilt after a custom transform, which may have changed the tree.
 function index(ast, ctx) {
   if (ctx.idx) return ctx.idx;
   const x = { attrs: [], ids: [], nums: [], refs: [], fns: [], heads: [], inDef: new Map() };
@@ -123,7 +123,7 @@ function index(ast, ctx) {
     let k = 0;
     if (has || named || type === 'code') k = x.attrs.push(n);
     if (has || type === 'heading') k = x.ids.push(n); // footnote ids come from `fns`, merged by offset
-    if (named || type === 'code' || type === 'math') k = x.nums.push(n);
+    if (named || type === 'code' || type === 'math' || type === 'heading') k = x.nums.push(n);
     if (type === 'ref' || (type === 'link' && typeof n.url === 'string' && n.url[0] === '#')) k = x.refs.push(n);
     if (fn) k = x.fns.push(n);
     if (type === 'heading' || type === 'leafDirective') k = x.heads.push(n);
@@ -717,22 +717,41 @@ function plain(nodes, useText) {
 
 // In document order, an element numbered at its opener before what it holds.
 // Counters come from the schema and are shared by name; equations are on
-// `equation`, and only with an id. `within` is not applied (schema.js).
+// `equation`, and only with an id. A counter `within` level N restarts at
+// each heading of levels 2 to N, and keeps the section's number in
+// data.tern.section: "2.1" shows "2.1.3". Section numbers run from h2 down;
+// h1, the note's title or a part, stays outside them (it neither resets nor
+// restarts them, as \part in a LaTeX article), and a counter within h1
+// counts h1s and restarts at them. Before its first section a counter's
+// section is 0.
 function numbering(ast, ctx) {
   const counters = new Map();
+  const within = S.withins(ctx.schema);
+  const heads = [0, 0, 0, 0, 0, 0, 0]; // the count at each heading level, 1-6
   const code = S.entry(ctx.schema, 'block', 'code');
-  const next = (c) => {
+  const next = (t, c) => {
     const k = (counters.get(c) || 0) + 1;
     counters.set(c, k);
-    return k;
+    (t.counter = c), (t.number = k);
+    const d = within.get(c);
+    if (d) t.section = d === 1 ? String(heads[1]) : heads.slice(2, d + 1).join('.');
+    return shown(t);
   };
   const { nums, inDef } = index(ast, ctx);
   for (const n of nums) {
     if (dead(n, inDef)) continue;
+    if (n.type === 'heading') {
+      const d = n.depth;
+      if (!(d >= 1 && d <= 6)) continue;
+      heads[d]++;
+      if (d > 1) heads.fill(0, d + 1);
+      for (const [c, at] of within) if (d === 1 ? at === 1 : d <= at) counters.delete(c);
+      continue;
+    }
     if (n.type === 'math') {
       if (n.attributes && n.attributes.id !== undefined && !peek(n).unclosed) {
-        const k = next('equation');
-        Object.assign(tern(n), { counter: 'equation', number: k, text: `(${k})` });
+        const t = tern(n);
+        t.text = `(${next(t, 'equation')})`;
       }
       continue;
     }
@@ -740,11 +759,13 @@ function numbering(ast, ctx) {
     if (!spec) continue;
     const t = tern(n);
     let k;
-    if (spec.counter != null && spec.counter !== '') (t.counter = String(spec.counter)), (k = t.number = next(t.counter));
+    if (spec.counter != null && spec.counter !== '') k = next(t, String(spec.counter));
     const { text } = S.label(spec, k, n, ctx.lang);
     if (text) t.text = text;
   }
 }
+// The number as shown: data.tern.number, after its section under `within`.
+const shown = (t) => (t.section !== undefined && t.number != null ? `${t.section}.${t.number}` : t.number);
 
 // ---------------------------------------------------------------- refs
 
@@ -787,11 +808,12 @@ function fragment(n, ctx) {
   if (!ok) ctx.report('ref.dangling', prefix(n.position || ORIGIN, 1), `the link points to #${id}, which names no id in this note`, 'check the id, or give the target that id');
 }
 
-// What a target offers a reference: its number and label text, the word a
-// template's {label} stands for, its title (a heading's is its content).
+// What a target offers a reference: its number as shown and its label text,
+// the word a template's {label} stands for, its title (a heading's is its
+// content).
 function info(T, ctx) {
   const t = peek(T);
-  const I = { number: t.number, text: t.text, word: '', title: null, spec: null, equation: T.type === 'math', heading: T.type === 'heading' };
+  const I = { number: shown(t), text: t.text, word: '', title: null, spec: null, equation: T.type === 'math', heading: T.type === 'heading' };
   if (I.heading) I.title = T.children;
   else if (T.type === 'code') {
     if (titled(T)) (I.spec = S.entry(ctx.schema, 'block', 'code')), (I.title = t.title);

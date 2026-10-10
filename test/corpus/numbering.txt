@@ -11,8 +11,10 @@ Also: a labelled target that is neither counted nor titled reads as
 its label; a `ref=` value outside `label|number|title|full` gets
 `attr.malformed` and the default text; a part the target lacks gives the
 default text silently; a fragment link to a missing id gets `ref.dangling` at
-its `[` and stays a link. Whether `within: 'h2'` renders "4" or "1.4" is a
-schema option the corpus leaves open, so no case here depends on it.
+its `[` and stays a link. The fixture's `problem` counts `within: 'h2'`:
+the `numbering/within-*` cases pin numbering per section, with the extended
+schema's `claim` (within h3), `axiom` (within h1) and `remark` (on
+`problem`'s counter, with no `within` of its own).
 
 ## numbering/shared-counter
 
@@ -264,6 +266,303 @@ $$ x $$ {#eq-x}
 
 ````json transformed
 {"children":[{"type":"math","value":"x","attributes":{"id":"eq-x"},"data":{"tern":{"number":1,"text":"(1)"}}}]}
+````
+
+## numbering/within-section
+
+spec: schema#field-within elements#numbering
+
+A counter within h2 restarts at each level-2 heading, and its number follows the section's. The h1 is the note's title and counts for nothing; before the first section, the section is 0.
+
+````tern
+:::problem
+Before any section.
+:::
+
+# Problem sets
+
+## Vectors
+
+:::problem
+A.
+:::
+
+:::problem
+B.
+:::
+
+## Matrices
+
+:::problem
+C.
+:::
+````
+
+````html
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 0.1</span></div><p>Before any section.</p></section>
+<h1 id="problem-sets">Problem sets</h1>
+<h2 id="vectors">Vectors</h2>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.1</span></div><p>A.</p></section>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.2</span></div><p>B.</p></section>
+<h2 id="matrices">Matrices</h2>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 2.1</span></div><p>C.</p></section>
+````
+
+## numbering/within-references
+
+spec: schema#field-within elements#ref-select
+
+A reference reads the number as shown, section included: through the `ref` template, `ref=number` and `ref=label`.
+
+````tern
+## Vectors
+
+:::problem{#p-a}
+:::
+
+## Matrices
+
+:::problem{#p-b}
+:::
+
+See @p-a, @p-b{ref=number} and @p-b{ref=label}.
+````
+
+````html
+<h2 id="vectors">Vectors</h2>
+<section id="p-a" class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.1</span></div></section>
+<h2 id="matrices">Matrices</h2>
+<section id="p-b" class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 2.1</span></div></section>
+<p>See <a class="t-ref" href="#p-a">Problem 1.1</a>, <a class="t-ref" href="#p-b">2.1</a> and <a class="t-ref" href="#p-b">Problem 2.1</a>.</p>
+````
+
+## numbering/within-other-counters
+
+spec: schema#field-within
+
+`within` is per counter: `theorem` still runs over the whole note, and a deeper heading does not restart a counter within h2.
+
+````tern
+## One
+
+:::theorem
+:::
+
+:::problem
+:::
+
+### Part
+
+:::problem
+:::
+
+## Two
+
+:::theorem
+:::
+
+:::problem
+:::
+````
+
+````html
+<h2 id="one">One</h2>
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 1</span></div></section>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.1</span></div></section>
+<h3 id="part">Part</h3>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.2</span></div></section>
+<h2 id="two">Two</h2>
+<section class="t-block theorem" data-t="theorem"><div class="t-title"><span class="t-label">Theorem 2</span></div></section>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 2.1</span></div></section>
+````
+
+## numbering/within-parts
+
+spec: schema#field-within
+
+A later h1 is a part: it neither restarts a counter within h2 nor resets the section count, so no number repeats.
+
+````tern
+# Part one
+
+## A
+
+:::problem
+:::
+
+# Part two
+
+:::problem
+:::
+
+## B
+
+:::problem
+:::
+````
+
+````html
+<h1 id="part-one">Part one</h1>
+<h2 id="a">A</h2>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.1</span></div></section>
+<h1 id="part-two">Part two</h1>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.2</span></div></section>
+<h2 id="b">B</h2>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 2.1</span></div></section>
+````
+
+## numbering/within-heading-in-container
+
+spec: schema#field-within
+
+Every heading counts, in document order, including one inside a container: the same headings a table of contents lists.
+
+````tern
+## One
+
+:::problem
+:::
+
+:::note
+## Inside
+:::
+
+:::problem
+:::
+````
+
+````html
+<h2 id="one">One</h2>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.1</span></div></section>
+<div class="t-block note" data-t="note"><div class="t-title"><span class="t-label">Note</span></div><h2 id="inside">Inside</h2></div>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 2.1</span></div></section>
+````
+
+## numbering/within-data
+
+spec: schema#field-within api#transformed-ast
+
+In the AST, `number` restarts per section and `section` holds the section's number; the text joins them.
+
+````tern
+## A
+
+:::problem
+:::
+
+:::problem
+:::
+````
+
+````json transformed
+{"children":[
+ {"type":"heading"},
+ {"type":"containerDirective","name":"problem"},
+ {"type":"containerDirective","name":"problem",
+  "data":{"tern":{"tag":"section","counter":"problem","number":2,"section":"1","text":"Problem 1.2"}}}]}
+````
+
+## numbering/within-h3
+
+spec: schema#field-within
+options: schema=extended
+
+A counter within h3 shows the h2 and h3 numbers, and restarts at both; a section with no h3 yet is 0.
+
+````tern
+## One
+
+### A
+
+:::claim
+:::
+
+:::claim
+:::
+
+### B
+
+:::claim
+:::
+
+## Two
+
+:::claim
+:::
+````
+
+````html
+<h2 id="one">One</h2>
+<h3 id="a">A</h3>
+<section class="t-block claim" data-t="claim"><div class="t-title"><span class="t-label">Claim 1.1.1</span></div></section>
+<section class="t-block claim" data-t="claim"><div class="t-title"><span class="t-label">Claim 1.1.2</span></div></section>
+<h3 id="b">B</h3>
+<section class="t-block claim" data-t="claim"><div class="t-title"><span class="t-label">Claim 1.2.1</span></div></section>
+<h2 id="two">Two</h2>
+<section class="t-block claim" data-t="claim"><div class="t-title"><span class="t-label">Claim 2.0.1</span></div></section>
+````
+
+## numbering/within-h1
+
+spec: schema#field-within
+options: schema=extended
+
+A counter within h1 counts h1s and restarts at each of them; h2s do not restart it.
+
+````tern
+# Part one
+
+:::axiom
+:::
+
+## Section
+
+:::axiom
+:::
+
+# Part two
+
+:::axiom
+:::
+````
+
+````html
+<h1 id="part-one">Part one</h1>
+<section class="t-block axiom" data-t="axiom"><div class="t-title"><span class="t-label">Axiom 1.1</span></div></section>
+<h2 id="section">Section</h2>
+<section class="t-block axiom" data-t="axiom"><div class="t-title"><span class="t-label">Axiom 1.2</span></div></section>
+<h1 id="part-two">Part two</h1>
+<section class="t-block axiom" data-t="axiom"><div class="t-title"><span class="t-label">Axiom 2.1</span></div></section>
+````
+
+## numbering/within-shared-counter
+
+spec: schema#field-within elements#numbering
+options: schema=extended
+
+`within` belongs to the counter: `remark`, on `problem`'s counter with no `within` of its own, shares its sequence and its restarts.
+
+````tern
+## One
+
+:::problem
+:::
+
+:::remark
+:::
+
+## Two
+
+:::remark
+:::
+````
+
+````html
+<h2 id="one">One</h2>
+<section class="t-block problem" data-t="problem"><div class="t-title"><span class="t-label">Problem 1.1</span></div></section>
+<section class="t-block remark" data-t="remark"><div class="t-title"><span class="t-label">Remark 1.2</span></div></section>
+<h2 id="two">Two</h2>
+<section class="t-block remark" data-t="remark"><div class="t-title"><span class="t-label">Remark 2.1</span></div></section>
 ````
 
 ## numbering/ref-counted-titled-default
