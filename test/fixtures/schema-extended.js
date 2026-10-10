@@ -9,12 +9,22 @@
 //   contents  a toc leaf with a label
 //   term      a counted, labelled inline element
 //   brk       a labelled void inline element
+//   claim     a counter within h3: Claim 2.1.3
+//   axiom     a counter within h1: Axiom 1.1
+//   remark    shares `problem`'s counter, which is within h2, without a
+//             `within` of its own
 'use strict';
 
 const fixture = require('./schema');
 
 module.exports = {
-  block: { ...fixture.block, frame: { tag: 'main' } },
+  block: {
+    ...fixture.block,
+    frame: { tag: 'main' },
+    claim: { tag: 'section', counter: 'claim', label: 'Claim', within: 'h3' },
+    axiom: { tag: 'section', counter: 'axiom', label: 'Axiom', within: 'h1' },
+    remark: { tag: 'section', counter: 'problem', label: 'Remark' },
+  },
   leaf: {
     ...fixture.leaf,
     bib: { counter: 'bib', ref: '[{n}]' },

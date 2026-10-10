@@ -228,7 +228,7 @@ Every field is optional. All of them are plain data except two that may be funct
 | [`class`](#field-class) | classes, space-separated | all | none | classes before the author's |
 | [`attrs`](#field-attrs) | `{key: value}` | all | none | attributes under the author's |
 | [`counter`](#field-counter) | a counter name | all | not counted | numbers the elements; entries with the same counter share it |
-| [`within`](#field-within) | `'h2'` | all | none | accepted and kept, not applied |
+| [`within`](#field-within) | `'h1'` … `'h6'` | all, with a `counter` | none | restarts the counter at each section of that level: Problem 2.1 |
 | [`label`](#field-label) | a string, a `{lang: string}` map, or `(n, node) => text` | all | none | the label: "Theorem 2", "Proof" |
 | [`ref`](#field-ref) | a template over `{label} {n} {title} {id}` | all | the text by kind | what `@id` reads |
 | [`title`](#field-title) | `block`, `inline`, `summary`, `figcaption`, `caption`, `legend` | block | follows the tag | the title element |
@@ -376,7 +376,7 @@ So does this one.
 ```
 
 - **A counter is a name.** Entries that give the same `counter` share one sequence, at any level: Theorem 1, Lemma 2, Corollary 3.
-- **Document-wide.** Numbering runs over the whole note, in document order. An element is numbered at its opener, before anything it holds.
+- **Document-wide,** unless the counter restarts per section ([`within`](#field-within)). Numbering runs over the whole note, in document order. An element is numbered at its opener, before anything it holds.
 - **The label** is the label word, a space and the number: "Theorem 2". Counted without a `label`, it is the number alone: "2".
 - **Equations** use the counter `equation`: a display formula with an id is numbered "(1)". A schema counter named `equation` shares that sequence.
 - **Footnotes** are numbered by first reference, on a sequence of their own.
@@ -387,10 +387,39 @@ So does this one.
 
 ### `within` {#field-within}
 
-Meant to restart a counter at each section: `within: 'h2'`.
+Numbers a counter per section, as LaTeX's `\newtheorem{problem}{Problem}[section]` does: the counter restarts at each heading of the level, and its numbers follow the section's.
 
-- The engine **accepts it and keeps it** in the registry, but **does not apply it**: numbering is document-wide ([Numbering](elements.html#numbering)).
-- An entry with `within` numbers exactly as one without.
+```js
+tern.block('problem', { counter: 'problem', label: 'Problem', within: 'h2' });
+```
+
+```tern {.live schema=demo}
+# Problem sets
+
+## Vectors
+
+:::problem{#p-sum}
+:::
+
+:::problem
+:::
+
+## Matrices
+
+:::problem
+:::
+
+See @p-sum.
+```
+
+- **The value** is a heading level, `'h1'` to `'h6'`. Any other value is ignored, and so is `within` on an entry with no `counter`.
+- **Section numbers run from `h2` down.** `within: 'h2'` gives "Problem 2.1", the first problem of the second `##`; `within: 'h3'` gives "Claim 2.1.3", with a 0 for a section that has no `###` yet: "Claim 2.0.1".
+- **`h1` stands outside them,** as the note's title or a part: it neither restarts these counters nor resets the section numbers, so no number repeats, like `\part` in a LaTeX article. `within: 'h1'` counts `#` headings instead: "Axiom 2.1".
+- **The restart.** A counter within level N restarts at each heading from level 2 to N; only a counter within `h1` restarts at `h1`. A deeper heading does not restart it. Before the first section, the section number is 0: "Problem 0.1".
+- **Which headings.** Every heading of the note in document order, those inside containers too: the ones a [table of contents](#field-transform) lists. Headings written as raw HTML do not count.
+- **It belongs to the counter.** Entries that share a counter share its restarts, so `lemma` on `theorem`'s counter follows `theorem`'s `within` without one of its own. When entries on one counter give different levels, the first entry with a `within` decides: block entries, then leaf, then inline, each in the order they were defined.
+- **Equations** follow a `within` on the counter `equation`: give one to any entry on that counter, `{counter: 'equation', within: 'h2'}`, and formulas read "(2.1)".
+- **The number as shown** is what the label, `{n}`, `ref=number` and a label function get: "2.1". In the AST, `data.tern.number` is the number within the section (1) and `data.tern.section` the section's ("2") ([The transformed AST](api.html#transformed-ast)).
 
 ### `label` {#field-label}
 
@@ -418,7 +447,7 @@ A label and no title.
 
 - **A string** is the label word. With a counter, the label is the word and the number.
 - **A map** `{lang: string}` picks the word by the note's language ([Labels in other languages](#languages)).
-- **A function** `(n, node) => text` returns the **whole** label: Tern adds no number. `n` is the number, or `undefined` when the entry has no counter. `node` is the element's AST node; read it (`node.name`, `node.attributes`), don't change it. A function receives no language.
+- **A function** `(n, node) => text` returns the **whole** label: Tern adds no number. `n` is the number, or `undefined` when the entry has no counter. Under [`within`](#field-within) it is the number as shown, a string: `"2.1"`. `node` is the element's AST node; read it (`node.name`, `node.attributes`), don't change it. A function receives no language.
 - **Empty.** An empty string, or a function that returns `''`, `null` or `undefined`, gives no label.
 - **Where it shows.** On a container the label is `<span class="t-label">`, the first thing in the title element. The title element is created even when no title is written, and an empty title `[]` shows the label alone.
 - **Leaves and inline elements** have no title element: their label is their first child, `<span class="t-label">`, followed by a space when content follows. `tern.leaf('bib', {counter: 'bib', label: 'Ref'})` makes `::bib[Knuth, TAOCP]` render as `<div class="bib" data-t="bib"><span class="t-label">Ref 1</span> Knuth, TAOCP</div>`. A void element (`hr`, `img` …) shows no label. A labelled table of contents shows its label before the list.
@@ -446,7 +475,7 @@ tern.leaf('bib', { counter: 'bib', ref: '[{n}]' });   // @knuth reads [1]
 | Part | Stands for |
 |---|---|
 | `{label}` | the label word: the string, or the word the map picks; a label function's whole result |
-| `{n}` | the number |
+| `{n}` | the number, with its section under [`within`](#field-within): `2.1` |
 | `{title}` | the title as written, with its formatting; links are unwrapped and footnote references left out |
 | `{id}` | the target's id |
 :::
@@ -1396,6 +1425,7 @@ module.exports = {
     definition: { tag: 'section', counter: 'definition', label: 'Definition' },
     example: { tag: 'section', counter: 'example', label: 'Example' },
     exercise: { tag: 'section', counter: 'exercise', label: 'Exercise' },
+    problem: { tag: 'section', counter: 'problem', label: 'Problem', ref: '{label} {n}', within: 'h2' },
     proof: { tag: 'section', label: 'Proof', end: '∎' },
     note: callout('Note'),
     tip: callout('Tip'),
@@ -1421,6 +1451,7 @@ module.exports = {
 | `definition` | block | `section` | `definition` | Definition | |
 | `example` | block | `section` | `example` | Example | |
 | `exercise` | block | `section` | `exercise` | Exercise | |
+| `problem` | block | `section` | `problem` | Problem | `ref: '{label} {n}'`, `within: 'h2'`: Problem 2.1 |
 | `proof` | block | `section` | | Proof | `end: '∎'` |
 | `note`, `tip`, `important`, `warning`, `caution` | block | `div` | | Note, Tip, Important, Warning, Caution | |
 | `recall` | block | `details` | | | the title is the `summary` |

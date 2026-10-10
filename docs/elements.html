@@ -1068,7 +1068,25 @@ Later[^b] and sooner[^a].
 [^b]: Referenced first.
 ```
 
-**`within`.** A schema entry may set `within: 'h2'`, meant to restart its counter at each level-2 heading. The engine accepts the field and keeps it in the registry, but does not apply it: numbering is document-wide, and no counter restarts.
+**Numbering per section.** A counter whose entry sets [`within`](schema.html#field-within) restarts at each heading of that level, and its numbers follow the section's: in the demo schema, `problem` is `within: 'h2'`. Section numbers run from `##` down; a `#` heading counts in none of them. Other counters stay document-wide.
+
+```tern {.live schema=demo}
+## Vectors
+
+:::problem
+:::
+
+:::theorem
+:::
+
+## Matrices
+
+:::problem
+:::
+
+:::theorem
+:::
+```
 
 Elements inside a dropped duplicate footnote definition take no number: that content counts for nothing.
 

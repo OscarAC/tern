@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 // Engine API behaviour that the corpus cannot express: a case cannot
 // register a transform, and the corpus lint keeps runtime codes such as
-// addon.failed out of it (test/run.js). Runs on tern.js, or $TERN_ENGINE.
+// addon.failed out of it (test/run.js); nor can it bring a schema the
+// fixtures don't hold (equations within sections, a label function under
+// `within`, conflicting or invalid values). Runs on tern.js, or $TERN_ENGINE.
 //
 //   node test/api.js
 'use strict';
@@ -88,6 +90,46 @@ test('a function that catches its own error (as the CLI wraps add-on transforms)
     eq(tern.check('x\n'), [], 'no engine diagnostic');
     eq(seen, ['w'], 'the wrapper saw the error once');
   });
+});
+
+// ---------------------------------------------------------------- within
+
+// The labels of a note's counted elements and equations, in document order.
+const labels = (src, schema) =>
+  [...tern.toHTML(src, { schema }).matchAll(/<span class="t-(?:label|eqno)">([^<]*)<\/span>/g)].map((m) => m[1]);
+const thm = (extra) => ({ block: { theorem: Object.assign({ counter: 'theorem', label: 'Theorem' }, extra) } });
+
+test('within: equations follow an entry on the equation counter', () => {
+  const schema = { block: { theorem: { counter: 'theorem', label: 'Theorem' }, eq: { counter: 'equation', within: 'h2' } } };
+  const src = '$$ a $$ {#a}\n\n## One\n\n$$ b $$ {#b}\n\n$$ c $$ {#c}\n\n## Two\n\n$$ d $$ {#d}\n\nSee @c.\n';
+  eq(labels(src, schema), ['(0.1)', '(1.1)', '(1.2)', '(2.1)'], 'equation numbers');
+  eq(/href="#c">\(1\.2\)</.test(tern.toHTML(src, { schema })), true, 'the reference reads (1.2)');
+});
+
+test('within: a label function gets the number as shown', () => {
+  const seen = [];
+  const schema = thm({ within: 'h2', label: (n) => (seen.push(n), `Satz ${n}`) });
+  eq(labels('## A\n\n:::theorem\n:::\n', schema), ['Satz 1.1'], 'label');
+  eq(seen.includes('1.1'), true, 'n is "1.1"');
+  const plain = [];
+  labels(':::theorem\n:::\n', thm({ label: (n) => (plain.push(n), 'x') }));
+  eq(plain.includes(1), true, 'without within, n stays a number');
+});
+
+test('within: entries that share a counter and disagree take the first', () => {
+  const schema = { block: { theorem: { counter: 'theorem', label: 'Theorem', within: 'h2' }, lemma: { counter: 'theorem', label: 'Lemma', within: 'h3' } } };
+  eq(labels('## A\n\n### a\n\n:::theorem\n:::\n\n:::lemma\n:::\n', schema), ['Theorem 1.1', 'Lemma 1.2'], 'labels');
+});
+
+test('within: a value other than h1-h6, or an entry with no counter, changes nothing', () => {
+  for (const within of ['section', 'h7', 2, '', null, 'H2 '])
+    eq(labels('## A\n\n:::theorem\n:::\n', thm({ within })), [within === 'H2 ' ? 'Theorem 1.1' : 'Theorem 1'], `within ${JSON.stringify(within)}`);
+  eq(labels('## A\n\n:::proof\n:::\n', { block: { proof: { label: 'Proof', within: 'h2' } } }), ['Proof'], 'no counter');
+});
+
+test('within: a heading inside a dropped footnote definition counts for nothing', () => {
+  const src = 'A[^a].\n\n[^a]: First.\n\n[^a]:\n    ## Dropped\n\n## One\n\n:::theorem\n:::\n';
+  eq(labels(src, thm({ within: 'h2' })), ['Theorem 1.1'], 'labels');
 });
 
 console.log(results.join('\n'));

@@ -548,7 +548,7 @@ The fields of a spec, all optional ([Schema fields](schema.html#fields) has each
 | `class` | classes put before the author's |
 | `attrs` | default attributes, under the author's |
 | `counter` | a counter name; names that share it share one sequence |
-| `within` | accepted and kept, but not applied: numbering is document-wide |
+| `within` | `'h1'` … `'h6'`: the counter restarts at each section of that level, and its numbers read `2.1` |
 | `label` | a string, a `{lang: string}` map, or a function `(n, node) → text` that returns the whole label |
 | `ref` | a reference template over `{label}`, `{n}`, `{title}` and `{id}` |
 | `title` | the title slot: `'block'`, `'inline'`, `'summary'`, `'figcaption'`, `'caption'` or `'legend'` |
@@ -1305,10 +1305,11 @@ See @tbl-phases.
 | Field | Value |
 |---|---|
 | `data.tern.counter` | the counter's name, from the schema; `equation` for display math |
-| `data.tern.number` | the number in that counter, in document order |
-| `data.tern.text` | the label: `Theorem 1`, `Proof` (labelled, not counted), `(1)` for an equation, `Listing 1`. Counted without a label, it is the number. A schema `label` function returns the whole text |
+| `data.tern.number` | the number in that counter, in document order; under `within`, the number within the section |
+| `data.tern.section` | under [`within`](schema.html#field-within) only: the section's number, `"2"` or `"2.1"`, and `"0"` before the first section. The number as shown is `section.number` |
+| `data.tern.text` | the label: `Theorem 1`, `Problem 2.1`, `Proof` (labelled, not counted), `(1)` for an equation, `Listing 1`. Counted without a label, it is the number. A schema `label` function returns the whole text |
 
-Display math is numbered only when it has an id, and an unclosed `$$` never is. A titled fence is a listing, numbered with the schema's `code` entry. Numbering is document-wide: `within` is not applied.
+Display math is numbered only when it has an id, and an unclosed `$$` never is. A titled fence is a listing, numbered with the schema's `code` entry. Numbering is document-wide, except for a counter `within` a heading level, which restarts at each section of it ([`within`](schema.html#field-within)).
 
 ```tern {.live schema=demo}
 ## Kernel {#kernel}

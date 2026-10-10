@@ -20,6 +20,7 @@ module.exports = {
     definition: { tag: 'section', counter: 'definition', label: 'Definition' },
     example: { tag: 'section', counter: 'example', label: 'Example' },
     exercise: { tag: 'section', counter: 'exercise', label: 'Exercise' },
+    problem: { tag: 'section', counter: 'problem', label: 'Problem', ref: '{label} {n}', within: 'h2' },
     proof: { tag: 'section', label: 'Proof', end: '∎' },
     note: callout('Note'),
     tip: callout('Tip'),
