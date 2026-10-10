@@ -1319,7 +1319,7 @@ Your own head styles come after the group, and a `<style>` written in the note a
 Ways to add your own CSS:
 - a `<style>` or `<link rel="stylesheet">` in the head, before the tern.js line;
 - a `<style>` block in the note, as raw HTML;
-- a CSS add-on: `data-use="theme.css"`, ordered among the add-ons;
+- a CSS add-on: `data-use="theme.css"`, ordered among the add-ons, such as one of Tern's [themes](#themes);
 - `tern.style(css)` from a script;
 - a schema entry's `css`.
 
@@ -1350,6 +1350,42 @@ tern.style(css)   // adds a <style> to the head; returns it
 
 - **A property set outside a media query holds in both modes**, since your CSS comes later. Set some colours that way and not the others, and the others still switch: light text can end up on your light background. Set the whole palette, or set it per mode.
 - **One palette for every reader:** set every colour property at the top level, and `color-scheme: light` (or `dark`) on `:root`. A `color-scheme` key in `:::meta`, or a `<meta name="color-scheme">` in the head, sets only the browser's own parts: `tern.css` still follows the system setting.
+
+### Themes {#themes}
+
+Tern comes with colour themes after well-known editor palettes, in the `themes/` folder next to `tern.js`. A theme is a stylesheet [add-on](#addons): list it in `data-use`.
+
+```html
+<!doctype html><meta charset="utf-8"><script src="tern.js" data-use="themes/nord.css"></script>
+```
+
+From jsDelivr, give the theme the same tag as `tern.js`: `https://cdn.jsdelivr.net/gh/OscarAC/tern@TAG/themes/nord.css`.
+
+:::table[Themes]{#tbl-themes}
+| Theme | Files | Modes | After |
+|---|---|---|---|
+| Catppuccin | [`catppuccin.css`](../themes/catppuccin.css), [`catppuccin-light.css`](../themes/catppuccin-light.css), [`catppuccin-dark.css`](../themes/catppuccin-dark.css) | light and dark | [Catppuccin Latte (light) and Mocha (dark)](https://catppuccin.com/palette) |
+| Dracula | [`dracula.css`](../themes/dracula.css) | dark | [Dracula](https://draculatheme.com) |
+| Everforest | [`everforest.css`](../themes/everforest.css), [`everforest-light.css`](../themes/everforest-light.css), [`everforest-dark.css`](../themes/everforest-dark.css) | light and dark | [sainnhe's Everforest (medium)](https://github.com/sainnhe/everforest) |
+| GitHub | [`github.css`](../themes/github.css), [`github-light.css`](../themes/github-light.css), [`github-dark.css`](../themes/github-dark.css) | light and dark | [GitHub's Primer colours](https://primer.style/foundations/color) |
+| Gruvbox | [`gruvbox.css`](../themes/gruvbox.css), [`gruvbox-light.css`](../themes/gruvbox-light.css), [`gruvbox-dark.css`](../themes/gruvbox-dark.css) | light and dark | [Pavel Pertsev's gruvbox](https://github.com/morhetz/gruvbox) |
+| High contrast | [`high-contrast.css`](../themes/high-contrast.css), [`high-contrast-light.css`](../themes/high-contrast-light.css), [`high-contrast-dark.css`](../themes/high-contrast-dark.css) | light and dark | black and white, for low vision |
+| Kanagawa | [`kanagawa.css`](../themes/kanagawa.css) | dark | [rebelot's Kanagawa (wave)](https://github.com/rebelot/kanagawa.nvim) |
+| Monokai | [`monokai.css`](../themes/monokai.css) | dark | [Wimer Hazenberg's Monokai](https://monokai.nl) |
+| Nord | [`nord.css`](../themes/nord.css) | dark | [Arctic Ice Studio's Nord](https://www.nordtheme.com) |
+| One | [`one.css`](../themes/one.css), [`one-light.css`](../themes/one-light.css), [`one-dark.css`](../themes/one-dark.css) | light and dark | [Atom's One Light and One Dark](https://github.com/atom/atom/tree/master/packages/one-dark-syntax) |
+| Rosé Pine | [`rose-pine.css`](../themes/rose-pine.css), [`rose-pine-light.css`](../themes/rose-pine-light.css), [`rose-pine-dark.css`](../themes/rose-pine-dark.css) | light and dark | [Rosé Pine Dawn (light) and Rosé Pine (dark)](https://rosepinetheme.com/palette/) |
+| Sepia | [`sepia.css`](../themes/sepia.css) | light | the warm paper of e-readers |
+| Solarized | [`solarized.css`](../themes/solarized.css), [`solarized-light.css`](../themes/solarized-light.css), [`solarized-dark.css`](../themes/solarized-dark.css) | light and dark | [Ethan Schoonover's Solarized](https://ethanschoonover.com/solarized/) |
+| Tokyo Night | [`tokyo-night.css`](../themes/tokyo-night.css), [`tokyo-night-light.css`](../themes/tokyo-night-light.css), [`tokyo-night-dark.css`](../themes/tokyo-night-dark.css) | light and dark | [Tokyo Night Day (light) and Night (dark)](https://github.com/folke/tokyonight.nvim) |
+:::
+
+- **A theme with both modes has three files.** `NAME.css` follows the reader's system setting, as tern.css does. `NAME-light.css` and `NAME-dark.css` give every reader one palette. A theme with one mode is one file, the same for every reader.
+- **Colours only.** A theme sets the ten colour properties and `color-scheme`. Fonts, sizes and the column width stay tern.css's ([Custom properties](#custom-properties)).
+- **Your CSS still wins.** A theme cascades after tern.css and before your own styles ([Overriding them](#overriding)): set a property yourself to change one colour of a theme.
+- **Readable.** Every text colour has at least 4.5:1 contrast against what it is drawn on (WCAG AA), and 7:1 in High contrast. Where a palette's own colour falls short, the theme darkens or lightens it until it passes; the first lines of each file name those colours. A highlight keeps the palette's yellow hue.
+- **Print.** A theme prints as tern.css does: black on white ([Print](#print)).
+- **Your own theme.** Copy a file and change its values. To add one to Tern, add its palette to `tools/themes.js`, which writes the folder and checks the contrast: `node tools/themes.js`.
 
 ### Print {#print}
 

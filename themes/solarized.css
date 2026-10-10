@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: MIT */
+/* Solarized for Tern, after Ethan Schoonover's Solarized (https://ethanschoonover.com/solarized/).
+   Light or dark, by the reader's system setting. Use: <script src="tern.js" data-use="themes/solarized.css"></script>
+   Raised to 4.5:1 contrast: fg, muted, link, error, warn (light); fg, muted, link, error, warn (dark).
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light dark;
+  --t-bg: #fdf6e3; --t-fg: #566c73; --t-muted: #576a71; --t-line: #bcc1b8; --t-soft: #eee8d5;
+  --t-link: #1e6ca4; --t-mark: #ffe79c; --t-error: #c22c29; --t-error-bg: #fae2d1; --t-warn: #c34815;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-bg: #002b36; --t-fg: #8d9d9e; --t-muted: #8d9ca1; --t-line: #30525c; --t-soft: #073642;
+    --t-link: #4da0da; --t-mark: #403000; --t-error: #e7706d; --t-error-bg: #282c35; --t-warn: #d67349;
+  }
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

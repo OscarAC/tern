@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: MIT */
+/* GitHub for Tern, after GitHub's Primer colours (https://primer.style/foundations/color).
+   Light or dark, by the reader's system setting. Use: <script src="tern.js" data-use="themes/github.css"></script>
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light dark;
+  --t-bg: #ffffff; --t-fg: #1f2328; --t-muted: #59636e; --t-line: #d1d9e0; --t-soft: #f6f8fa;
+  --t-link: #0969da; --t-mark: #fff8c5; --t-error: #d1242f; --t-error-bg: #ffebe9; --t-warn: #9a6700;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-bg: #0d1117; --t-fg: #f0f6fc; --t-muted: #9198a1; --t-line: #3d444d; --t-soft: #151b23;
+    --t-link: #4493f8; --t-mark: #644405; --t-error: #f85149; --t-error-bg: #371d20; --t-warn: #d29922;
+  }
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

@@ -77,6 +77,7 @@ jobs:
         with:
           node-version: 22
       - run: node tools/concat.js --check
+      - run: node test/themes.js # themes/ is the build of tools/themes.js, and readable
 
   cli:
     name: API, command line, language server and documentation

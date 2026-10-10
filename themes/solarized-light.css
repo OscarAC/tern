@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MIT */
+/* Solarized for Tern, after Ethan Schoonover's Solarized (https://ethanschoonover.com/solarized/).
+   Light for every reader. Use: <script src="tern.js" data-use="themes/solarized-light.css"></script>
+   Raised to 4.5:1 contrast: fg, muted, link, error, warn.
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light;
+  --t-bg: #fdf6e3; --t-fg: #566c73; --t-muted: #576a71; --t-line: #bcc1b8; --t-soft: #eee8d5;
+  --t-link: #1e6ca4; --t-mark: #ffe79c; --t-error: #c22c29; --t-error-bg: #fae2d1; --t-warn: #c34815;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: MIT */
+/* Tokyo Night for Tern, after Tokyo Night Day (light) and Night (dark) (https://github.com/folke/tokyonight.nvim).
+   Light or dark, by the reader's system setting. Use: <script src="tern.js" data-use="themes/tokyo-night.css"></script>
+   Raised to 4.5:1 contrast: fg, muted, link, error, warn (light); muted (dark).
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light dark;
+  --t-bg: #e1e2e7; --t-fg: #3358b0; --t-muted: #545a74; --t-line: #c4c8da; --t-soft: #d0d5e3;
+  --t-link: #215aa8; --t-mark: #e2d3be; --t-error: #b01e49; --t-error-bg: #e3d0da; --t-warn: #9c5100;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-bg: #1a1b26; --t-fg: #c0caf5; --t-muted: #7b82a8; --t-line: #292e42; --t-soft: #16161e;
+    --t-link: #7aa2f7; --t-mark: #6e4a17; --t-error: #f7768e; --t-error-bg: #422b39; --t-warn: #ff9e64;
+  }
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

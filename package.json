@@ -14,6 +14,7 @@
   },
   "scripts": {
     "build": "node tools/concat.js",
+    "themes": "node tools/themes.js",
     "test": "node test/all.js",
     "test:corpus": "node test/run.js",
     "lint:corpus": "node test/run.js --lint",

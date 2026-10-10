@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MIT */
+/* Everforest for Tern, after sainnhe's Everforest (medium) (https://github.com/sainnhe/everforest).
+   Light for every reader. Use: <script src="tern.js" data-use="themes/everforest-light.css"></script>
+   Raised to 4.5:1 contrast: muted, link, error, warn.
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light;
+  --t-bg: #fdf6e3; --t-fg: #5c6a72; --t-muted: #636e62; --t-line: #e0dcc7; --t-soft: #f4f0d9;
+  --t-link: #2d739a; --t-mark: #ffe5a3; --t-error: #b83f3d; --t-error-bg: #fde6d5; --t-warn: #b05a1b;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

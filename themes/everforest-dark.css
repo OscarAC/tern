@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MIT */
+/* Everforest for Tern, after sainnhe's Everforest (medium) (https://github.com/sainnhe/everforest).
+   Dark for every reader. Use: <script src="tern.js" data-use="themes/everforest-dark.css"></script>
+   Raised to 4.5:1 contrast: muted, error.
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: dark;
+  --t-bg: #2d353b; --t-fg: #d3c6aa; --t-muted: #9faba2; --t-line: #475258; --t-soft: #343f44;
+  --t-link: #7fbbb3; --t-mark: #674e1d; --t-error: #ec9d9e; --t-error-bg: #4e4247; --t-warn: #e69875;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

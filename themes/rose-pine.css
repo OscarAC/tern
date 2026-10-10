@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: MIT */
+/* Rosé Pine for Tern, after Rosé Pine Dawn (light) and Rosé Pine (dark) (https://rosepinetheme.com/palette/).
+   Light or dark, by the reader's system setting. Use: <script src="tern.js" data-use="themes/rose-pine.css"></script>
+   Raised to 4.5:1 contrast: muted, error, warn (light).
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light dark;
+  --t-bg: #faf4ed; --t-fg: #575279; --t-muted: #6a6781; --t-line: #dfdad9; --t-soft: #f2e9e1;
+  --t-link: #286983; --t-mark: #f6d5a7; --t-error: #975366; --t-error-bg: #f3e6e2; --t-warn: #966421;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-bg: #191724; --t-fg: #e0def4; --t-muted: #908caa; --t-line: #403d52; --t-soft: #26233a;
+    --t-link: #9ccfd8; --t-mark: #734608; --t-error: #eb6f92; --t-error-bg: #3f2738; --t-warn: #f6c177;
+  }
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}

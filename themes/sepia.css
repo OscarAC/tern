@@ -1,0 +1,16 @@
+/* SPDX-License-Identifier: MIT */
+/* Sepia for Tern, after the warm paper of e-readers.
+   Light for every reader. Use: <script src="tern.js" data-use="themes/sepia.css"></script>
+   Built by tools/themes.js; edit that, not this file. */
+:root {
+  color-scheme: light;
+  --t-bg: #f5ecd8; --t-fg: #3b3024; --t-muted: #6e5d48; --t-line: #d9c9a7; --t-soft: #ece0c5;
+  --t-link: #2d5a87; --t-mark: #edce83; --t-error: #a1301c; --t-error-bg: #edd9c5; --t-warn: #8a5300;
+}
+@media print {
+  :root {
+    color-scheme: light;
+    --t-bg: #fff; --t-fg: #000; --t-muted: #555; --t-line: #d9dde3; --t-soft: #f3f4f1;
+    --t-link: #0b62c4; --t-mark: #fff2a8; --t-error: #b3261e; --t-error-bg: #fdecea; --t-warn: #8a5300;
+  }
+}
